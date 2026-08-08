@@ -81,6 +81,42 @@ function resolveHeroPreflop(lines) {
   return action;
 }
 
+// VPIP/PFR préflop pour chaque adversaire (Hero exclu, déjà suivi séparément) —
+// alimente la page "Adversaires". `streetCum` par joueur permet de distinguer un
+// tapis qui relance (PFR) d'un tapis qui suit un call (VPIP seulement), comme pour
+// le calcul de la mise de Hero plus haut.
+function extractVillainPreflopStats(lines) {
+  const players = {};
+  let inPreflop = false;
+  for (const line of lines) {
+    if (line.startsWith("*** HOLE CARDS ***")) { inPreflop = true; continue; }
+    if (/^\*\*\* (FLOP|TURN|RIVER|SHOWDOWN|SUMMARY) \*\*\*/.test(line)) break;
+    if (!inPreflop) continue;
+
+    const nameMatch = line.match(/^(\S+): /);
+    if (!nameMatch || nameMatch[1] === "Hero") continue;
+    const name = nameMatch[1];
+    if (!players[name]) players[name] = { streetCum: 0, vpip: false, pfr: false };
+    const p = players[name];
+
+    let m;
+    if ((m = line.match(/^\S+: posts (?:small|big) blind ₮([\d.]+)/))) {
+      p.streetCum += parseFloat(m[1]);
+    } else if ((m = line.match(/^\S+: calls ₮([\d.]+)/))) {
+      p.streetCum += parseFloat(m[1]); p.vpip = true;
+    } else if ((m = line.match(/^\S+: bets ₮([\d.]+)/))) {
+      p.streetCum += parseFloat(m[1]); p.vpip = true; p.pfr = true;
+    } else if ((m = line.match(/^\S+: raises ₮[\d.]+ to ₮([\d.]+)/))) {
+      p.streetCum = parseFloat(m[1]); p.vpip = true; p.pfr = true;
+    } else if ((m = line.match(/^\S+: ALLIN ₮([\d.]+)/))) {
+      const to = parseFloat(m[1]);
+      if (to > p.streetCum) p.pfr = true;
+      p.streetCum = to; p.vpip = true;
+    }
+  }
+  return Object.entries(players).map(([name, p]) => ({ name, vpip: p.vpip, pfr: p.pfr }));
+}
+
 export function parseCoinPokerText(text) {
   const blocks = text.split(/\n(?=CoinPoker Hand #)/).filter((b) =>
     b.trim().startsWith("CoinPoker Hand #")
@@ -175,6 +211,7 @@ export function parseCoinPokerText(text) {
     const position = resolveHeroPosition(trimmedBlock);
     const preflopAction = resolveHeroPreflop(lines);
     const played = preflopAction === "call" || preflopAction === "raise";
+    const villains = extractVillainPreflopStats(lines);
 
     // Le calcul d'équité (tapis + abattage) ne doit jamais faire planter l'import
     // entier : une seule main au format inattendu ne doit faire perdre que son
@@ -204,6 +241,7 @@ export function parseCoinPokerText(text) {
       position,
       preflopAction,
       played,
+      villains,
       raw: trimmedBlock,
     });
    } catch (err) {

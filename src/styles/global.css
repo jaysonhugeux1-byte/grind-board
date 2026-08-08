@@ -277,6 +277,32 @@ body {
   padding: 12px 14px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6;
   overflow: auto; white-space: pre-wrap; color: var(--text-muted); margin: 0;
 }
+/* ---------- Lecteur de main (replay) ---------- */
+.hand-view-toggle { display: flex; gap: 6px; }
+.hand-view-toggle button { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); border-radius: 7px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; font-family: var(--font-body); }
+.hand-view-toggle button.active { color: var(--gold); border-color: var(--gold); background: rgba(201, 162, 39, 0.08); }
+
+.hand-replay { display: flex; flex-direction: column; gap: 12px; }
+.replay-board-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.replay-board { display: flex; gap: 6px; }
+.replay-hero-row { display: flex; align-items: center; gap: 10px; }
+.replay-pot { font-size: 12.5px; color: var(--text-muted); }
+.replay-card {
+  display: inline-flex; align-items: center; justify-content: center; gap: 1px;
+  width: 34px; height: 46px; border-radius: 6px; background: var(--surface);
+  border: 1px solid var(--border); font-family: var(--font-mono); font-weight: 700; font-size: 14px;
+}
+.replay-card.red { color: var(--loss); }
+.replay-card-empty { background: var(--surface-2); border-style: dashed; }
+.replay-log {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; max-height: 220px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.replay-log-row { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.replay-log-row.win { color: var(--win); font-weight: 600; }
+.replay-controls { display: flex; align-items: center; justify-content: center; gap: 10px; }
+
 .btn-secondary { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; font-family: var(--font-body); }
 .btn-danger { display: flex; align-items: center; gap: 6px; background: var(--loss); border: none; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-danger:hover { opacity: 0.9; }

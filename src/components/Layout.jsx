@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { DataProvider } from "../contexts/DataContext";
 
@@ -10,6 +10,8 @@ const NAV_ITEMS = [
   { to: "/sessions", label: "Sessions", icon: ListOrdered },
   { to: "/ranges", label: "Ranges", icon: Grid3x3 },
   { to: "/ev", label: "EV par position", icon: BarChart3 },
+  { to: "/top-hands", label: "Grosses mains", icon: Flame },
+  { to: "/table-tendencies", label: "Tendances table", icon: Users },
   { to: "/bankroll", label: "Bankroll", icon: Wallet },
 ];
 

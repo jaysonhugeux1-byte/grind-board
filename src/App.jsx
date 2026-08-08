@@ -9,6 +9,8 @@ import Sessions from "./pages/Sessions";
 import Ranges from "./pages/Ranges";
 import EvByPosition from "./pages/EvByPosition";
 import Bankroll from "./pages/Bankroll";
+import TopHands from "./pages/TopHands";
+import TableTendencies from "./pages/TableTendencies";
 
 export default function App() {
   return (
@@ -26,6 +28,8 @@ export default function App() {
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/ranges" element={<Ranges />} />
         <Route path="/ev" element={<EvByPosition />} />
+        <Route path="/top-hands" element={<TopHands />} />
+        <Route path="/table-tendencies" element={<TableTendencies />} />
         <Route path="/bankroll" element={<Bankroll />} />
       </Route>
     </Routes>

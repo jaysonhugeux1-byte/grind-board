@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { Spade, Heart, Diamond, Club, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X } from "lucide-react";
+import { Spade, Heart, Diamond, Club, Loader2, ChevronDown, ChevronUp, Trash2, Eye } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
-import { deleteHands, deleteHand, getHandRaw } from "../lib/firestoreData";
+import { deleteHands, deleteHand } from "../lib/firestoreData";
 import { buildSessions } from "../lib/parse";
 import { EmptyState, PageHeader, fmtMoney, fmtDateTime } from "../components/ui";
+import HandDetailModal from "../components/HandDetailModal";
 
 const SUITS = [Spade, Heart, Diamond, Club];
 const SUIT_RED = [false, true, true, false];
@@ -14,8 +15,6 @@ export default function Sessions() {
   const { hands, loading, refresh } = useData();
   const [expanded, setExpanded] = useState(null);
   const [viewingHand, setViewingHand] = useState(null);
-  const [viewingRaw, setViewingRaw] = useState(null);
-  const [rawLoading, setRawLoading] = useState(false);
   const [confirmingSession, setConfirmingSession] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -35,15 +34,6 @@ export default function Sessions() {
     setViewingHand(null);
     await refresh();
     setBusy(false);
-  };
-
-  const openHand = async (h) => {
-    setViewingHand(h);
-    setViewingRaw(null);
-    setRawLoading(true);
-    const raw = await getHandRaw(user.uid, h.id);
-    setViewingRaw(raw);
-    setRawLoading(false);
   };
 
   if (loading) {
@@ -111,7 +101,7 @@ export default function Sessions() {
                             <td className="mono">{h.notation || "—"}</td>
                             <td className={`mono ${h.net >= 0 ? "win" : "loss"}`}>{fmtMoney(h.net)}</td>
                             <td className="hand-actions">
-                              <button className="icon-btn" onClick={() => openHand(h)} title="Voir la main"><Eye size={14} /></button>
+                              <button className="icon-btn" onClick={() => setViewingHand(h)} title="Voir la main"><Eye size={14} /></button>
                               <button className="icon-btn danger" onClick={() => removeHand(h.id)} title="Supprimer la main"><Trash2 size={14} /></button>
                             </td>
                           </tr>
@@ -127,26 +117,12 @@ export default function Sessions() {
       )}
 
       {viewingHand && (
-        <div className="modal-overlay" onClick={() => setViewingHand(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Main #{viewingHand.id}</h3>
-              <button className="icon-btn" onClick={() => setViewingHand(null)}><X size={18} /></button>
-            </div>
-            {rawLoading ? (
-              <div className="full-page-loader" style={{ height: 120 }}>
-                <Loader2 size={18} className="spin" />
-              </div>
-            ) : (
-              <pre className="hand-raw">{viewingRaw || "Texte brut indisponible pour cette main."}</pre>
-            )}
-            <div className="modal-footer">
-              <button className="btn-danger" onClick={() => removeHand(viewingHand.id)} disabled={busy}>
-                <Trash2 size={14} /> Supprimer cette main
-              </button>
-            </div>
-          </div>
-        </div>
+        <HandDetailModal
+          hand={viewingHand}
+          onClose={() => setViewingHand(null)}
+          onDelete={removeHand}
+          busy={busy}
+        />
       )}
 
       {confirmingSession && (
