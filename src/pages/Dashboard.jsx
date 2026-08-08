@@ -1,0 +1,150 @@
+import React, { useMemo } from "react";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
+} from "recharts";
+import { Spade, TrendingUp, TrendingDown, Diamond, Wallet, Loader2, Gift } from "lucide-react";
+import { useData } from "../contexts/DataContext";
+import { buildDailyChart } from "../lib/parse";
+import { StatCard, EmptyState, PageHeader, fmtMoney } from "../components/ui";
+import ChallengeCard from "../components/ChallengeCard";
+
+export default function Dashboard() {
+  const { hands, entries, loading } = useData();
+
+  const stats = useMemo(() => {
+    const totalNet = hands.reduce((a, h) => a + h.net, 0);
+    const totalEV = hands.reduce((a, h) => a + (Number.isFinite(h.evNet) ? h.evNet : h.net), 0);
+    const totalDeposits = entries.filter((e) => e.type === "depot").reduce((a, e) => a + e.amount, 0);
+    const totalWithdrawals = entries.filter((e) => e.type === "retrait").reduce((a, e) => a + e.amount, 0);
+    const totalRakeback = entries.filter((e) => e.type === "rakeback").reduce((a, e) => a + e.amount, 0);
+    const bankroll = totalDeposits - totalWithdrawals + totalRakeback + totalNet;
+    const totalRake = hands.reduce((a, h) => a + (h.rake || 0), 0);
+    const netBB = hands.reduce((a, h) => a + h.net / h.bb, 0);
+    const bb100 = hands.length ? (netBB / hands.length) * 100 : 0;
+    const evBB = hands.reduce((a, h) => a + (Number.isFinite(h.evNet) ? h.evNet : h.net) / h.bb, 0);
+    const evBB100 = hands.length ? (evBB / hands.length) * 100 : 0;
+
+    const byStake = {};
+    for (const h of hands) {
+      const key = `${h.sb}/${h.bb}`;
+      if (!byStake[key]) byStake[key] = { hands: 0, net: 0, netBB: 0 };
+      byStake[key].hands += 1;
+      byStake[key].net += h.net;
+      byStake[key].netBB += h.net / h.bb;
+    }
+    const stakeRows = Object.entries(byStake)
+      .map(([key, v]) => ({
+        key,
+        hands: v.hands,
+        net: Math.round(v.net * 100) / 100,
+        bb100: v.hands ? (v.netBB / v.hands) * 100 : 0,
+      }))
+      .sort((a, b) => b.hands - a.hands);
+
+    return { totalNet, bankroll, bb100, evBB100, totalEV, stakeRows, totalHands: hands.length, totalRakeback, totalRake };
+  }, [hands, entries]);
+
+  const chartData = useMemo(() => buildDailyChart(hands, entries), [hands, entries]);
+
+  if (loading) {
+    return (
+      <div className="full-page-loader">
+        <Loader2 size={22} className="spin" /> Chargement…
+      </div>
+    );
+  }
+
+  return (
+    <div className="section">
+      <PageHeader title="Tableau de bord" subtitle="Vue d'ensemble de ta bankroll" />
+
+      <div className="stat-grid">
+        <StatCard label="Mains importées" value={stats.totalHands.toLocaleString("fr-FR")} icon={<Spade size={16} />} />
+        <StatCard
+          label="Résultat net (mains)"
+          value={fmtMoney(stats.totalNet)}
+          icon={stats.totalNet >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+          tone={stats.totalNet >= 0 ? "win" : "loss"}
+        />
+        <StatCard
+          label="Winrate"
+          value={`${stats.bb100 >= 0 ? "+" : ""}${stats.bb100.toFixed(1)} bb/100`}
+          icon={<Diamond size={16} />}
+          tone={stats.bb100 >= 0 ? "win" : "loss"}
+        />
+        <StatCard
+          label="EV bb/100"
+          value={`${stats.evBB100 >= 0 ? "+" : ""}${stats.evBB100.toFixed(1)} bb/100`}
+          icon={<Diamond size={16} />}
+          tone={stats.evBB100 >= 0 ? "win" : "loss"}
+        />
+        <StatCard label="Bankroll" value={fmtMoney(stats.bankroll)} icon={<Wallet size={16} />} tone={stats.bankroll >= 0 ? "win" : "loss"} />
+        <StatCard label="Rake payé (table)" value={fmtMoney(stats.totalRake)} icon={<Diamond size={16} />} />
+        <StatCard label="Rakeback reçu" value={fmtMoney(stats.totalRakeback)} icon={<Gift size={16} />} tone="win" />
+      </div>
+      <p className="dashboard-hint">
+        L'EV bb/100 lisse la chance des tapis (all-in) à l'abattage — un indicateur plus fiable de ton niveau réel que le winrate brut sur un petit échantillon.
+      </p>
+
+      <div className="card">
+        <div className="card-title-row">
+          <h2>Évolution de la bankroll</h2>
+          <span className="card-sub">cumul journalier, mains + dépôts/retraits</span>
+        </div>
+        {chartData.length === 0 ? (
+          <EmptyState text="Importe un fichier de mains ou ajoute un dépôt pour voir le graphique." />
+        ) : (
+          <div style={{ width: "100%", height: 280 }}>
+            <ResponsiveContainer>
+              <AreaChart data={chartData} margin={{ top: 10, right: 12, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="fillCum" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--gold)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--gold)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
+                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} width={58} />
+                <ReferenceLine y={0} stroke="var(--border)" />
+                <Tooltip
+                  contentStyle={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, fontFamily: "var(--font-mono)", fontSize: 12 }}
+                  labelStyle={{ color: "var(--text-muted)" }}
+                  formatter={(v) => [fmtMoney(v), "Bankroll"]}
+                />
+                <Area type="monotone" dataKey="cum" stroke="var(--gold)" strokeWidth={2} fill="url(#fillCum)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      <ChallengeCard currentBankroll={stats.bankroll} />
+
+      <div className="card">
+        <div className="card-title-row">
+          <h2>Résultats par limite</h2>
+        </div>
+        {stats.stakeRows.length === 0 ? (
+          <EmptyState text="Aucune donnée pour l'instant." />
+        ) : (
+          <table className="table">
+            <thead>
+              <tr><th>Limite</th><th>Mains</th><th>Net</th><th>bb/100</th></tr>
+            </thead>
+            <tbody>
+              {stats.stakeRows.map((r) => (
+                <tr key={r.key}>
+                  <td className="mono">₮{r.key}</td>
+                  <td className="mono">{r.hands}</td>
+                  <td className={`mono ${r.net >= 0 ? "win" : "loss"}`}>{fmtMoney(r.net)}</td>
+                  <td className={`mono ${r.bb100 >= 0 ? "win" : "loss"}`}>{r.bb100 >= 0 ? "+" : ""}{r.bb100.toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}

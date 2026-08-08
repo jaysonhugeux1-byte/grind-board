@@ -1,0 +1,57 @@
+{
+  "name": "grand-livre",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron:dev": "concurrently -k -s first \"vite --port 5190 --strictPort\" \"wait-on tcp:5190 && electron .\"",
+    "electron:build": "vite build && electron-builder",
+    "electron:dist": "npm run electron:build"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "firebase": "^10.12.0",
+    "lucide-react": "^0.383.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.24.0",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^10.0.4",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^5.3.1",
+    "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "com.grandlivre.bankroll",
+    "productName": "Grand Livre",
+    "directories": {
+      "output": "C:/Users/Dylan/grand-livre-release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "jaysonhugeux1-byte",
+      "repo": "grind-board"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
