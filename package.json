@@ -1,7 +1,7 @@
 {
   "name": "grand-livre",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -38,7 +38,8 @@
     "publish": {
       "provider": "github",
       "owner": "jaysonhugeux1-byte",
-      "repo": "grind-board"
+      "repo": "grind-board",
+      "releaseType": "release"
     },
     "files": [
       "dist/**/*",

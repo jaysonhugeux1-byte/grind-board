@@ -33,6 +33,21 @@ function createWindow() {
     },
   }));
 
+  // Diagnostic : si la popup de connexion se ferme trop vite pour lire un message,
+  // ceci journalise la vraie raison (échec réseau, page bloquée, etc.) avant fermeture.
+  win.webContents.on("did-create-window", (childWindow, { url }) => {
+    console.log("Popup ouverte:", url);
+    childWindow.webContents.on("did-fail-load", (_e, errorCode, errorDescription, validatedURL) => {
+      console.error("Popup - échec de chargement:", errorCode, errorDescription, validatedURL);
+    });
+    childWindow.webContents.on("did-navigate", (_e, navUrl) => {
+      console.log("Popup - navigation:", navUrl);
+    });
+    childWindow.on("closed", () => {
+      console.log("Popup fermée.");
+    });
+  });
+
   if (isDev) {
     win.loadURL(process.env.ELECTRON_START_URL || "http://localhost:5190");
     win.webContents.openDevTools({ mode: "detach" });
@@ -79,10 +94,6 @@ app.whenReady().then(() => {
   // toute première requête, sans risque de timing/course avec setUserAgent()
   // appelé après coup sur une webContents déjà en train de naviguer.
   session.defaultSession.setUserAgent(DESKTOP_USER_AGENT);
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    details.requestHeaders["User-Agent"] = DESKTOP_USER_AGENT;
-    callback({ requestHeaders: details.requestHeaders });
-  });
 
   const win = createWindow();
   setupAutoUpdate(win);
