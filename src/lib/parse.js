@@ -212,6 +212,7 @@ export function parseCoinPokerText(text) {
     const preflopAction = resolveHeroPreflop(lines);
     const played = preflopAction === "call" || preflopAction === "raise";
     const villains = extractVillainPreflopStats(lines);
+    const wentToShowdown = /\*\*\* SHOWDOWN \*\*\*/.test(trimmedBlock);
 
     // Le calcul d'équité (tapis + abattage) ne doit jamais faire planter l'import
     // entier : une seule main au format inattendu ne doit faire perdre que son
@@ -242,6 +243,7 @@ export function parseCoinPokerText(text) {
       preflopAction,
       played,
       villains,
+      wentToShowdown,
       raw: trimmedBlock,
     });
    } catch (err) {
@@ -315,6 +317,34 @@ export function buildDailyChart(hands, entries) {
     day,
     label: new Date(day).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
     cum: Math.round(cum * 100) / 100,
+  }));
+}
+
+// Cumuls journaliers pour l'onglet "Résultats" : net réel, EV, et net décomposé
+// entre mains allées à l'abattage / mains gagnées ou perdues sans abattage —
+// utile pour repérer si le résultat vient plutôt du jeu postflop pur ou de la
+// capacité à faire coucher les adversaires sans montrer ses cartes.
+export function buildPerformanceChart(hands) {
+  if (!hands.length) return [];
+  const sorted = [...hands].sort((a, b) => a.ts - b.ts);
+
+  const dayMap = new Map();
+  let net = 0, ev = 0, withSD = 0, withoutSD = 0;
+  for (const h of sorted) {
+    net += h.net;
+    ev += Number.isFinite(h.evNet) ? h.evNet : h.net;
+    if (h.wentToShowdown) withSD += h.net; else withoutSD += h.net;
+    const dayKey = new Date(h.ts).toISOString().slice(0, 10);
+    dayMap.set(dayKey, { net, ev, withSD, withoutSD });
+  }
+
+  return [...dayMap.entries()].map(([day, v]) => ({
+    day,
+    label: new Date(day).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
+    net: Math.round(v.net * 100) / 100,
+    ev: Math.round(v.ev * 100) / 100,
+    withSD: Math.round(v.withSD * 100) / 100,
+    withoutSD: Math.round(v.withoutSD * 100) / 100,
   }));
 }
 
