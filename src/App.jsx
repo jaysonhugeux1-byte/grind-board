@@ -11,6 +11,8 @@ import EvByPosition from "./pages/EvByPosition";
 import Bankroll from "./pages/Bankroll";
 import TopHands from "./pages/TopHands";
 import TableTendencies from "./pages/TableTendencies";
+import Statistics from "./pages/Statistics";
+import HandSearch from "./pages/HandSearch";
 
 export default function App() {
   return (
@@ -30,6 +32,8 @@ export default function App() {
         <Route path="/ev" element={<EvByPosition />} />
         <Route path="/top-hands" element={<TopHands />} />
         <Route path="/table-tendencies" element={<TableTendencies />} />
+        <Route path="/statistics" element={<Statistics />} />
+        <Route path="/search" element={<HandSearch />} />
         <Route path="/bankroll" element={<Bankroll />} />
       </Route>
     </Routes>

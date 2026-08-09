@@ -117,6 +117,93 @@ function extractVillainPreflopStats(lines) {
   return Object.entries(players).map(([name, p]) => ({ name, vpip: p.vpip, pfr: p.pfr }));
 }
 
+// Stats préflop/postflop de Hero façon Hold'em Manager/PokerTracker : 3-bet,
+// fold to 3-bet, c-bet, fold to c-bet, avec leurs "opportunités" respectives
+// (ex: on ne peut avoir un fold-to-3bet% que sur les mains où Hero a ouvert ET
+// affronté une relance). ALLIN est traité comme relance/mise selon le contexte
+// (approximation raisonnable pour des indicateurs statistiques, contrairement
+// au calcul d'EV en ₮ où la précision au centime compte).
+function computeHeroAdvancedStats(lines) {
+  const s = {
+    threeBetOpp: false, threeBet: false,
+    foldTo3BetOpp: false, foldTo3Bet: false,
+    sawFlop: false,
+    cbetOpp: false, cbet: false,
+    foldToCbetOpp: false, foldToCbet: false,
+    aggPostflop: 0, passivePostflop: 0,
+  };
+
+  let street = "preflop";
+  let raiseCount = 0;
+  let lastAggressor = null;
+  let heroOpened = false;
+  let heroFoldedPreflop = false;
+  let flopAggressor = null;
+  let flopBetMade = false;
+
+  for (const line of lines) {
+    if (line.startsWith("*** HOLE CARDS ***")) { street = "preflop"; continue; }
+    if (/^\*\*\* FLOP \*\*\*/.test(line)) {
+      street = "flop";
+      flopAggressor = lastAggressor;
+      raiseCount = 0; lastAggressor = null; flopBetMade = false;
+      s.sawFlop = !heroFoldedPreflop;
+      continue;
+    }
+    if (/^\*\*\* TURN \*\*\*/.test(line)) { street = "turn"; raiseCount = 0; lastAggressor = null; continue; }
+    if (/^\*\*\* RIVER \*\*\*/.test(line)) { street = "river"; raiseCount = 0; lastAggressor = null; continue; }
+    if (/^\*\*\* (SHOWDOWN|SUMMARY) \*\*\*/.test(line)) break;
+
+    const m = line.match(/^(\S+): (folds|checks|calls|bets|raises|ALLIN)/);
+    if (!m) continue;
+    const [, player, action] = m;
+    const isHero = player === "Hero";
+    const isAggro = action === "raises" || action === "ALLIN" || action === "bets";
+
+    if (street === "preflop") {
+      if (isHero) {
+        if (action === "raises" || action === "ALLIN") {
+          if (raiseCount === 1 && lastAggressor !== "Hero") { s.threeBetOpp = true; s.threeBet = true; }
+          if (raiseCount === 0) heroOpened = true;
+        } else if (action === "folds") {
+          heroFoldedPreflop = true;
+          if (raiseCount === 1 && lastAggressor !== "Hero") s.threeBetOpp = true;
+          if (raiseCount === 2 && heroOpened && lastAggressor !== "Hero") { s.foldTo3BetOpp = true; s.foldTo3Bet = true; }
+        } else if (action === "calls" && raiseCount === 2 && heroOpened && lastAggressor !== "Hero") {
+          s.foldTo3BetOpp = true;
+        }
+      }
+      if (isAggro) { raiseCount++; lastAggressor = player; }
+      continue;
+    }
+
+    if (street === "flop") {
+      if (isHero) {
+        if (flopAggressor === "Hero" && !flopBetMade) {
+          s.cbetOpp = true;
+          if (isAggro) s.cbet = true;
+        }
+        if (flopAggressor && flopAggressor !== "Hero" && flopBetMade && lastAggressor === flopAggressor) {
+          s.foldToCbetOpp = true;
+          if (action === "folds") s.foldToCbet = true;
+        }
+        if (isAggro) s.aggPostflop++;
+        else if (action === "calls") s.passivePostflop++;
+      }
+      if (isAggro) { flopBetMade = true; lastAggressor = player; }
+      continue;
+    }
+
+    // Turn/river : juste le facteur d'agressivité (pas de c-bet/fold-to-c-bet au-delà du flop ici).
+    if (isHero) {
+      if (isAggro) s.aggPostflop++;
+      else if (action === "calls") s.passivePostflop++;
+    }
+  }
+
+  return s;
+}
+
 export function parseCoinPokerText(text) {
   const blocks = text.split(/\n(?=CoinPoker Hand #)/).filter((b) =>
     b.trim().startsWith("CoinPoker Hand #")
@@ -212,7 +299,13 @@ export function parseCoinPokerText(text) {
     const preflopAction = resolveHeroPreflop(lines);
     const played = preflopAction === "call" || preflopAction === "raise";
     const villains = extractVillainPreflopStats(lines);
-    const wentToShowdown = /\*\*\* SHOWDOWN \*\*\*/.test(trimmedBlock);
+    // "*** SHOWDOWN ***" apparaît même sur un pot remporté sans opposition (tout
+    // le monde fold, Hero montre ses cartes par pure formalité) — ce n'est PAS un
+    // vrai abattage. Un vrai abattage exige qu'au moins 2 joueurs distincts (dont
+    // Hero) montrent leurs cartes, comme pour le calcul d'EV dans equity.js.
+    const showsPlayers = new Set([...trimmedBlock.matchAll(/^(\S+): shows \[/gm)].map((m) => m[1]));
+    const wentToShowdown = showsPlayers.has("Hero") && showsPlayers.size >= 2;
+    const advStats = computeHeroAdvancedStats(lines);
 
     // Le calcul d'équité (tapis + abattage) ne doit jamais faire planter l'import
     // entier : une seule main au format inattendu ne doit faire perdre que son
@@ -244,6 +337,7 @@ export function parseCoinPokerText(text) {
       played,
       villains,
       wentToShowdown,
+      advStats,
       raw: trimmedBlock,
     });
    } catch (err) {
