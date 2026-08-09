@@ -319,6 +319,12 @@ body {
 
 /* ---------- Ranges ---------- */
 
+.scenario-table { display: flex; gap: 8px; flex-wrap: wrap; }
+.scenario-col { display: flex; flex-direction: column; gap: 5px; min-width: 88px; }
+.scenario-col-label { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); text-align: center; }
+.scenario-col-label.gold { color: var(--gold); font-weight: 700; }
+.scenario-col select:disabled { opacity: 0.4; }
+
 .range-summary { display: flex; gap: 18px; font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
 .range-summary strong { color: var(--gold-soft); font-family: var(--font-mono); }
 
@@ -341,6 +347,13 @@ body {
 .range-legend { display: flex; align-items: center; gap: 6px; margin-top: 14px; font-size: 12px; color: var(--text-muted); }
 .range-legend-swatch { width: 14px; height: 14px; border-radius: 3px; background: color-mix(in srgb, var(--gold) calc(var(--freq) * 100%), var(--surface-2)); border: 1px solid var(--border); margin-left: 10px; }
 .range-legend-swatch:first-child { margin-left: 0; }
+
+/* Ces règles doivent rester APRÈS .range-legend-swatch pour gagner la cascade
+   (même spécificité, l'ordre du fichier tranche) quand les deux classes sont
+   combinées sur les puces de légende. */
+.range-cell-match { background: color-mix(in srgb, var(--win) 35%, var(--surface-2)); }
+.range-cell-over { background: color-mix(in srgb, var(--loss) 55%, var(--surface-2)); }
+.range-cell-under { background: color-mix(in srgb, #4f9dde 55%, var(--surface-2)); }
 
 @media (max-width: 780px) {
   .app-shell { flex-direction: column; }

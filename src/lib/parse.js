@@ -28,7 +28,10 @@ function cardsToNotation(cardStr) {
   return `${hi}${lo}${s1 === s2 ? "s" : "o"}`;
 }
 
-function resolveHeroPosition(block) {
+// Position de CHAQUE joueur (pas juste Hero) -> { "Hero": "BTN", "abcxyz12": "UTG", ... }.
+// Sert à la fois à resolveHeroPosition et à computePreflopFacing (savoir qui a
+// fold/limp/relancé à quelle position avant que Hero n'agisse).
+function resolveAllPositions(block) {
   const buttonMatch = block.match(/Seat #(\d+) is the button/);
   if (!buttonMatch) return null;
   const buttonSeat = Number(buttonMatch[1]);
@@ -55,10 +58,35 @@ function resolveHeroPosition(block) {
     rotated.push(sortedSeats[(btnIdx + i) % n]);
   }
 
-  const heroIdx = rotated.findIndex((s) => s.name === "Hero");
-  if (heroIdx === -1) return null;
+  const map = {};
+  rotated.forEach((s, i) => { map[s.name] = labels[i]; });
+  return map;
+}
 
-  return labels[heroIdx];
+// Ce que chaque position a fait AVANT le tout premier point de décision de Hero
+// préflop : "fold" / "limp" (call sans relance) / "raise". Permet de filtrer les
+// mains par situation exacte (ex: "UTG raise, HJ fold, CO fold, puis Hero en BTN")
+// plutôt que juste par position — alimente le sélecteur de scénario de la page Ranges.
+function computePreflopFacing(lines, positions) {
+  const facing = {};
+  if (!positions) return facing;
+  let inPreflop = false;
+  for (const line of lines) {
+    if (line.startsWith("*** HOLE CARDS ***")) { inPreflop = true; continue; }
+    if (/^\*\*\* (FLOP|TURN|RIVER|SHOWDOWN|SUMMARY) \*\*\*/.test(line)) break;
+    if (!inPreflop) continue;
+    if (line.startsWith("Hero:")) break;
+
+    const m = line.match(/^(\S+): (folds|checks|calls|bets|raises|ALLIN)/);
+    if (!m) continue;
+    const [, player, action] = m;
+    const pos = positions[player];
+    if (!pos) continue;
+    if (action === "folds") facing[pos] = "fold";
+    else if (action === "calls") facing[pos] = "limp";
+    else if (action === "raises" || action === "bets" || action === "ALLIN") facing[pos] = "raise";
+  }
+  return facing;
 }
 
 function resolveHeroPreflop(lines) {
@@ -295,10 +323,12 @@ export function parseCoinPokerText(text) {
     const cards = dealtMatch ? dealtMatch[1] : null;
     const notation = cards ? cardsToNotation(cards) : null;
 
-    const position = resolveHeroPosition(trimmedBlock);
+    const allPositions = resolveAllPositions(trimmedBlock);
+    const position = allPositions ? allPositions["Hero"] || null : null;
     const preflopAction = resolveHeroPreflop(lines);
     const played = preflopAction === "call" || preflopAction === "raise";
     const villains = extractVillainPreflopStats(lines);
+    const preflopFacing = computePreflopFacing(lines, allPositions);
     // "*** SHOWDOWN ***" apparaît même sur un pot remporté sans opposition (tout
     // le monde fold, Hero montre ses cartes par pure formalité) — ce n'est PAS un
     // vrai abattage. Un vrai abattage exige qu'au moins 2 joueurs distincts (dont
@@ -338,6 +368,7 @@ export function parseCoinPokerText(text) {
       villains,
       wentToShowdown,
       advStats,
+      preflopFacing,
       raw: trimmedBlock,
     });
    } catch (err) {
