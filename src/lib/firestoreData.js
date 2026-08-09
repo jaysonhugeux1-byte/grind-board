@@ -28,7 +28,7 @@ const entriesCol = (uid) => collection(db, "users", uid, "entries");
 // d'un coup en parallèle, ce qui peut mettre trop de pression sur la connexion
 // pour de très gros volumes) et appelle `onChunkDone` après CHAQUE lot terminé —
 // ce qui permet de reporter une progression fiable côté UI.
-async function runChunkedBatches(totalChunks, commitChunk, onChunkDone, concurrency = 4) {
+async function runChunkedBatches(totalChunks, commitChunk, onChunkDone, concurrency = 1) {
   if (totalChunks === 0) return;
   let next = 0;
   async function worker() {
@@ -70,9 +70,11 @@ export async function importHands(uid, parsedHands, { forceUpdate = false, exist
   const existingHands = parsedHands.filter((h) => ids.has(h.id));
   const toWrite = forceUpdate ? parsedHands : newHands;
 
-  // Chaque main = 2 écritures (doc principal léger + doc texte brut séparé),
-  // donc 250 mains par lot pour rester sous la limite de 500 opérations/batch.
-  const CHUNK = 250;
+  // Chaque main = 2 écritures (doc principal léger + doc texte brut séparé). Lots
+  // plus petits que la limite théorique de 500 opérations/batch : des lots plus
+  // gros (250 mains, ~350 Ko/lot avec les données villains) se sont montrés
+  // sujets à des blocages réseau silencieux dans nos tests.
+  const CHUNK = 100;
   const chunks = [];
   for (let i = 0; i < toWrite.length; i += CHUNK) chunks.push(toWrite.slice(i, i + CHUNK));
 
