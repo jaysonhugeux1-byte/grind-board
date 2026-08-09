@@ -23,11 +23,16 @@ export function aggregateStats(hands) {
   }
 
   const pct = (n, d) => (d ? (n / d) * 100 : null);
+  const vpipPct = pct(vpip, total);
+  const pfrPct = pct(pfr, total);
 
   return {
     total,
-    vpipPct: pct(vpip, total),
-    pfrPct: pct(pfr, total),
+    vpipPct,
+    pfrPct,
+    // Écart VPIP-PFR : plus il est grand, plus le style est passif (beaucoup de
+    // limps/calls, peu de relances) — un des indicateurs de leak les plus lus.
+    vpipPfrGap: vpipPct != null && pfrPct != null ? vpipPct - pfrPct : null,
     threeBetPct: pct(threeBet, threeBetOpp), threeBetOpp,
     foldTo3BetPct: pct(foldTo3Bet, foldTo3BetOpp), foldTo3BetOpp,
     cbetPct: pct(cbet, cbetOpp), cbetOpp,
@@ -58,6 +63,12 @@ export const LEAK_RULES = [
   { key: "wsdPct", label: "W$SD%", min: 45, max: 100, minSample: 20, sampleKey: "wtsd",
     low: "Tu perds plus souvent que la moyenne quand tu vas à l'abattage — signe possible de calls trop optimistes.",
     high: null },
+  { key: "foldToCbetPct", label: "Fold to C-Bet%", min: 30, max: 55, minSample: 25, sampleKey: "foldToCbetOpp",
+    low: "Tu ne foldes presque jamais face à une c-bet — tu continues probablement trop large sans équité suffisante.",
+    high: "Tu foldes très souvent face à une c-bet — tu es peut-être exploitable par des c-bets systématiques." },
+  { key: "vpipPfrGap", label: "Écart VPIP-PFR", min: -100, max: 10, minSample: 100, sampleKey: "total",
+    low: null,
+    high: "Gros écart entre VPIP et PFR — tu entres beaucoup en limp/call plutôt qu'en relance, un style souvent trop passif préflop." },
 ];
 
 export function findLeaks(agg) {
@@ -70,6 +81,18 @@ export function findLeaks(agg) {
     else if (value > rule.max && rule.high) leaks.push({ label: rule.label, value, direction: "haut", message: rule.high });
   }
   return leaks;
+}
+
+// Applique le leak finder sur chaque position séparément (les repères standards
+// varient peu par position à ce niveau de détail, mais un leak peut être
+// spécifique à une position — ex: 3-bet trop bas uniquement depuis la BB).
+export function findLeaksByPosition(byPositionAgg) {
+  const leaksByPosition = [];
+  for (const { position, ...agg } of byPositionAgg) {
+    const leaks = findLeaks(agg);
+    if (leaks.length) leaksByPosition.push({ position, leaks });
+  }
+  return leaksByPosition;
 }
 
 const WEEKDAYS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];

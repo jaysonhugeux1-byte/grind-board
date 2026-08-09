@@ -1,11 +1,18 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useData } from "../contexts/DataContext";
 import { EmptyState, PageHeader } from "../components/ui";
-import { aggregateStats, findLeaks, buildTimeAnalysis } from "../lib/stats";
+import { aggregateStats, findLeaks, findLeaksByPosition, buildTimeAnalysis } from "../lib/stats";
 
 const POSITION_ORDER = ["UTG", "HJ", "CO", "BTN", "SB", "BB"];
+const PERIOD_PRESETS = [
+  { key: "7", label: "7 jours", days: 7 },
+  { key: "30", label: "30 jours", days: 30 },
+  { key: "90", label: "90 jours", days: 90 },
+  { key: "all", label: "Tout", days: null },
+  { key: "custom", label: "Personnalisé", days: undefined },
+];
 
 function StatBlock({ label, value, sub }) {
   return (
@@ -18,7 +25,23 @@ function StatBlock({ label, value, sub }) {
 }
 
 export default function Statistics() {
-  const { hands, loading } = useData();
+  const { hands: allHands, loading } = useData();
+
+  const [period, setPeriod] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const hands = useMemo(() => {
+    const preset = PERIOD_PRESETS.find((p) => p.key === period);
+    if (period === "all") return allHands;
+    if (period === "custom") {
+      const fromTs = dateFrom ? new Date(dateFrom).getTime() : null;
+      const toTs = dateTo ? new Date(dateTo).getTime() + 86400000 : null;
+      return allHands.filter((h) => (fromTs == null || h.ts >= fromTs) && (toTs == null || h.ts < toTs));
+    }
+    const cutoff = Date.now() - preset.days * 86400000;
+    return allHands.filter((h) => h.ts >= cutoff);
+  }, [allHands, period, dateFrom, dateTo]);
 
   const overall = useMemo(() => aggregateStats(hands), [hands]);
   const leaks = useMemo(() => findLeaks(overall), [overall]);
@@ -30,6 +53,8 @@ export default function Statistics() {
       return { position: pos, hands: posHands.length, ...agg };
     });
   }, [hands]);
+
+  const positionLeaks = useMemo(() => findLeaksByPosition(byPosition), [byPosition]);
 
   const time = useMemo(() => buildTimeAnalysis(hands), [hands]);
 
@@ -45,8 +70,32 @@ export default function Statistics() {
     <div className="section">
       <PageHeader title="Statistiques" subtitle="VPIP, PFR, 3-bet, c-bet, abattage — et les écarts qui valent le coup d'œil" />
 
+      <div className="card">
+        <div className="card-title-row"><h2>Période analysée</h2></div>
+        <div className="segmented">
+          {PERIOD_PRESETS.map((p) => (
+            <button key={p.key} className={period === p.key ? "active" : ""} onClick={() => setPeriod(p.key)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {period === "custom" && (
+          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+            <div>
+              <label className="field-label">Du</label>
+              <input className="input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="field-label">Au</label>
+              <input className="input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+          </div>
+        )}
+        <p className="card-sub" style={{ marginTop: 10 }}>{hands.length} main(s) sur la période sélectionnée</p>
+      </div>
+
       {hands.length === 0 ? (
-        <div className="card"><EmptyState text="Importe des mains pour voir tes statistiques." /></div>
+        <div className="card"><EmptyState text="Aucune main sur cette période." /></div>
       ) : (
         <>
           <div className="stat-grid">
@@ -67,7 +116,7 @@ export default function Statistics() {
             </div>
             {leaks.length === 0 ? (
               <p className="challenge-status win" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <CheckCircle2 size={16} /> Rien d'anormal détecté sur l'échantillon actuel.
+                <CheckCircle2 size={16} /> Rien d'anormal détecté sur l'échantillon global.
               </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -78,6 +127,24 @@ export default function Statistics() {
                   </div>
                 ))}
               </div>
+            )}
+
+            {positionLeaks.length > 0 && (
+              <>
+                <div className="card-title-row" style={{ marginTop: 18 }}><h2 style={{ fontSize: 13.5 }}>Par position</h2></div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {positionLeaks.map(({ position, leaks: posLeaks }) => (
+                    <div key={position} className="db-report-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+                      <strong className="mono">{position}</strong>
+                      {posLeaks.map((l, i) => (
+                        <span key={i} className="muted" style={{ fontSize: 12.5 }}>
+                          {l.label} : {l.value.toFixed(1)}% ({l.direction}) — {l.message}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
 
