@@ -59,6 +59,7 @@ export default function Layout() {
             <LogOut size={16} />
           </button>
         </div>
+        <p className="sidebar-version">Grand Livre v{__APP_VERSION__}</p>
       </aside>
 
       <main className="main-content">

@@ -79,6 +79,14 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      <div className="card">
+        <div className="card-title-row"><h2>À propos</h2></div>
+        <p className="dashboard-hint" style={{ margin: 0 }}>
+          Version installée : <span className="mono" style={{ color: "var(--text)" }}>{__APP_VERSION__}</span>. L'application vérifie
+          les mises à jour au démarrage et propose de les installer automatiquement.
+        </p>
+      </div>
     </div>
   );
 }
