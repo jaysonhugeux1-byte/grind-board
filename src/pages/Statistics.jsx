@@ -1,9 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
-import { Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, AlertTriangle, CheckCircle2, Sparkles } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { EmptyState, PageHeader } from "../components/ui";
-import { aggregateStats, findLeaks, findLeaksByPosition, buildTimeAnalysis } from "../lib/stats";
+import { aggregateStats, findLeaks, findLeaksByPosition, buildTimeAnalysis, pickLeakExamples } from "../lib/stats";
+import { getHandRaw } from "../lib/firestoreData";
+import { getApiKey, getAiModel } from "../lib/aiSettings";
+import { generateImprovementPlan } from "../lib/aiCoach";
 
 const POSITION_ORDER = ["UTG", "HJ", "CO", "BTN", "SB", "BB"];
 const PERIOD_PRESETS = [
@@ -13,6 +18,95 @@ const PERIOD_PRESETS = [
   { key: "all", label: "Tout", days: null },
   { key: "custom", label: "Personnalisé", days: undefined },
 ];
+
+function ImprovementPlanPanel({ hands, agg, leaks, positionLeaks }) {
+  const { user } = useAuth();
+  const [text, setText] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | loading | done | error
+  const [error, setError] = useState(null);
+  const abortRef = useRef(null);
+
+  const hasKey = !!getApiKey();
+
+  async function run() {
+    setStatus("loading");
+    setError(null);
+    setText("");
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const leaksWithExamples = pickLeakExamples(hands, leaks, 2);
+      const exampleIds = new Set();
+      for (const l of leaksWithExamples) for (const h of l.examples) exampleIds.add(h.id);
+
+      const rawEntries = await Promise.all(
+        [...exampleIds].map(async (id) => [id, await getHandRaw(user.uid, id)])
+      );
+      const rawById = new Map(rawEntries);
+
+      const leaksForPrompt = leaksWithExamples.map((l) => ({
+        ...l,
+        examples: l.examples.map((h) => ({ ...h, raw: rawById.get(h.id) })),
+      }));
+
+      await generateImprovementPlan({
+        totalHands: hands.length,
+        agg,
+        leaks: leaksForPrompt,
+        positionLeaks,
+        apiKey: getApiKey(),
+        model: getAiModel(),
+        onDelta: setText,
+        signal: controller.signal,
+      });
+      setStatus("done");
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      setError(err.message);
+      setStatus("error");
+    }
+  }
+
+  if (!hasKey) {
+    return (
+      <div className="ai-panel-empty">
+        <AlertTriangle size={22} className="loss" />
+        <p>Aucune clé API Anthropic configurée.</p>
+        <Link to="/settings" className="btn-secondary">Configurer dans Paramètres</Link>
+      </div>
+    );
+  }
+
+  if (status === "idle") {
+    return (
+      <div className="ai-panel-empty">
+        <Sparkles size={22} style={{ color: "var(--gold)" }} />
+        <p>Génère un plan d'amélioration priorisé à partir de tes leaks détectés et de mains réelles qui les illustrent.</p>
+        <button className="btn-primary" onClick={run}>Générer mon plan d'amélioration</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ai-panel">
+      {status === "loading" && !text && (
+        <div className="ai-panel-loading"><Loader2 size={16} className="spin" /> Analyse des leaks et rédaction du plan…</div>
+      )}
+      {text && (
+        <div className="ai-panel-text">
+          {text.split("\n").map((line, i) => (
+            <p key={i} className={/^Prochaine étape\s*:/i.test(line) ? "ai-verdict" : ""}>{line || " "}</p>
+          ))}
+          {status === "loading" && <span className="ai-cursor" />}
+        </div>
+      )}
+      {status === "error" && <p className="alert-error" style={{ marginTop: text ? 10 : 0 }}>{error}</p>}
+      {status !== "loading" && (
+        <button className="btn-secondary" onClick={run} style={{ marginTop: 10 }}>Régénérer</button>
+      )}
+    </div>
+  );
+}
 
 function StatBlock({ label, value, sub }) {
   return (
@@ -146,6 +240,14 @@ export default function Statistics() {
                 </div>
               </>
             )}
+          </div>
+
+          <div className="card">
+            <div className="card-title-row">
+              <h2><Sparkles size={16} style={{ verticalAlign: "-2px", marginRight: 6, color: "var(--gold)" }} />Plan d'amélioration IA</h2>
+              <span className="card-sub">basé sur tes leaks détectés et de vraies mains d'exemple</span>
+            </div>
+            <ImprovementPlanPanel key={period + dateFrom + dateTo} hands={hands} agg={overall} leaks={leaks} positionLeaks={positionLeaks} />
           </div>
 
           <div className="card">

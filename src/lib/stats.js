@@ -77,10 +77,57 @@ export function findLeaks(agg) {
     const value = agg[rule.key];
     const sample = agg[rule.sampleKey];
     if (value == null || sample < rule.minSample) continue;
-    if (value < rule.min && rule.low) leaks.push({ label: rule.label, value, direction: "bas", message: rule.low });
-    else if (value > rule.max && rule.high) leaks.push({ label: rule.label, value, direction: "haut", message: rule.high });
+    if (value < rule.min && rule.low) leaks.push({ key: rule.key, label: rule.label, value, direction: "bas", message: rule.low });
+    else if (value > rule.max && rule.high) leaks.push({ key: rule.key, label: rule.label, value, direction: "haut", message: rule.high });
   }
   return leaks;
+}
+
+// Pour chaque leak détecté, retrouve 1-2 mains concrètes qui illustrent EXACTEMENT
+// le comportement en cause (pas juste "une main au hasard de cette position") —
+// sert à ancrer l'explication de l'IA dans du réel plutôt que dans l'abstrait.
+// Seuls les leaks avec un comportement binaire par main (a fold, a c-bet, etc.)
+// ont un appariement fiable ; VPIP/PFR bruts restent des fréquences globales
+// sans main "coupable" unique, donc ils n'ont volontairement pas d'exemple.
+const LEAK_MATCHERS = {
+  threeBetPct: {
+    haut: (h) => h.advStats?.threeBetOpp && h.advStats.threeBet,
+    bas: (h) => h.advStats?.threeBetOpp && !h.advStats.threeBet,
+  },
+  foldTo3BetPct: {
+    haut: (h) => h.advStats?.foldTo3BetOpp && h.advStats.foldTo3Bet,
+    bas: (h) => h.advStats?.foldTo3BetOpp && !h.advStats.foldTo3Bet,
+  },
+  cbetPct: {
+    haut: (h) => h.advStats?.cbetOpp && h.advStats.cbet,
+    bas: (h) => h.advStats?.cbetOpp && !h.advStats.cbet,
+  },
+  foldToCbetPct: {
+    haut: (h) => h.advStats?.foldToCbetOpp && h.advStats.foldToCbet,
+    bas: (h) => h.advStats?.foldToCbetOpp && !h.advStats.foldToCbet,
+  },
+  wtsdPct: {
+    haut: (h) => h.wentToShowdown,
+    bas: (h) => h.advStats?.sawFlop && !h.wentToShowdown,
+  },
+  wsdPct: {
+    bas: (h) => h.wentToShowdown && h.net <= 0,
+  },
+  vpipPfrGap: {
+    haut: (h) => h.played && h.preflopAction === "call",
+  },
+};
+
+export function pickLeakExamples(hands, leaks, maxPerLeak = 2) {
+  return leaks.map((leak) => {
+    const matcher = LEAK_MATCHERS[leak.key]?.[leak.direction];
+    if (!matcher) return { ...leak, examples: [] };
+    const examples = hands
+      .filter(matcher)
+      .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+      .slice(0, maxPerLeak);
+    return { ...leak, examples };
+  });
 }
 
 // Applique le leak finder sur chaque position séparément (les repères standards
