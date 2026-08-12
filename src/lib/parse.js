@@ -31,7 +31,7 @@ function cardsToNotation(cardStr) {
 // Position de CHAQUE joueur (pas juste Hero) -> { "Hero": "BTN", "abcxyz12": "UTG", ... }.
 // Sert à la fois à resolveHeroPosition et à computePreflopFacing (savoir qui a
 // fold/limp/relancé à quelle position avant que Hero n'agisse).
-function resolveAllPositions(block) {
+export function resolveAllPositions(block) {
   const buttonMatch = block.match(/Seat #(\d+) is the button/);
   if (!buttonMatch) return null;
   const buttonSeat = Number(buttonMatch[1]);

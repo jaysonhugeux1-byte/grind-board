@@ -13,6 +13,7 @@ import TopHands from "./pages/TopHands";
 import TableTendencies from "./pages/TableTendencies";
 import Statistics from "./pages/Statistics";
 import HandSearch from "./pages/HandSearch";
+import Settings from "./pages/Settings";
 
 export default function App() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/statistics" element={<Statistics />} />
         <Route path="/search" element={<HandSearch />} />
         <Route path="/bankroll" element={<Bankroll />} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>
   );
