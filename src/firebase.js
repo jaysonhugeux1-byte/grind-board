@@ -1,6 +1,11 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
+  memoryLocalCache,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -14,11 +19,34 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Cache par défaut (en mémoire, pas de persistance IndexedDB multi-onglets) :
-// le cache persistant multi-onglets s'est avéré source de blocages silencieux
-// (lectures en erreur "client is offline", écritures qui restent en attente sans
-// jamais aboutir ni échouer) sur certains navigateurs au stockage cloisonné
-// (ex. Brave) — la fiabilité prime ici sur le chargement instantané depuis le cache.
-export const db = getFirestore(app);
+// L'application écoute la collection entière des mains : sans cache sur disque,
+// chaque ouverture relit tout l'historique depuis le serveur — 6 000 mains =
+// 6 000 lectures facturées, à chaque lancement. Le quota quotidien part en
+// quelques ouvertures, même avec un seul utilisateur.
+//
+// Avec le cache persistant, les mains déjà connues sont relues depuis le disque
+// et seules celles qui ont changé depuis la dernière session transitent par le
+// réseau. Le coût d'une ouverture retombe à quasiment zéro.
+//
+// Le cache persistant avait été retiré après des blocages silencieux (lectures
+// "client is offline", écritures en attente sans fin) — mais c'était le
+// gestionnaire MULTI-ONGLETS, qui coordonne plusieurs onglets via des verrous
+// et se bloque quand un navigateur cloisonne le stockage (Brave notamment).
+// Le gestionnaire mono-onglet n'a pas ce mécanisme, et l'application de bureau
+// n'ouvre de toute façon qu'une seule fenêtre.
+function createDb() {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+    });
+  } catch (err) {
+    // Stockage indisponible (navigation privée, second onglet, stockage bloqué) :
+    // on repart en mémoire plutôt que de laisser l'application inutilisable.
+    console.warn("Cache persistant indisponible, repli sur le cache mémoire :", err);
+    return initializeFirestore(app, { localCache: memoryLocalCache() });
+  }
+}
+
+export const db = createDb();
 
 export const googleProvider = new GoogleAuthProvider();
