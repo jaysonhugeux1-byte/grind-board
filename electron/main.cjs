@@ -22,6 +22,14 @@ const MIME_TYPES = {
 // Indispensable pour Firebase Auth : "file://" n'est pas un domaine autorisé
 // pour le popup de connexion Google (qui échouait systématiquement dans l'appli
 // packagée, alors qu'il fonctionnait en dev où l'appli tourne déjà sur localhost).
+// Ports candidats pour le serveur local. Ils sont FIXES et non tirés au hasard :
+// la connexion Google passe par une redirection vers une adresse que Supabase
+// doit connaître à l'avance. Un port aléatoire rendrait cette déclaration
+// impossible, et la connexion échouerait à chaque lancement.
+// Trois candidats plutôt qu'un seul, au cas où un autre programme occuperait
+// le premier — les trois sont déclarés côté Supabase.
+const LOCAL_PORTS = [51789, 51790, 51791];
+
 function startStaticServer(rootDir) {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
@@ -41,8 +49,26 @@ function startStaticServer(rootDir) {
         res.end(data);
       });
     });
-    server.listen(0, "127.0.0.1", () => resolve(server.address().port));
-    server.on("error", reject);
+    let attempt = 0;
+    const tryNext = () => {
+      if (attempt >= LOCAL_PORTS.length) {
+        reject(
+          new Error(
+            `Aucun port disponible parmi ${LOCAL_PORTS.join(", ")} — un autre programme les occupe.`
+          )
+        );
+        return;
+      }
+      server.listen(LOCAL_PORTS[attempt++], "127.0.0.1");
+    };
+
+    server.on("listening", () => resolve(server.address().port));
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") tryNext();
+      else reject(err);
+    });
+
+    tryNext();
   });
 }
 
