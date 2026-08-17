@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Loader2, TrendingUp, TrendingDown, Eye } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
-import { deleteHand } from "../lib/firestoreData";
+import { deleteHand } from "../lib/supabaseData";
 import { EmptyState, PageHeader, fmtMoney, fmtDateTime } from "../components/ui";
 import HandDetailModal from "../components/HandDetailModal";
 

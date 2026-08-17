@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Loader2, Trash2, X, Sparkles, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { getHandRaw } from "../lib/firestoreData";
+import { getHandRaw } from "../lib/supabaseData";
 import { getApiKey, getAiModel } from "../lib/aiSettings";
 import { analyzeHand } from "../lib/aiCoach";
 import HandReplay from "./HandReplay";

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Loader2, Target, Pencil } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
-import { subscribeChallenge, setChallenge } from "../lib/firestoreData";
+import { subscribeChallenge, setChallenge } from "../lib/supabaseData";
 import { fmtMoney } from "./ui";
 
 // Échelle standard des limites NL (big blind en ₮), utilisée pour la sélection

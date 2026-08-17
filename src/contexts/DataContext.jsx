@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
-import { db } from "../firebase";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
+import { supabase } from "../supabase";
+import { getAllHands, getAllEntries } from "../lib/supabaseData";
 import { useAuth } from "./AuthContext";
 
 const DataContext = createContext(null);
@@ -11,34 +11,80 @@ export function DataProvider({ children }) {
   const [entries, setEntries] = useState([]);
   const [handsReady, setHandsReady] = useState(false);
   const [entriesReady, setEntriesReady] = useState(false);
+  const reloadTimer = useRef(null);
+
+  const loadHands = useCallback(async (uid) => {
+    try {
+      setHands(await getAllHands(uid));
+    } catch (err) {
+      console.error("Chargement des mains impossible :", err);
+    } finally {
+      setHandsReady(true);
+    }
+  }, []);
+
+  const loadEntries = useCallback(async (uid) => {
+    try {
+      setEntries(await getAllEntries(uid));
+    } catch (err) {
+      console.error("Chargement des mouvements impossible :", err);
+    } finally {
+      setEntriesReady(true);
+    }
+  }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setHands([]);
+      setEntries([]);
+      setHandsReady(false);
+      setEntriesReady(false);
+      return undefined;
+    }
+
+    const uid = user.uid;
     setHandsReady(false);
     setEntriesReady(false);
+    loadHands(uid);
+    loadEntries(uid);
 
-    const handsQuery = query(collection(db, "users", user.uid, "hands"), orderBy("ts", "asc"));
-    const unsubHands = onSnapshot(handsQuery, (snap) => {
-      setHands(snap.docs.map((d) => d.data()));
-      setHandsReady(true);
-    });
+    // Un import écrit des milliers de lignes : réagir à chaque événement
+    // déclencherait autant de rechargements. On temporise donc pour n'en faire
+    // qu'un seul une fois la rafale terminée.
+    const scheduleReload = (what) => {
+      clearTimeout(reloadTimer.current);
+      reloadTimer.current = setTimeout(() => {
+        if (what.hands) loadHands(uid);
+        if (what.entries) loadEntries(uid);
+      }, 800);
+    };
 
-    const entriesQuery = query(collection(db, "users", user.uid, "entries"), orderBy("ts", "asc"));
-    const unsubEntries = onSnapshot(entriesQuery, (snap) => {
-      setEntries(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setEntriesReady(true);
-    });
+    const channel = supabase
+      .channel(`data-${uid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "hands", filter: `user_id=eq.${uid}` },
+        () => scheduleReload({ hands: true })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "entries", filter: `user_id=eq.${uid}` },
+        () => scheduleReload({ entries: true })
+      )
+      .subscribe();
 
     return () => {
-      unsubHands();
-      unsubEntries();
+      clearTimeout(reloadTimer.current);
+      supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, loadHands, loadEntries]);
 
-  // Les écouteurs ci-dessus se mettent à jour automatiquement après chaque
-  // écriture (import, ajout/suppression de main ou de mouvement) : rien à
-  // recharger manuellement. Cette fonction ne sert que de compatibilité.
-  const refresh = useCallback(async () => {}, []);
+  // Rechargement explicite, utilisé après un import : plus immédiat que
+  // d'attendre la temporisation du temps réel.
+  const refresh = useCallback(async () => {
+    if (!user) return;
+    await Promise.all([loadHands(user.uid), loadEntries(user.uid)]);
+  }, [user, loadHands, loadEntries]);
 
   return (
     <DataContext.Provider

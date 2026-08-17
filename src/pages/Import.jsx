@@ -3,7 +3,7 @@ import { Upload, Loader2, FileSearch, X, CheckCircle2, AlertTriangle, Trash2 } f
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { parseCoinPokerText } from "../lib/parse";
-import { importHands, resetAllData } from "../lib/firestoreData";
+import { importHands, resetAllData } from "../lib/supabaseData";
 import { PageHeader, fmtMoney, fmtDate } from "../components/ui";
 
 export default function Import() {

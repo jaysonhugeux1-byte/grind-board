@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Diamond, Plus, Trash2, Loader2, Gift } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
-import { addEntry, deleteEntry } from "../lib/firestoreData";
+import { addEntry, deleteEntry } from "../lib/supabaseData";
 import { StatCard, EmptyState, PageHeader, fmtMoney, fmtDate } from "../components/ui";
 
 const TYPE_LABEL = { depot: "Dépôt", retrait: "Retrait", rakeback: "Rakeback" };

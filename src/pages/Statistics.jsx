@@ -6,7 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { EmptyState, PageHeader } from "../components/ui";
 import { aggregateStats, findLeaks, findLeaksByPosition, buildTimeAnalysis, pickLeakExamples } from "../lib/stats";
-import { getHandRaw } from "../lib/firestoreData";
+import { getHandRaw } from "../lib/supabaseData";
 import { getApiKey, getAiModel } from "../lib/aiSettings";
 import { generateImprovementPlan } from "../lib/aiCoach";
 

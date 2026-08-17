@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Spade, Heart, Diamond, Club, Loader2, ChevronDown, ChevronUp, Trash2, Eye } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
-import { deleteHands, deleteHand } from "../lib/firestoreData";
+import { deleteHands, deleteHand } from "../lib/supabaseData";
 import { buildSessions } from "../lib/parse";
 import { EmptyState, PageHeader, fmtMoney, fmtDateTime } from "../components/ui";
 import HandDetailModal from "../components/HandDetailModal";

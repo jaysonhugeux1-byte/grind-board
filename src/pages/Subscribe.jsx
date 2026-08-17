@@ -1,15 +1,9 @@
 import React, { useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Loader2, Check, LogOut, Spade, Bitcoin, CreditCard } from "lucide-react";
+import { Loader2, Check, LogOut, Spade, Bitcoin } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useSubscription } from "../contexts/SubscriptionContext";
-import {
-  createCheckoutSession,
-  createCryptoPayment,
-  openExternalUrl,
-  CRYPTO_PLANS,
-  STRIPE_PRICE_ID,
-} from "../lib/billing";
+import { createCryptoPayment, openExternalUrl, CRYPTO_PLANS } from "../lib/billing";
 
 const FEATURES = [
   "Import illimité de tes mains CoinPoker",
@@ -23,7 +17,7 @@ export default function Subscribe() {
   const { user, signOutUser } = useAuth();
   const { isActive, loading } = useSubscription();
   const [planId, setPlanId] = useState("m3");
-  const [busy, setBusy] = useState(null); // null | "crypto" | "card"
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   // Dès que la notification de paiement a mis l'accès à jour, l'écoute temps réel
@@ -31,17 +25,15 @@ export default function Subscribe() {
   // avoir à redémarrer quoi que ce soit.
   if (!loading && isActive) return <Navigate to="/" replace />;
 
-  async function pay(method) {
-    setBusy(method);
+  async function pay() {
+    setBusy(true);
     setError(null);
     try {
-      const url =
-        method === "crypto" ? await createCryptoPayment(planId) : await createCheckoutSession(user.uid);
-      await openExternalUrl(url);
+      await openExternalUrl(await createCryptoPayment(planId));
     } catch (err) {
       setError(err.message || "Le paiement n'a pas pu être lancé.");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
@@ -85,23 +77,13 @@ export default function Subscribe() {
           ))}
         </ul>
 
-        <button className="btn-primary paywall-cta" onClick={() => pay("crypto")} disabled={!!busy}>
-          {busy === "crypto" ? (
+        <button className="btn-primary paywall-cta" onClick={pay} disabled={busy}>
+          {busy ? (
             <><Loader2 size={15} className="spin" /> Ouverture du paiement…</>
           ) : (
             <><Bitcoin size={15} /> Payer en crypto (USDT, BTC…)</>
           )}
         </button>
-
-        {STRIPE_PRICE_ID && (
-          <button className="btn-secondary paywall-cta-alt" onClick={() => pay("card")} disabled={!!busy}>
-            {busy === "card" ? (
-              <><Loader2 size={14} className="spin" /> Ouverture…</>
-            ) : (
-              <><CreditCard size={14} /> Payer par carte</>
-            )}
-          </button>
-        )}
 
         {busy && (
           <p className="paywall-hint">
