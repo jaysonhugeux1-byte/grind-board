@@ -609,29 +609,15 @@
 </footer>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import {
-    getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
-  import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-  // Configuration web Firebase. Ces valeurs identifient le projet sans rien
-  // autoriser : la sécurité repose sur l'authentification et les règles
-  // Firestore. Elles sont déjà lisibles dans l'application distribuée.
-  const app = initializeApp({
-    apiKey: "AIzaSyAAU2_yni7NCEVtXHk9Qxu-ZsP8HHebARs",
-    authDomain: "grind-board-20980.firebaseapp.com",
-    projectId: "grind-board-20980",
-    storageBucket: "grind-board-20980.firebasestorage.app",
-    messagingSenderId: "259348976371",
-    appId: "1:259348976371:web:a417f6941d331236f99d86",
-  });
-
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-  const functions = getFunctions(app, "europe-west1");
-  const provider = new GoogleAuthProvider();
+  // La clé publiable identifie le projet sans rien autoriser : la sécurité
+  // repose sur les politiques RLS de la base. Elle est de toute façon déjà
+  // présente dans l'application distribuée.
+  const supabase = createClient(
+    "https://yozhxkrpmhtiarneiegl.supabase.co",
+    "sb_publishable_6V4gY9XGmsG1jeu2nDEyVQ__Wo-74g8",
+  );
 
   const $ = (id) => document.getElementById(id);
   const authZone = $("auth-zone");
@@ -654,41 +640,64 @@
   }
 
   // --- état de connexion et d'accès --------------------------------------
-  let stopWatchingAccess = null;
+  let accessChannel = null;
 
   function showAccess(until) {
-    if (!until) {
+    if (!until || until.getTime() <= Date.now()) {
       accessCard.hidden = true;
       return;
     }
-    const date = until.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+    const date = until.toLocaleDateString("fr-FR", {
+      day: "2-digit", month: "long", year: "numeric",
+    });
     accessCard.innerHTML =
       `<strong>Ton accès est actif</strong> jusqu'au ${date}. ` +
       `Tu peux prolonger dès maintenant : le temps acheté s'ajoute à ce qu'il te reste.`;
     accessCard.hidden = false;
   }
 
-  onAuthStateChanged(auth, (user) => {
-    stopWatchingAccess?.();
-    stopWatchingAccess = null;
+  async function watchAccess(user) {
+    if (accessChannel) {
+      supabase.removeChannel(accessChannel);
+      accessChannel = null;
+    }
+    if (!user) {
+      showAccess(null);
+      return;
+    }
 
+    const { data } = await supabase
+      .from("access")
+      .select("access_until")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    showAccess(data?.access_until ? new Date(data.access_until) : null);
+
+    // Le paiement est confirmé côté serveur : l'écoute temps réel met la carte
+    // à jour sans que l'utilisateur ait à recharger la page.
+    accessChannel = supabase
+      .channel(`access-site-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "access", filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          const value = payload.eventType === "DELETE" ? null : payload.new?.access_until;
+          showAccess(value ? new Date(value) : null);
+        },
+      )
+      .subscribe();
+  }
+
+  function renderAuth(user) {
     authZone.hidden = !user;
-    accessCard.hidden = true;
-    if (!user) return;
+    if (user) authEmail.textContent = user.email || "";
+    watchAccess(user);
+  }
 
-    authEmail.textContent = user.email || "";
+  supabase.auth.getSession().then(({ data }) => renderAuth(data.session?.user ?? null));
+  supabase.auth.onAuthStateChange((_event, session) => renderAuth(session?.user ?? null));
 
-    stopWatchingAccess = onSnapshot(
-      doc(db, "users", user.uid, "billing", "access"),
-      (snap) => {
-        const until = snap.exists() ? snap.data().accessUntil?.toDate?.() : null;
-        showAccess(until && until.getTime() > Date.now() ? until : null);
-      },
-      () => showAccess(null)
-    );
-  });
-
-  $("signout").addEventListener("click", () => signOut(auth));
+  $("signout").addEventListener("click", () => supabase.auth.signOut());
 
   // --- achat --------------------------------------------------------------
   const planButtons = [...document.querySelectorAll(".plan-btn")];
@@ -696,38 +705,55 @@
   function setBusy(busy, activeBtn) {
     planButtons.forEach((b) => {
       b.disabled = busy;
-      if (b !== activeBtn) return;
-      b.textContent = busy ? "Ouverture…" : "Choisir";
+      b.textContent = busy && b === activeBtn ? "Ouverture…" : "Choisir";
     });
-    if (!busy) planButtons.forEach((b) => (b.textContent = "Choisir"));
   }
 
   async function buy(planId, btn) {
     payError.hidden = true;
     setBusy(true, btn);
     try {
-      // La connexion sert à rattacher le paiement à un compte : sans elle,
-      // impossible de savoir quelle installation débloquer.
-      if (!auth.currentUser) await signInWithPopup(auth, provider);
+      // La connexion rattache le paiement à un compte : sans elle, impossible
+      // de savoir quelle installation débloquer. Après le retour de Google, la
+      // formule choisie est relue depuis l'URL pour reprendre l'achat là où il
+      // s'était arrêté.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        const retour = new URL(location.href);
+        retour.searchParams.set("plan", planId);
+        await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: retour.toString() },
+        });
+        return; // la page part sur Google, elle reviendra ici
+      }
 
-      const call = httpsCallable(functions, "createCryptoPayment");
-      const { data } = await call({ planId });
+      const { data, error } = await supabase.functions.invoke("create-crypto-payment", {
+        body: { planId },
+      });
+      if (error) throw error;
       if (!data?.url) throw new Error("Le service de paiement n'a pas renvoyé de lien.");
       location.href = data.url;
     } catch (err) {
       setBusy(false);
-      if (err?.code === "auth/popup-closed-by-user" || err?.code === "auth/cancelled-popup-request") return;
-      payError.textContent =
-        err?.message === "internal"
-          ? "Le paiement n'a pas pu être créé. Réessaie dans un instant."
-          : err?.message || "Le paiement n'a pas pu être lancé.";
+      payError.textContent = err?.message || "Le paiement n'a pas pu être lancé.";
       payError.hidden = false;
     }
   }
 
   planButtons.forEach((btn) =>
-    btn.addEventListener("click", () => buy(btn.dataset.plan, btn))
+    btn.addEventListener("click", () => buy(btn.dataset.plan, btn)),
   );
+
+  // Reprise automatique après le détour par Google.
+  const planEnAttente = params.get("plan");
+  if (planEnAttente) {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) return;
+      const btn = planButtons.find((b) => b.dataset.plan === planEnAttente);
+      if (btn) buy(planEnAttente, btn);
+    });
+  }
 </script>
 
 </body>

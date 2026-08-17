@@ -1,0 +1,11 @@
+project_id = "yozhxkrpmhtiarneiegl"
+
+[functions.create-crypto-payment]
+# Le jeton de l'utilisateur est vérifié dans la fonction elle-même.
+verify_jwt = true
+
+[functions.nowpayments-webhook]
+# NOWPayments n'envoie pas de jeton Supabase : la signature HMAC de la
+# notification tient lieu d'authentification. Sans ce réglage, Supabase
+# rejetterait tous les appels avant même d'entrer dans la fonction.
+verify_jwt = false
