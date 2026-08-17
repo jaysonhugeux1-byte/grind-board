@@ -193,7 +193,40 @@
   .plan-duration { font-size: 13.5px; color: var(--text-muted); }
   .plan-price { font-family: var(--font-display); font-size: 30px; font-weight: 700; margin: 6px 0 2px; }
   .plan-unit { font-size: 12px; color: var(--text-muted); }
-  .price-note { font-size: 13px; color: var(--text-muted); margin-top: 22px; }
+  .plan-btn { width: 100%; margin-top: 16px; }
+  .plan-btn[disabled] { opacity: 0.55; cursor: default; }
+  .price-note { font-size: 13px; color: var(--text-muted); margin-top: 22px; max-width: 66ch; }
+  .pay-error {
+    margin-top: 18px; font-size: 13.5px; color: var(--loss);
+    background: rgba(193, 92, 77, 0.12); border: 1px solid rgba(193, 92, 77, 0.3);
+    padding: 10px 13px; border-radius: 9px;
+  }
+
+  /* ---------- connexion / état d'accès ---------- */
+  .header-actions { display: flex; align-items: center; gap: 12px; }
+  .auth-zone { display: flex; align-items: center; gap: 9px; }
+  .auth-email {
+    font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);
+    max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .btn-sm { padding: 6px 12px; font-size: 12.5px; }
+
+  .banner {
+    margin: 18px 0 -18px; padding: 13px 16px; border-radius: 10px;
+    font-size: 13.5px; border: 1px solid;
+  }
+  .banner.ok { background: rgba(95, 174, 121, 0.12); border-color: rgba(95, 174, 121, 0.35); color: var(--win); }
+  .banner.info { background: var(--surface); border-color: var(--border); color: var(--text-muted); }
+
+  .access-card {
+    background: var(--surface); border: 1px solid var(--win); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 26px; font-size: 14px;
+  }
+  .access-card strong { color: var(--win); }
+
+  @media (max-width: 560px) {
+    .auth-email { display: none; }
+  }
 
   /* ---------- pratique ---------- */
   .steps { counter-reset: step; display: grid; gap: 18px; max-width: 66ch; }
@@ -251,9 +284,19 @@
         <span>Suivi de bankroll — CoinPoker</span>
       </span>
     </div>
-    <a class="btn btn-ghost" href="#tarifs">Voir les tarifs</a>
+    <div class="header-actions">
+      <span id="auth-zone" class="auth-zone" hidden>
+        <span id="auth-email" class="auth-email"></span>
+        <button id="signout" class="btn btn-ghost btn-sm">Déconnexion</button>
+      </span>
+      <a class="btn btn-ghost" href="#tarifs">Voir les tarifs</a>
+    </div>
   </div>
 </header>
+
+<div class="wrap">
+  <div id="banner" class="banner" hidden></div>
+</div>
 
 <div class="wrap hero">
   <h1>Ton cash game CoinPoker, <em>enfin mesuré</em>.</h1>
@@ -431,27 +474,35 @@
       Un rachat anticipé s'ajoute au temps qu'il te reste.
     </p>
 
+    <div id="access-card" class="access-card" hidden></div>
+
     <div class="plans">
       <div class="plan">
         <p class="plan-duration">1 mois</p>
         <p class="plan-price">9,90 $</p>
         <p class="plan-unit">9,90 $ par mois</p>
+        <button class="btn btn-ghost plan-btn" data-plan="m1">Choisir</button>
       </div>
       <div class="plan featured">
         <span class="plan-flag">Le plus choisi</span>
         <p class="plan-duration">3 mois</p>
         <p class="plan-price">26,90 $</p>
         <p class="plan-unit">≈ 8,97 $ par mois</p>
+        <button class="btn btn-primary plan-btn" data-plan="m3">Choisir</button>
       </div>
       <div class="plan">
         <p class="plan-duration">12 mois</p>
         <p class="plan-price">94,90 $</p>
         <p class="plan-unit">≈ 7,91 $ par mois</p>
+        <button class="btn btn-ghost plan-btn" data-plan="m12">Choisir</button>
       </div>
     </div>
 
+    <p id="pay-error" class="pay-error" hidden></p>
+
     <p class="price-note">
-      Paiement en crypto (USDT, BTC, et une centaine d'autres) ou par carte bancaire.
+      Le paiement se fait avec ton compte Google — le même que dans l'application, pour que
+      ton accès s'y active tout seul. Paiement en crypto (USDT, BTC, et une centaine d'autres).
       Prix en dollars américains, taxes applicables en sus le cas échéant.
     </p>
   </div>
@@ -553,6 +604,128 @@
     </div>
   </div>
 </footer>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import {
+    getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
+  import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // Configuration web Firebase. Ces valeurs identifient le projet sans rien
+  // autoriser : la sécurité repose sur l'authentification et les règles
+  // Firestore. Elles sont déjà lisibles dans l'application distribuée.
+  const app = initializeApp({
+    apiKey: "AIzaSyAAU2_yni7NCEVtXHk9Qxu-ZsP8HHebARs",
+    authDomain: "grind-board-20980.firebaseapp.com",
+    projectId: "grind-board-20980",
+    storageBucket: "grind-board-20980.firebasestorage.app",
+    messagingSenderId: "259348976371",
+    appId: "1:259348976371:web:a417f6941d331236f99d86",
+  });
+
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const functions = getFunctions(app, "europe-west1");
+  const provider = new GoogleAuthProvider();
+
+  const $ = (id) => document.getElementById(id);
+  const authZone = $("auth-zone");
+  const authEmail = $("auth-email");
+  const accessCard = $("access-card");
+  const banner = $("banner");
+  const payError = $("pay-error");
+
+  // --- bandeau de retour de paiement -------------------------------------
+  const params = new URLSearchParams(location.search);
+  if (params.has("paye")) {
+    banner.className = "banner ok";
+    banner.textContent =
+      "Paiement reçu. Ton accès s'active dès la confirmation sur la blockchain — ouvre l'application, elle se débloque toute seule.";
+    banner.hidden = false;
+  } else if (params.has("annule")) {
+    banner.className = "banner info";
+    banner.textContent = "Paiement annulé. Rien n'a été débité.";
+    banner.hidden = false;
+  }
+
+  // --- état de connexion et d'accès --------------------------------------
+  let stopWatchingAccess = null;
+
+  function showAccess(until) {
+    if (!until) {
+      accessCard.hidden = true;
+      return;
+    }
+    const date = until.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+    accessCard.innerHTML =
+      `<strong>Ton accès est actif</strong> jusqu'au ${date}. ` +
+      `Tu peux prolonger dès maintenant : le temps acheté s'ajoute à ce qu'il te reste.`;
+    accessCard.hidden = false;
+  }
+
+  onAuthStateChanged(auth, (user) => {
+    stopWatchingAccess?.();
+    stopWatchingAccess = null;
+
+    authZone.hidden = !user;
+    accessCard.hidden = true;
+    if (!user) return;
+
+    authEmail.textContent = user.email || "";
+
+    stopWatchingAccess = onSnapshot(
+      doc(db, "users", user.uid, "billing", "access"),
+      (snap) => {
+        const until = snap.exists() ? snap.data().accessUntil?.toDate?.() : null;
+        showAccess(until && until.getTime() > Date.now() ? until : null);
+      },
+      () => showAccess(null)
+    );
+  });
+
+  $("signout").addEventListener("click", () => signOut(auth));
+
+  // --- achat --------------------------------------------------------------
+  const planButtons = [...document.querySelectorAll(".plan-btn")];
+
+  function setBusy(busy, activeBtn) {
+    planButtons.forEach((b) => {
+      b.disabled = busy;
+      if (b !== activeBtn) return;
+      b.textContent = busy ? "Ouverture…" : "Choisir";
+    });
+    if (!busy) planButtons.forEach((b) => (b.textContent = "Choisir"));
+  }
+
+  async function buy(planId, btn) {
+    payError.hidden = true;
+    setBusy(true, btn);
+    try {
+      // La connexion sert à rattacher le paiement à un compte : sans elle,
+      // impossible de savoir quelle installation débloquer.
+      if (!auth.currentUser) await signInWithPopup(auth, provider);
+
+      const call = httpsCallable(functions, "createCryptoPayment");
+      const { data } = await call({ planId });
+      if (!data?.url) throw new Error("Le service de paiement n'a pas renvoyé de lien.");
+      location.href = data.url;
+    } catch (err) {
+      setBusy(false);
+      if (err?.code === "auth/popup-closed-by-user" || err?.code === "auth/cancelled-popup-request") return;
+      payError.textContent =
+        err?.message === "internal"
+          ? "Le paiement n'a pas pu être créé. Réessaie dans un instant."
+          : err?.message || "Le paiement n'a pas pu être lancé.";
+      payError.hidden = false;
+    }
+  }
+
+  planButtons.forEach((btn) =>
+    btn.addEventListener("click", () => buy(btn.dataset.plan, btn))
+  );
+</script>
 
 </body>
 </html>

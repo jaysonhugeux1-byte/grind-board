@@ -30,6 +30,11 @@ const PLANS = {
 
 const PRICE_CURRENCY = "usd";
 
+// Page vitrine. Codée en dur volontairement : si le client pouvait choisir
+// l'adresse de retour, cette fonction deviendrait une redirection ouverte
+// exploitable pour des tentatives d'hameçonnage.
+const SITE_URL = "https://jaysonhugeux1-byte.github.io/grind-board";
+
 // ---------------------------------------------------------------------------
 
 // Prolonge l'accès de `months` mois et pose la date d'expiration dans un claim
@@ -70,8 +75,13 @@ async function grantAccess(uid, months, context) {
 // ---------------------------------------------------------------------------
 
 // Crée une facture NOWPayments et renvoie l'URL de paiement hébergée.
+// cors: true — la fonction est appelée depuis deux origines qu'on ne peut pas
+// lister à l'avance : la page vitrine (github.io) et l'application de bureau,
+// qui sert son interface sur un port local tiré au hasard à chaque lancement.
+// Ouvrir l'origine ne relâche rien : le contrôle réel est l'authentification
+// vérifiée juste en dessous.
 exports.createCryptoPayment = onCall(
-  { region: REGION, secrets: [NOWPAYMENTS_API_KEY] },
+  { region: REGION, secrets: [NOWPAYMENTS_API_KEY], cors: true },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Connexion requise.");
@@ -102,6 +112,8 @@ exports.createCryptoPayment = onCall(
           order_id: orderId,
           order_description: `Grand Livre — ${plan.label}`,
           ipn_callback_url: ipnUrl,
+          success_url: `${SITE_URL}/?paye=1`,
+          cancel_url: `${SITE_URL}/?annule=1`,
         }),
       });
     } catch (err) {
