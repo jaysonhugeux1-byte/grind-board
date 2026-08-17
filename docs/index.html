@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Grand Livre — Suivi de bankroll pour le cash game CoinPoker</title>
+<meta name="description" content="Logiciel de suivi de bankroll et d'analyse de mains pour le cash game CoinPoker : replayer visuel, statistiques avancées, détection de leaks et coach IA." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #12191b;
+    --surface: #1a2325;
+    --surface-2: #212c2f;
+    --felt: #1f5e4a;
+    --felt-light: #2d7a5f;
+    --gold: #c9a227;
+    --gold-soft: #e0c25f;
+    --text: #ede9dc;
+    --text-muted: #8b948f;
+    --win: #5fae79;
+    --loss: #c15c4d;
+    --border: #2a3538;
+    --font-display: "Space Grotesk", sans-serif;
+    --font-mono: "IBM Plex Mono", monospace;
+    --font-body: "Inter", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--gold); }
+  h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+  .mono { font-family: var(--font-mono); }
+
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 22px; }
+  section { padding: 72px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  /* ---------- en-tête ---------- */
+  header { padding: 22px 0; border-bottom: 1px solid var(--border); }
+  .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .brand-mark {
+    width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(155deg, var(--felt-light), var(--felt));
+    border: 1px solid var(--gold); color: var(--gold-soft);
+    font-family: var(--font-display); font-size: 19px; font-weight: 700;
+  }
+  .brand-text strong { display: block; font-family: var(--font-display); font-size: 16px; }
+  .brand-text span { font-size: 11.5px; color: var(--text-muted); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    border-radius: 9px; padding: 10px 18px; font-size: 14px; font-weight: 600;
+    font-family: var(--font-body); cursor: pointer; text-decoration: none;
+    border: 1px solid transparent; transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-primary { background: var(--gold); color: #1a1305; }
+  .btn-primary:hover { background: var(--gold-soft); }
+  .btn-ghost { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--gold-soft); }
+
+  /* ---------- accroche ---------- */
+  .hero { padding: 84px 0 64px; text-align: center; }
+  .hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.15; margin-bottom: 16px; }
+  .hero h1 em { font-style: normal; color: var(--gold); }
+  .hero p {
+    font-size: 16.5px; color: var(--text-muted); max-width: 60ch;
+    margin: 0 auto 28px; line-height: 1.65;
+  }
+  .hero-actions { display: flex; gap: 11px; justify-content: center; flex-wrap: wrap; }
+  .hero-note { font-size: 12.5px; color: var(--text-muted); margin-top: 16px; }
+
+  /* ---------- table de poker ---------- */
+  .table-shell {
+    margin-top: 52px; padding: 16px; border-radius: 26px;
+    background: linear-gradient(155deg, #2a1b10, #1a120b);
+    box-shadow: inset 0 0 0 1px rgba(201, 162, 39, 0.25), 0 14px 40px rgba(0,0,0,0.4);
+  }
+  .felt {
+    position: relative; width: 100%; padding-top: 50%; border-radius: 50%;
+    background: radial-gradient(ellipse at center, var(--felt-light) 0%, var(--felt) 68%, #163f32 100%);
+    box-shadow: inset 0 0 0 6px rgba(0,0,0,0.25), inset 0 0 44px rgba(0,0,0,0.35);
+  }
+  .board {
+    position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center; gap: 9px;
+  }
+  .board-cards { display: flex; gap: 5px; }
+  .pot {
+    font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; color: var(--gold-soft);
+    background: rgba(0,0,0,0.38); padding: 3px 11px; border-radius: 999px;
+  }
+  .card {
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+    background: var(--text); border-radius: 4px; font-family: var(--font-mono);
+    font-weight: 800; color: #1a2325; line-height: 1; border: 1px solid rgba(0,0,0,0.15);
+    width: 34px; height: 47px; font-size: 14px;
+  }
+  .card.red { color: var(--loss); }
+  .card.sm { width: 19px; height: 26px; font-size: 8.5px; }
+  .card.back {
+    background: repeating-linear-gradient(135deg, #2d3a3d, #2d3a3d 3px, #1a2325 3px, #1a2325 6px);
+    border-color: var(--border);
+  }
+  .seat-slot { position: absolute; transform: translate(-50%, -50%); }
+  .seat {
+    position: relative; width: 92px; padding: 5px 6px 6px; border-radius: 10px;
+    background: rgba(18, 25, 27, 0.94); border: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  }
+  .seat.hero { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 3px 10px rgba(201,162,39,0.25); }
+  .seat.folded { opacity: 0.4; }
+  .seat-head { display: flex; align-items: center; gap: 4px; }
+  .seat-pos {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 700; color: var(--gold);
+    background: rgba(201,162,39,0.14); border-radius: 4px; padding: 1px 4px;
+  }
+  .seat-name {
+    font-family: var(--font-mono); font-size: 10.5px; max-width: 56px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .seat.hero .seat-name { color: var(--gold-soft); font-weight: 700; }
+  .seat-cards { display: flex; gap: 3px; min-height: 26px; align-items: center; }
+  .seat-stack { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); }
+  .seat-folded-label { font-size: 9.5px; color: var(--text-muted); font-style: italic; }
+  .dealer {
+    position: absolute; top: -8px; right: -8px; width: 17px; height: 17px; border-radius: 50%;
+    background: var(--gold-soft); color: #2a2107; font-size: 9.5px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .chip {
+    position: absolute; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.55); border: 1px solid var(--gold-soft); color: var(--gold-soft);
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  }
+  .caption { text-align: center; font-size: 12.5px; color: var(--text-muted); margin-top: 14px; }
+
+  /* ---------- sections ---------- */
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.13em;
+    text-transform: uppercase; color: var(--gold-soft); margin-bottom: 10px;
+  }
+  section h2 { font-size: 26px; margin-bottom: 12px; }
+  .lead { color: var(--text-muted); max-width: 62ch; margin: 0 0 32px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 16px; }
+  .feature {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .feature h3 { font-size: 15px; margin-bottom: 7px; }
+  .feature p { font-size: 13.5px; color: var(--text-muted); margin: 0; }
+
+  /* ---------- coach IA ---------- */
+  .ai-demo {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 22px; margin-top: 8px;
+  }
+  .ai-line { font-size: 13.5px; margin: 0 0 10px; }
+  .ai-line:last-child { margin-bottom: 0; }
+  .ai-verdict { color: var(--gold); font-weight: 700; }
+  .ai-tag {
+    display: inline-block; font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--gold-soft); background: rgba(201,162,39,0.12);
+    padding: 2px 8px; border-radius: 999px; margin-bottom: 14px;
+  }
+
+  /* ---------- tarifs ---------- */
+  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+  .plan {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px 20px; text-align: center; position: relative;
+  }
+  .plan.featured { border-color: var(--gold); }
+  .plan-flag {
+    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+    background: var(--gold); color: #1a1305; font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 11px; border-radius: 999px;
+  }
+  .plan-duration { font-size: 13.5px; color: var(--text-muted); }
+  .plan-price { font-family: var(--font-display); font-size: 30px; font-weight: 700; margin: 6px 0 2px; }
+  .plan-unit { font-size: 12px; color: var(--text-muted); }
+  .price-note { font-size: 13px; color: var(--text-muted); margin-top: 22px; }
+
+  /* ---------- pratique ---------- */
+  .steps { counter-reset: step; display: grid; gap: 18px; max-width: 66ch; }
+  .step { display: flex; gap: 14px; align-items: flex-start; }
+  .step-num {
+    counter-increment: step; flex-shrink: 0;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--surface-2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 12px; color: var(--gold-soft);
+  }
+  .step-num::before { content: counter(step); }
+  .step p { margin: 0; font-size: 14px; }
+  .step strong { display: block; margin-bottom: 2px; }
+  .step span { color: var(--text-muted); font-size: 13.5px; }
+
+  .faq { display: grid; gap: 20px; max-width: 68ch; margin-top: 8px; }
+  .faq h3 { font-size: 14.5px; margin-bottom: 5px; }
+  .faq p { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+
+  /* ---------- pied de page ---------- */
+  footer { padding: 40px 0 56px; border-top: 1px solid var(--border); }
+  .footer-inner {
+    display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--text-muted);
+  }
+  footer p { margin: 0 0 5px; }
+
+  @media (max-width: 720px) {
+    section { padding: 56px 0; }
+    /* Le feutre devient nettement plus haut : à cette largeur, une ellipse
+       aplatie ne laisse pas assez de place verticale entre les six sièges. */
+    .felt { padding-top: 96%; }
+    .board { top: 42%; }
+    .board-cards { gap: 3px; }
+    .seat { width: 62px; padding: 4px 4px 5px; }
+    .seat-name { max-width: 34px; font-size: 9.5px; }
+    .seat-pos { font-size: 8px; }
+    .seat-stack { font-size: 9.5px; }
+    .seat-cards { min-height: 21px; }
+    .card { width: 25px; height: 34px; font-size: 10.5px; }
+    .card.sm { width: 15px; height: 21px; font-size: 7px; }
+    .chip { font-size: 9px; padding: 1px 5px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap header-inner">
+    <div class="brand">
+      <span class="brand-mark">₮</span>
+      <span class="brand-text">
+        <strong>Grand Livre</strong>
+        <span>Suivi de bankroll — CoinPoker</span>
+      </span>
+    </div>
+    <a class="btn btn-ghost" href="#tarifs">Voir les tarifs</a>
+  </div>
+</header>
+
+<div class="wrap hero">
+  <h1>Ton cash game CoinPoker, <em>enfin mesuré</em>.</h1>
+  <p>
+    Importe tes mains, rejoue-les sur une vraie table, et découvre où part réellement ton argent.
+    Grand Livre calcule ton EV, traque tes fuites et te dit quoi corriger en priorité.
+  </p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="#tarifs">Commencer</a>
+    <a class="btn btn-ghost" href="https://github.com/jaysonhugeux1-byte/grind-board/releases/latest">Télécharger pour Windows</a>
+  </div>
+  <p class="hero-note">Application de bureau Windows · Paiement en crypto ou par carte</p>
+
+  <div class="table-shell">
+    <div class="felt">
+      <div class="board">
+        <div class="board-cards">
+          <span class="card red">7<span>♥</span></span>
+          <span class="card red">8<span>♦</span></span>
+          <span class="card">2<span>♣</span></span>
+          <span class="card">K<span>♣</span></span>
+          <span class="card red">2<span>♥</span></span>
+        </div>
+        <span class="pot">Pot : ₮46</span>
+      </div>
+
+      <div class="seat-slot" style="left: 50%; top: 89%;">
+        <div class="seat hero">
+          <span class="dealer">D</span>
+          <span class="seat-head"><span class="seat-pos">BTN</span><span class="seat-name">Toi</span></span>
+          <span class="seat-cards">
+            <span class="card sm red">A<span>♥</span></span>
+            <span class="card sm red">K<span>♦</span></span>
+          </span>
+          <span class="seat-stack">₮123.50</span>
+        </div>
+      </div>
+
+      <div class="seat-slot" style="left: 8.5%; top: 69.5%;">
+        <div class="seat folded">
+          <span class="seat-head"><span class="seat-pos">SB</span><span class="seat-name">reg_nl50</span></span>
+          <span class="seat-cards"><span class="seat-folded-label">couché</span></span>
+          <span class="seat-stack">₮119.50</span>
+        </div>
+      </div>
+
+      <div class="seat-slot" style="left: 8.5%; top: 30.5%;">
+        <div class="seat folded">
+          <span class="seat-head"><span class="seat-pos">BB</span><span class="seat-name">fishtown7</span></span>
+          <span class="seat-cards"><span class="seat-folded-label">couché</span></span>
+          <span class="seat-stack">₮59.50</span>
+        </div>
+      </div>
+
+      <div class="seat-slot" style="left: 50%; top: 11%;">
+        <div class="seat folded">
+          <span class="seat-head"><span class="seat-pos">UTG</span><span class="seat-name">villain1x9</span></span>
+          <span class="seat-cards"><span class="seat-folded-label">couché</span></span>
+          <span class="seat-stack">₮98.50</span>
+        </div>
+      </div>
+
+      <div class="seat-slot" style="left: 91.5%; top: 30.5%;">
+        <div class="seat folded">
+          <span class="seat-head"><span class="seat-pos">HJ</span><span class="seat-name">grinder22</span></span>
+          <span class="seat-cards"><span class="seat-folded-label">couché</span></span>
+          <span class="seat-stack">₮110.25</span>
+        </div>
+      </div>
+
+      <div class="seat-slot" style="left: 91.5%; top: 69.5%;">
+        <div class="seat">
+          <span class="seat-head"><span class="seat-pos">CO</span><span class="seat-name">shortstak</span></span>
+          <span class="seat-cards">
+            <span class="card sm">Q<span>♣</span></span>
+            <span class="card sm red">Q<span>♦</span></span>
+          </span>
+          <span class="seat-stack">₮0</span>
+        </div>
+      </div>
+
+      <span class="chip" style="left: 71%; top: 62%;">₮22</span>
+    </div>
+  </div>
+  <p class="caption">Le replayer rejoue chaque main pas à pas : mises, tapis, cartes révélées à l'abattage.</p>
+</div>
+
+<section id="fonctionnalites">
+  <div class="wrap">
+    <p class="eyebrow">Ce que fait le logiciel</p>
+    <h2>Des chiffres que tu ne peux pas obtenir autrement</h2>
+    <p class="lead">
+      CoinPoker anonymise les adversaires, ce qui rend les trackers classiques inutilisables.
+      Grand Livre est construit autour de cette contrainte : tout ce qu'il mesure porte sur ton propre jeu.
+    </p>
+
+    <div class="grid">
+      <div class="feature">
+        <h3>Replayer visuel</h3>
+        <p>
+          Chaque main rejouée sur une table complète, action par action, avec lecture automatique
+          et navigation par rue. Les piles, les mises et le pot suivent en temps réel.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>EV réelle, pas approximative</h3>
+        <p>
+          Sur les tapis, l'équité est calculée à partir des vraies cartes et du board connu,
+          en multiway comme en tête-à-tête. Tu vois ce que tu aurais dû gagner, pas juste ce qui est tombé.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Détection de fuites</h3>
+        <p>
+          VPIP, PFR, 3-bet, c-bet, fold to c-bet, WTSD, W$SD — comparés aux repères des petites
+          limites, globalement et position par position.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Ranges par situation</h3>
+        <p>
+          Choisis ta position et ce qu'ont fait les joueurs avant toi — limp, relance, fold — et
+          compare ta range réelle à une référence ou à la tienne.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Bankroll et rake</h3>
+        <p>
+          Dépôts, retraits, rakeback, et un rake calculé au prorata de ta contribution au pot —
+          pas la totalité du rake de la table.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Synchronisation</h3>
+        <p>
+          Tes mains sont sauvegardées et disponibles depuis n'importe quel appareil,
+          avec connexion par compte Google.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="coach">
+  <div class="wrap">
+    <p class="eyebrow">Coach IA</p>
+    <h2>Une explication, pas seulement un chiffre</h2>
+    <p class="lead">
+      Savoir que ton fold-to-3-bet est trop élevé ne dit pas quoi faire. Le coach analyse la main
+      ou l'ensemble de tes statistiques et explique la décision en jeu.
+    </p>
+
+    <div class="ai-demo">
+      <span class="ai-tag">Exemple d'analyse de main</span>
+      <p class="ai-line">
+        <strong>Turn.</strong> Après ta c-bet flop suivie, le K♣ améliore ta range bien plus que
+        la sienne : c'est une carte que tu dois attaquer. Checker ici laisse passer un tour de mise
+        de valeur et te rend lisible sur les rivières où tu mises enfin.
+      </p>
+      <p class="ai-line">
+        <strong>À la place.</strong> Miser environ deux tiers du pot. Sa range de call flop contient
+        beaucoup de paires moyennes et de tirages qui paient encore une fois.
+      </p>
+      <p class="ai-line ai-verdict">Verdict : Erreur significative</p>
+    </div>
+  </div>
+</section>
+
+<section id="tarifs">
+  <div class="wrap">
+    <p class="eyebrow">Tarifs</p>
+    <h2>Accès prépayé, sans engagement</h2>
+    <p class="lead">
+      Aucun prélèvement automatique : tu achètes une durée, elle expire, tu décides de continuer ou non.
+      Un rachat anticipé s'ajoute au temps qu'il te reste.
+    </p>
+
+    <div class="plans">
+      <div class="plan">
+        <p class="plan-duration">1 mois</p>
+        <p class="plan-price">9,90 $</p>
+        <p class="plan-unit">9,90 $ par mois</p>
+      </div>
+      <div class="plan featured">
+        <span class="plan-flag">Le plus choisi</span>
+        <p class="plan-duration">3 mois</p>
+        <p class="plan-price">26,90 $</p>
+        <p class="plan-unit">≈ 8,97 $ par mois</p>
+      </div>
+      <div class="plan">
+        <p class="plan-duration">12 mois</p>
+        <p class="plan-price">94,90 $</p>
+        <p class="plan-unit">≈ 7,91 $ par mois</p>
+      </div>
+    </div>
+
+    <p class="price-note">
+      Paiement en crypto (USDT, BTC, et une centaine d'autres) ou par carte bancaire.
+      Prix en dollars américains, taxes applicables en sus le cas échéant.
+    </p>
+  </div>
+</section>
+
+<section id="demarrer">
+  <div class="wrap">
+    <p class="eyebrow">Comment ça marche</p>
+    <h2>Trois étapes</h2>
+
+    <div class="steps">
+      <div class="step">
+        <span class="step-num"></span>
+        <p>
+          <strong>Installe l'application</strong>
+          <span>Téléchargement Windows depuis la page des versions. Connexion par compte Google.</span>
+        </p>
+      </div>
+      <div class="step">
+        <span class="step-num"></span>
+        <p>
+          <strong>Choisis une durée et paie</strong>
+          <span>Le paiement s'ouvre dans ton navigateur. L'accès se débloque dès la confirmation.</span>
+        </p>
+      </div>
+      <div class="step">
+        <span class="step-num"></span>
+        <p>
+          <strong>Importe tes mains</strong>
+          <span>Colle ou dépose tes historiques CoinPoker. Tout est analysé immédiatement.</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="questions">
+  <div class="wrap">
+    <p class="eyebrow">Questions fréquentes</p>
+    <h2>Bon à savoir</h2>
+
+    <div class="faq">
+      <div>
+        <h3>Sur quels systèmes ça tourne ?</h3>
+        <p>Windows uniquement pour le moment.</p>
+      </div>
+      <div>
+        <h3>Puis-je suivre mes adversaires ?</h3>
+        <p>
+          Non, et aucun logiciel ne le peut sur CoinPoker : les identifiants des joueurs changent à
+          chaque main. Grand Livre mesure les tendances globales de la table, jamais un joueur nommé.
+        </p>
+      </div>
+      <div>
+        <h3>Le coach IA est-il inclus ?</h3>
+        <p>
+          La fonctionnalité est incluse. Elle utilise ta propre clé API Anthropic, que tu renseignes
+          dans les paramètres — tu ne paies que ta consommation réelle, directement à Anthropic.
+        </p>
+      </div>
+      <div>
+        <h3>Que se passe-t-il quand mon accès expire ?</h3>
+        <p>
+          Tes données restent intactes et consultables. Seul l'ajout de nouvelles mains est suspendu
+          jusqu'au rachat d'une durée.
+        </p>
+      </div>
+      <div>
+        <h3>Remboursement</h3>
+        <!-- À CONFIRMER : politique de remboursement. Adapte le délai si tu veux autre chose. -->
+        <p>
+          Si le logiciel ne fonctionne pas chez toi, écris-moi dans les 14 jours suivant l'achat et
+          je te rembourse intégralement.
+        </p>
+      </div>
+      <div>
+        <h3>Contact</h3>
+        <!-- À REMPLACER : adresse de contact publique. -->
+        <p>
+          Par courriel à <a href="mailto:CONTACT@EXEMPLE.COM">CONTACT@EXEMPLE.COM</a>, ou via les
+          <a href="https://github.com/jaysonhugeux1-byte/grind-board/issues">tickets GitHub</a>.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap footer-inner">
+    <div>
+      <p><strong>Grand Livre</strong> — suivi de bankroll pour le cash game.</p>
+      <!-- À REMPLACER : identité du vendeur (nom ou raison sociale, statut, numéro d'immatriculation
+           s'il existe, adresse). Ces mentions sont exigées par le processeur de paiement et par la loi. -->
+      <p>Éditeur : NOM DU VENDEUR — STATUT — IMMATRICULATION — ADRESSE</p>
+    </div>
+    <div>
+      <p>Grand Livre est un outil d'analyse. Ce n'est pas un site de jeu et il ne permet pas de miser.</p>
+      <p>Non affilié à CoinPoker.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
