@@ -2,7 +2,9 @@ import React from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import RequireSubscription from "./components/RequireSubscription";
 import Login from "./pages/Login";
+import Subscribe from "./pages/Subscribe";
 import Dashboard from "./pages/Dashboard";
 import Import from "./pages/Import";
 import Sessions from "./pages/Sessions";
@@ -20,9 +22,19 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
+        path="/subscribe"
         element={
           <ProtectedRoute>
-            <Layout />
+            <Subscribe />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <RequireSubscription>
+              <Layout />
+            </RequireSubscription>
           </ProtectedRoute>
         }
       >

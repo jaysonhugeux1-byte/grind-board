@@ -1,7 +1,60 @@
 import React, { useState } from "react";
-import { Eye, EyeOff, Check, ExternalLink } from "lucide-react";
+import { Eye, EyeOff, Check, ExternalLink, Loader2 } from "lucide-react";
 import { PageHeader } from "../components/ui";
 import { getApiKey, setApiKey, getAiModel, setAiModel, AI_MODELS } from "../lib/aiSettings";
+import { useSubscription } from "../contexts/SubscriptionContext";
+import { createPortalLink, openExternalUrl } from "../lib/billing";
+
+function SubscriptionCard() {
+  const { isTrialing, currentPeriodEnd, cancelAtPeriodEnd } = useSubscription();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function openPortal() {
+    setBusy(true);
+    setError(null);
+    try {
+      const url = await createPortalLink();
+      await openExternalUrl(url);
+    } catch (err) {
+      setError(err.message || "Ouverture du portail impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const dateLabel = currentPeriodEnd
+    ? currentPeriodEnd.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })
+    : null;
+
+  return (
+    <div className="card">
+      <div className="card-title-row"><h2>Abonnement</h2></div>
+
+      <div className="sub-status" style={{ marginBottom: 10 }}>
+        <span className={`sub-badge ${isTrialing ? "trial" : "active"}`}>
+          {isTrialing ? "Essai" : "Actif"}
+        </span>
+        {dateLabel && (
+          <span className="muted">
+            {cancelAtPeriodEnd ? "Se termine le" : isTrialing ? "Essai jusqu'au" : "Renouvellement le"} {dateLabel}
+          </span>
+        )}
+      </div>
+
+      <p className="dashboard-hint" style={{ marginBottom: 14 }}>
+        Changer de moyen de paiement, récupérer tes factures ou résilier se fait depuis le portail
+        sécurisé Stripe.
+      </p>
+
+      <button className="btn-secondary" onClick={openPortal} disabled={busy}>
+        {busy ? <><Loader2 size={14} className="spin" /> Ouverture…</> : <>Gérer mon abonnement <ExternalLink size={13} /></>}
+      </button>
+
+      {error && <p className="alert-error" style={{ marginTop: 12 }}>{error}</p>}
+    </div>
+  );
+}
 
 export default function Settings() {
   const [key, setKey] = useState(getApiKey());
@@ -18,7 +71,9 @@ export default function Settings() {
 
   return (
     <div className="section">
-      <PageHeader title="Paramètres" subtitle="Configuration de l'analyse de mains par intelligence artificielle" />
+      <PageHeader title="Paramètres" subtitle="Abonnement et configuration de l'analyse de mains par IA" />
+
+      <SubscriptionCard />
 
       <div className="card">
         <div className="card-title-row"><h2>Coach IA (analyse de mains)</h2></div>

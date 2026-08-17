@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, dialog } = require("electron");
+const { app, BrowserWindow, session, dialog, ipcMain, shell } = require("electron");
 const path = require("path");
 const http = require("http");
 const fs = require("fs");
@@ -45,6 +45,27 @@ function startStaticServer(rootDir) {
     server.on("error", reject);
   });
 }
+
+// Ouverture d'une URL dans le navigateur du système (paiement / portail Stripe).
+//
+// shell.openExternal lance ce que le système associe au protocole demandé : lui
+// passer une URL non vérifiée reviendrait à donner au renderer le droit de
+// démarrer n'importe quel programme. D'où la double restriction ci-dessous :
+// HTTPS uniquement, et seulement les domaines de paiement Stripe.
+const ALLOWED_EXTERNAL_HOSTS = ["checkout.stripe.com", "billing.stripe.com"];
+
+ipcMain.handle("open-external", async (_event, rawUrl) => {
+  let url;
+  try {
+    url = new URL(String(rawUrl));
+  } catch {
+    throw new Error("URL invalide.");
+  }
+  if (url.protocol !== "https:" || !ALLOWED_EXTERNAL_HOSTS.includes(url.hostname)) {
+    throw new Error(`Ouverture refusée pour ${url.hostname}.`);
+  }
+  await shell.openExternal(url.toString());
+});
 
 function createWindow(startUrl) {
   const win = new BrowserWindow({

@@ -105,6 +105,48 @@ body {
   font-family: var(--font-body);
 }
 .btn-google:hover { background: #f2f2f2; }
+
+/* ---------- Paywall / abonnement ---------- */
+
+.paywall-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.paywall-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 34px 32px; max-width: 430px; width: 100%; text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+}
+.paywall-card h1 { font-family: var(--font-display); font-size: 22px; margin: 0 0 8px; }
+.paywall-intro { font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 20px; }
+.paywall-price {
+  font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--gold);
+  margin-bottom: 20px;
+}
+.paywall-features {
+  list-style: none; padding: 0; margin: 0 0 24px; width: 100%;
+  display: flex; flex-direction: column; gap: 9px; text-align: left;
+}
+.paywall-features li {
+  display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text); line-height: 1.45;
+}
+.paywall-features svg { color: var(--win); flex-shrink: 0; margin-top: 1px; }
+.paywall-cta { width: 100%; justify-content: center; padding: 11px 16px; font-size: 14px; }
+.paywall-hint { font-size: 12px; color: var(--text-muted); line-height: 1.55; margin: 12px 0 0; }
+.paywall-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border);
+}
+.paywall-footer .muted {
+  display: flex; align-items: center; gap: 7px; font-size: 12px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.paywall-footer .avatar { flex-shrink: 0; }
+
+.sub-status { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.sub-badge {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px;
+}
+.sub-badge.active { background: rgba(95, 174, 121, 0.16); color: var(--win); }
+.sub-badge.trial { background: rgba(201, 162, 39, 0.16); color: var(--gold); }
 .login-error { color: var(--loss); font-size: 12.5px; margin-top: 14px; }
 
 /* ---------- Page bits ---------- */
