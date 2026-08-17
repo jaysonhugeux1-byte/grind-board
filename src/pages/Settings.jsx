@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { Eye, EyeOff, Check, ExternalLink, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "../components/ui";
 import { getApiKey, setApiKey, getAiModel, setAiModel, AI_MODELS } from "../lib/aiSettings";
 import { useSubscription } from "../contexts/SubscriptionContext";
 import { createPortalLink, openExternalUrl } from "../lib/billing";
 
 function SubscriptionCard() {
-  const { isTrialing, currentPeriodEnd, cancelAtPeriodEnd } = useSubscription();
+  const { subscription, isTrialing, currentPeriodEnd, cancelAtPeriodEnd, prepaidUntil } =
+    useSubscription();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -23,33 +25,49 @@ function SubscriptionCard() {
     }
   }
 
-  const dateLabel = currentPeriodEnd
-    ? currentPeriodEnd.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })
-    : null;
+  const fmt = (d) =>
+    d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+
+  // L'accès prépayé (crypto) n'a pas de portail de gestion : il n'y a rien à
+  // résilier, il expire tout seul. On propose simplement de le prolonger.
+  const isPrepaid = !subscription && !!prepaidUntil;
 
   return (
     <div className="card">
-      <div className="card-title-row"><h2>Abonnement</h2></div>
+      <div className="card-title-row"><h2>Accès</h2></div>
 
       <div className="sub-status" style={{ marginBottom: 10 }}>
         <span className={`sub-badge ${isTrialing ? "trial" : "active"}`}>
-          {isTrialing ? "Essai" : "Actif"}
+          {isTrialing ? "Essai" : isPrepaid ? "Prépayé" : "Actif"}
         </span>
-        {dateLabel && (
+        {currentPeriodEnd && (
           <span className="muted">
-            {cancelAtPeriodEnd ? "Se termine le" : isTrialing ? "Essai jusqu'au" : "Renouvellement le"} {dateLabel}
+            {isPrepaid
+              ? `Valable jusqu'au ${fmt(prepaidUntil)}`
+              : `${cancelAtPeriodEnd ? "Se termine le" : isTrialing ? "Essai jusqu'au" : "Renouvellement le"} ${fmt(currentPeriodEnd)}`}
           </span>
         )}
       </div>
 
-      <p className="dashboard-hint" style={{ marginBottom: 14 }}>
-        Changer de moyen de paiement, récupérer tes factures ou résilier se fait depuis le portail
-        sécurisé Stripe.
-      </p>
-
-      <button className="btn-secondary" onClick={openPortal} disabled={busy}>
-        {busy ? <><Loader2 size={14} className="spin" /> Ouverture…</> : <>Gérer mon abonnement <ExternalLink size={13} /></>}
-      </button>
+      {isPrepaid ? (
+        <>
+          <p className="dashboard-hint" style={{ marginBottom: 14 }}>
+            Ton accès a été payé en crypto. Il n'y a aucun prélèvement automatique : tu peux le
+            prolonger quand tu veux, le temps restant s'ajoute à ce qu'il te reste.
+          </p>
+          <Link to="/subscribe" className="btn-secondary">Prolonger mon accès</Link>
+        </>
+      ) : (
+        <>
+          <p className="dashboard-hint" style={{ marginBottom: 14 }}>
+            Changer de moyen de paiement, récupérer tes factures ou résilier se fait depuis le portail
+            sécurisé Stripe.
+          </p>
+          <button className="btn-secondary" onClick={openPortal} disabled={busy}>
+            {busy ? <><Loader2 size={14} className="spin" /> Ouverture…</> : <>Gérer mon abonnement <ExternalLink size={13} /></>}
+          </button>
+        </>
+      )}
 
       {error && <p className="alert-error" style={{ marginTop: 12 }}>{error}</p>}
     </div>

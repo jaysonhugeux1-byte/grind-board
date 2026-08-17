@@ -11,8 +11,26 @@ import { app, db } from "../firebase";
 // Tarif Stripe auquel on abonne l'utilisateur (identifiant "price_...", pas "prod_...").
 export const STRIPE_PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID || "";
 
-// Région où l'extension a déployé ses Cloud Functions (choisie à l'installation).
-const FUNCTIONS_REGION = import.meta.env.VITE_FUNCTIONS_REGION || "us-central1";
+// Région des Cloud Functions. Doit correspondre à la constante REGION de
+// functions/index.js (et à la région choisie si l'extension Stripe est installée).
+const FUNCTIONS_REGION = import.meta.env.VITE_FUNCTIONS_REGION || "europe-west1";
+
+// Formules d'accès prépayé. Les montants affichés ici ne servent QU'À L'AFFICHAGE :
+// le prix réellement facturé est décidé côté serveur, dans functions/index.js.
+export const CRYPTO_PLANS = [
+  { id: "m1", label: "1 mois", price: "9,90 $", note: null },
+  { id: "m3", label: "3 mois", price: "26,90 $", note: "≈ 9 $ / mois" },
+  { id: "m12", label: "12 mois", price: "94,90 $", note: "≈ 7,90 $ / mois" },
+];
+
+// Demande une facture crypto et renvoie l'URL de paiement hébergée par NOWPayments.
+export async function createCryptoPayment(planId) {
+  const functions = getFunctions(app, FUNCTIONS_REGION);
+  const call = httpsCallable(functions, "createCryptoPayment");
+  const { data } = await call({ planId });
+  if (!data?.url) throw new Error("Le service de paiement n'a pas renvoyé de lien.");
+  return data.url;
+}
 
 // Où Stripe renvoie le navigateur après paiement. La valeur importe peu sur le
 // plan fonctionnel : l'application se débloque toute seule dès que le webhook a

@@ -52,7 +52,12 @@ function startStaticServer(rootDir) {
 // passer une URL non vérifiée reviendrait à donner au renderer le droit de
 // démarrer n'importe quel programme. D'où la double restriction ci-dessous :
 // HTTPS uniquement, et seulement les domaines de paiement Stripe.
-const ALLOWED_EXTERNAL_HOSTS = ["checkout.stripe.com", "billing.stripe.com"];
+const ALLOWED_EXTERNAL_HOSTS = [
+  "checkout.stripe.com",
+  "billing.stripe.com",
+  "nowpayments.io",
+  "www.nowpayments.io",
+];
 
 ipcMain.handle("open-external", async (_event, rawUrl) => {
   let url;

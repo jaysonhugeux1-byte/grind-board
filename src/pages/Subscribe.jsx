@@ -1,11 +1,15 @@
 import React, { useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Loader2, Check, LogOut, Spade } from "lucide-react";
+import { Loader2, Check, LogOut, Spade, Bitcoin, CreditCard } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useSubscription } from "../contexts/SubscriptionContext";
-import { createCheckoutSession, openExternalUrl } from "../lib/billing";
-
-const PLAN_PRICE = import.meta.env.VITE_PLAN_PRICE_LABEL || "9,90 € / mois";
+import {
+  createCheckoutSession,
+  createCryptoPayment,
+  openExternalUrl,
+  CRYPTO_PLANS,
+  STRIPE_PRICE_ID,
+} from "../lib/billing";
 
 const FEATURES = [
   "Import illimité de tes mains CoinPoker",
@@ -18,31 +22,33 @@ const FEATURES = [
 export default function Subscribe() {
   const { user, signOutUser } = useAuth();
   const { isActive, loading } = useSubscription();
-  const [busy, setBusy] = useState(false);
+  const [planId, setPlanId] = useState("m3");
+  const [busy, setBusy] = useState(null); // null | "crypto" | "card"
   const [error, setError] = useState(null);
 
-  // Dès que le webhook Stripe a mis l'abonnement à jour, l'écoute temps réel du
-  // contexte bascule isActive et l'utilisateur repart dans l'application sans
+  // Dès que la notification de paiement a mis l'accès à jour, l'écoute temps réel
+  // du contexte bascule isActive et l'utilisateur repart dans l'application sans
   // avoir à redémarrer quoi que ce soit.
   if (!loading && isActive) return <Navigate to="/" replace />;
 
-  async function subscribe() {
-    setBusy(true);
+  async function pay(method) {
+    setBusy(method);
     setError(null);
     try {
-      const url = await createCheckoutSession(user.uid);
+      const url =
+        method === "crypto" ? await createCryptoPayment(planId) : await createCheckoutSession(user.uid);
       await openExternalUrl(url);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Le paiement n'a pas pu être lancé.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   if (loading) {
     return (
       <div className="full-page-loader">
-        <Loader2 size={22} className="spin" /> Vérification de ton abonnement…
+        <Loader2 size={22} className="spin" /> Vérification de ton accès…
       </div>
     );
   }
@@ -56,7 +62,20 @@ export default function Subscribe() {
           Ton suivi de bankroll, tes statistiques et ton coach IA — synchronisés sur tous tes appareils.
         </p>
 
-        <div className="paywall-price">{PLAN_PRICE}</div>
+        <div className="plan-picker">
+          {CRYPTO_PLANS.map((p) => (
+            <button
+              key={p.id}
+              className={`plan-option ${planId === p.id ? "active" : ""}`}
+              onClick={() => setPlanId(p.id)}
+              aria-pressed={planId === p.id}
+            >
+              <span className="plan-duration">{p.label}</span>
+              <span className="plan-price">{p.price}</span>
+              {p.note && <span className="plan-note">{p.note}</span>}
+            </button>
+          ))}
+        </div>
 
         <ul className="paywall-features">
           {FEATURES.map((f) => (
@@ -66,14 +85,28 @@ export default function Subscribe() {
           ))}
         </ul>
 
-        <button className="btn-primary paywall-cta" onClick={subscribe} disabled={busy}>
-          {busy ? <><Loader2 size={15} className="spin" /> Ouverture du paiement…</> : "S'abonner"}
+        <button className="btn-primary paywall-cta" onClick={() => pay("crypto")} disabled={!!busy}>
+          {busy === "crypto" ? (
+            <><Loader2 size={15} className="spin" /> Ouverture du paiement…</>
+          ) : (
+            <><Bitcoin size={15} /> Payer en crypto (USDT, BTC…)</>
+          )}
         </button>
+
+        {STRIPE_PRICE_ID && (
+          <button className="btn-secondary paywall-cta-alt" onClick={() => pay("card")} disabled={!!busy}>
+            {busy === "card" ? (
+              <><Loader2 size={14} className="spin" /> Ouverture…</>
+            ) : (
+              <><CreditCard size={14} /> Payer par carte</>
+            )}
+          </button>
+        )}
 
         {busy && (
           <p className="paywall-hint">
-            Le paiement s'ouvre dans ton navigateur. Reviens ici une fois terminé : l'application se
-            débloque toute seule.
+            Le paiement s'ouvre dans ton navigateur. Reviens ici une fois terminé : l'accès se débloque
+            tout seul dès la confirmation sur la blockchain.
           </p>
         )}
 

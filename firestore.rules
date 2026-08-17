@@ -24,6 +24,19 @@ service cloud.firestore {
         && request.auth.token.stripeRole != null;
     }
 
+    // Paiement crypto : accès prépayé jusqu'à une date. Le claim est posé par la
+    // Cloud Function qui reçoit les notifications NOWPayments, après vérification
+    // de leur signature.
+    function hasPrepaidAccess() {
+      return isSignedIn()
+        && 'accessUntil' in request.auth.token
+        && request.auth.token.accessUntil > request.time.toMillis();
+    }
+
+    function hasAccess() {
+      return isSubscribed() || hasPrepaidAccess();
+    }
+
     // Données de l'utilisateur (mains, texte brut, mouvements de bankroll, réglages).
     //
     // La LECTURE reste ouverte même sans abonnement actif : un abonnement expiré
@@ -31,8 +44,13 @@ service cloud.firestore {
     // l'ajout de nouvelles données demande un abonnement.
     match /users/{userId}/{document=**} {
       allow read: if isOwner(userId);
-      allow write: if isOwner(userId) && isSubscribed();
+      allow write: if isOwner(userId) && hasAccess();
     }
+
+    // cryptoOrders/ et cryptoEvents/ ne sont volontairement couverts par aucune
+    // règle : ils sont écrits uniquement par les Cloud Functions, qui utilisent
+    // le SDK Admin et ne passent donc pas par les règles. Toute lecture ou
+    // écriture depuis un client est refusée par défaut.
 
     // --- Collections gérées par l'extension Stripe ---
     // L'extension écrit ces documents via ses Cloud Functions (droits admin, les
