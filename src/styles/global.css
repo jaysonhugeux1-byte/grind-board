@@ -120,6 +120,37 @@ body {
   font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--gold);
   margin-bottom: 20px;
 }
+/* ---------- bascule cash / spin ---------- */
+.mode-switch {
+  display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 9px; padding: 3px; margin-bottom: 16px;
+}
+.mode-switch button {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+  background: transparent; border: none; color: var(--text-muted); cursor: pointer;
+  border-radius: 7px; padding: 7px 6px; font-size: 12.5px; font-family: var(--font-body);
+  position: relative; transition: background 0.15s, color 0.15s;
+}
+.mode-switch button:hover { color: var(--text); }
+.mode-switch button.active { background: var(--felt); color: var(--text); font-weight: 600; }
+.mode-lock { color: var(--gold); font-size: 15px; line-height: 0; }
+
+/* ---------- choix du produit sur le paywall ---------- */
+.produit-tabs { display: flex; gap: 6px; width: 100%; margin-bottom: 16px; }
+.produit-tabs button {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted);
+  border-radius: 9px; padding: 9px 6px; font-size: 12.5px; cursor: pointer;
+  font-family: var(--font-body); position: relative;
+}
+.produit-tabs button:hover { border-color: var(--gold-soft); }
+.produit-tabs button.active { border-color: var(--gold); color: var(--text); background: rgba(201,162,39,0.08); }
+.produit-tabs svg { color: var(--win); }
+.produit-remise {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; color: var(--gold);
+  background: rgba(201,162,39,0.16); border-radius: 4px; padding: 1px 4px;
+}
+
 .plan-picker { display: flex; gap: 8px; width: 100%; margin-bottom: 22px; }
 .plan-option {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;

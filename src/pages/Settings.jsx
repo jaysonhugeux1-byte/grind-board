@@ -5,28 +5,40 @@ import { PageHeader } from "../components/ui";
 import { getApiKey, setApiKey, getAiModel, setAiModel, AI_MODELS } from "../lib/aiSettings";
 import { useSubscription } from "../contexts/SubscriptionContext";
 
-function SubscriptionCard() {
-  const { prepaidUntil } = useSubscription();
+const NOMS_PRODUITS = { cash: "Cash game", spin: "Spin" };
 
-  const dateLabel = prepaidUntil
-    ? prepaidUntil.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })
-    : null;
+function SubscriptionCard() {
+  const { finAcces } = useSubscription();
+
+  const fmt = (d) =>
+    d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
 
   return (
     <div className="card">
       <div className="card-title-row"><h2>Accès</h2></div>
 
-      <div className="sub-status" style={{ marginBottom: 10 }}>
-        <span className="sub-badge active">Prépayé</span>
-        {dateLabel && <span className="muted">Valable jusqu'au {dateLabel}</span>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        {Object.entries(NOMS_PRODUITS).map(([id, nom]) => {
+          const fin = finAcces(id);
+          return (
+            <div key={id} className="sub-status">
+              <span className={`sub-badge ${fin ? "active" : ""}`} style={fin ? undefined : { background: "var(--surface-2)", color: "var(--text-muted)" }}>
+                {nom}
+              </span>
+              <span className="muted">
+                {fin ? `Valable jusqu'au ${fmt(fin)}` : "Aucun accès"}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       <p className="dashboard-hint" style={{ marginBottom: 14 }}>
-        Ton accès est payé d'avance, sans prélèvement automatique et sans rien à résilier. Tu peux
-        le prolonger quand tu veux : le temps acheté s'ajoute à ce qu'il te reste.
+        Chaque produit se paie d'avance, sans prélèvement automatique et sans rien à résilier. Tu
+        peux prolonger quand tu veux : le temps acheté s'ajoute à ce qu'il te reste.
       </p>
 
-      <Link to="/subscribe" className="btn-secondary">Prolonger mon accès</Link>
+      <Link to="/subscribe" className="btn-secondary">Gérer mes accès</Link>
     </div>
   );
 }

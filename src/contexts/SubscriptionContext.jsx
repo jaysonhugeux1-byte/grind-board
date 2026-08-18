@@ -4,16 +4,19 @@ import { useAuth } from "./AuthContext";
 
 const SubscriptionContext = createContext(null);
 
+export const PRODUITS = ["cash", "spin"];
+
 export function SubscriptionProvider({ children }) {
   const { user, loading: authLoading } = useAuth();
-  const [accessUntil, setAccessUntil] = useState(null);
+  // { cash: Date|null, spin: Date|null }
+  const [acces, setAcces] = useState({ cash: null, spin: null });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (authLoading) return undefined;
 
     if (!user) {
-      setAccessUntil(null);
+      setAcces({ cash: null, spin: null });
       setLoading(false);
       return undefined;
     }
@@ -21,36 +24,38 @@ export function SubscriptionProvider({ children }) {
     const uid = user.uid;
     let cancelled = false;
 
-    const read = async () => {
+    const lire = async () => {
       const { data, error } = await supabase
         .from("access")
-        .select("access_until")
-        .eq("user_id", uid)
-        .maybeSingle();
+        .select("product, access_until")
+        .eq("user_id", uid);
+
       if (cancelled) return;
       if (error) {
-        console.error("Lecture de l'accès impossible :", error);
-        setAccessUntil(null);
+        console.error("Lecture des accès impossible :", error);
+        setAcces({ cash: null, spin: null });
       } else {
-        setAccessUntil(data?.access_until ? new Date(data.access_until) : null);
+        const suivant = { cash: null, spin: null };
+        for (const ligne of data || []) {
+          if (ligne.product in suivant) suivant[ligne.product] = new Date(ligne.access_until);
+        }
+        setAcces(suivant);
       }
       setLoading(false);
     };
 
-    read();
+    lire();
 
     // Le paiement est confirmé côté serveur : l'écoute temps réel débloque
     // l'application dès que l'accès est crédité, sans rien redémarrer.
+    // On relit la ligne entière plutôt que d'appliquer la charge utile, pour
+    // couvrir d'un coup les formules combinées qui créditent deux produits.
     const channel = supabase
       .channel(`access-${uid}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "access", filter: `user_id=eq.${uid}` },
-        (payload) => {
-          if (cancelled) return;
-          const value = payload.eventType === "DELETE" ? null : payload.new?.access_until;
-          setAccessUntil(value ? new Date(value) : null);
-        }
+        () => lire()
       )
       .subscribe();
 
@@ -60,18 +65,19 @@ export function SubscriptionProvider({ children }) {
     };
   }, [user, authLoading]);
 
-  const isActive = !!accessUntil && accessUntil.getTime() > Date.now();
+  const actif = (produit) => {
+    const jusqua = acces[produit];
+    return !!jusqua && jusqua.getTime() > Date.now();
+  };
 
   const value = {
     loading: authLoading || loading,
-    isActive,
-    // L'accès est prépayé : il n'y a ni essai, ni résiliation, ni renouvellement
-    // automatique — seulement une date de fin.
-    prepaidUntil: isActive ? accessUntil : null,
-    currentPeriodEnd: isActive ? accessUntil : null,
-    subscription: null,
-    isTrialing: false,
-    cancelAtPeriodEnd: false,
+    acces,
+    // Un accès à l'un ou l'autre suffit à entrer dans l'application ; le mode
+    // choisi détermine ensuite ce qui est réellement accessible.
+    isActive: actif("cash") || actif("spin"),
+    aAcces: actif,
+    finAcces: (produit) => (actif(produit) ? acces[produit] : null),
   };
 
   return <SubscriptionContext.Provider value={value}>{children}</SubscriptionContext.Provider>;

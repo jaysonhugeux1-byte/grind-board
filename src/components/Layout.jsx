@@ -1,25 +1,34 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon } from "lucide-react";
+import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useMode } from "../contexts/ModeContext";
+import { useSubscription } from "../contexts/SubscriptionContext";
 import { DataProvider } from "../contexts/DataContext";
 
+// `modes` indique dans quels modes l'entrée est visible. Le cash game et le
+// spin ne partagent pas les mêmes analyses : le bb/100 n'a aucun sens en
+// tournoi, et les ranges d'ouverture y cèdent la place au push/fold.
 const NAV_ITEMS = [
-  { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true },
-  { to: "/import", label: "Importer", icon: Upload },
-  { to: "/sessions", label: "Sessions", icon: ListOrdered },
-  { to: "/ranges", label: "Ranges", icon: Grid3x3 },
-  { to: "/ev", label: "EV par position", icon: BarChart3 },
-  { to: "/statistics", label: "Statistiques", icon: LineChart },
-  { to: "/search", label: "Recherche de mains", icon: Search },
-  { to: "/top-hands", label: "Grosses mains", icon: Flame },
-  { to: "/table-tendencies", label: "Tendances table", icon: Users },
-  { to: "/bankroll", label: "Bankroll", icon: Wallet },
-  { to: "/settings", label: "Paramètres", icon: SettingsIcon },
+  { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true, modes: ["cash", "spin"] },
+  { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"] },
+  { to: "/sessions", label: "Sessions", icon: ListOrdered, modes: ["cash"] },
+  { to: "/ranges", label: "Ranges", icon: Grid3x3, modes: ["cash"] },
+  { to: "/ev", label: "EV par position", icon: BarChart3, modes: ["cash"] },
+  { to: "/statistics", label: "Statistiques", icon: LineChart, modes: ["cash"] },
+  { to: "/search", label: "Recherche de mains", icon: Search, modes: ["cash"] },
+  { to: "/top-hands", label: "Grosses mains", icon: Flame, modes: ["cash"] },
+  { to: "/table-tendencies", label: "Tendances table", icon: Users, modes: ["cash"] },
+  { to: "/bankroll", label: "Bankroll", icon: Wallet, modes: ["cash", "spin"] },
+  { to: "/settings", label: "Paramètres", icon: SettingsIcon, modes: ["cash", "spin"] },
 ];
 
 export default function Layout() {
   const { user, signOutUser } = useAuth();
+  const { mode, setMode } = useMode();
+  const { aAcces } = useSubscription();
+
+  const items = NAV_ITEMS.filter((item) => item.modes.includes(mode));
 
   return (
     <div className="app-shell">
@@ -32,8 +41,27 @@ export default function Layout() {
           </div>
         </div>
 
+        <div className="mode-switch" role="group" aria-label="Mode de jeu">
+          <button
+            className={mode === "cash" ? "active" : ""}
+            onClick={() => setMode("cash")}
+            aria-pressed={mode === "cash"}
+          >
+            <Spade size={13} /> Cash
+            {!aAcces("cash") && <span className="mode-lock" title="Abonnement requis">•</span>}
+          </button>
+          <button
+            className={mode === "spin" ? "active" : ""}
+            onClick={() => setMode("spin")}
+            aria-pressed={mode === "spin"}
+          >
+            <Zap size={13} /> Spin
+            {!aAcces("spin") && <span className="mode-lock" title="Abonnement requis">•</span>}
+          </button>
+        </div>
+
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map((item) => (
+          {items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

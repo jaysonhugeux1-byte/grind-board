@@ -3,33 +3,53 @@ import { Navigate } from "react-router-dom";
 import { Loader2, Check, LogOut, Spade, Bitcoin } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useSubscription } from "../contexts/SubscriptionContext";
-import { createCryptoPayment, openExternalUrl, CRYPTO_PLANS } from "../lib/billing";
+import { useMode } from "../contexts/ModeContext";
+import {
+  createCryptoPayment, openExternalUrl, PRODUITS, DUREES, tarif, tarifMensuel,
+} from "../lib/billing";
 
-const FEATURES = [
-  "Import illimité de tes mains CoinPoker",
-  "Synchronisation entre tous tes appareils",
-  "Replayer visuel avec table de poker",
-  "Coach IA : analyse de main et plan d'amélioration",
-  "Leak finder, ranges et statistiques avancées",
-];
+const AVANTAGES = {
+  cash: [
+    "Import illimité de tes mains",
+    "Replayer visuel avec table de poker",
+    "Leak finder, ranges et statistiques avancées",
+    "Coach IA : analyse de main et plan d'amélioration",
+  ],
+  spin: [
+    "Suivi des tournois : ROI, ITM, multiplicateur moyen",
+    "Saisie éclair pour une courbe à jour en direct",
+    "Ranges de push/fold selon ta profondeur de tapis",
+    "Coach IA adapté au format hyper-turbo",
+  ],
+  duo: [
+    "Tout le cash game et tout le spin",
+    "Une seule bankroll, deux formats suivis",
+    "40 % de remise sur le second produit",
+    "Coach IA sur les deux formats",
+  ],
+};
 
 export default function Subscribe() {
   const { user, signOutUser } = useAuth();
-  const { isActive, loading } = useSubscription();
-  const [planId, setPlanId] = useState("m3");
+  const { aAcces, loading } = useSubscription();
+  const { mode } = useMode();
+
+  // On propose d'emblée le produit correspondant au mode où l'utilisateur a été
+  // arrêté — c'est celui qu'il cherchait à utiliser.
+  const [produit, setProduit] = useState(mode === "spin" ? "spin" : "cash");
+  const [duree, setDuree] = useState("m3");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  // Dès que la notification de paiement a mis l'accès à jour, l'écoute temps réel
-  // du contexte bascule isActive et l'utilisateur repart dans l'application sans
-  // avoir à redémarrer quoi que ce soit.
-  if (!loading && isActive) return <Navigate to="/" replace />;
+  // Dès que le paiement est confirmé côté serveur, l'écoute temps réel bascule
+  // l'accès et l'utilisateur repart dans l'application sans rien redémarrer.
+  if (!loading && aAcces(mode)) return <Navigate to="/" replace />;
 
-  async function pay() {
+  async function payer() {
     setBusy(true);
     setError(null);
     try {
-      await openExternalUrl(await createCryptoPayment(planId));
+      await openExternalUrl(await createCryptoPayment(`${produit}_${duree}`));
     } catch (err) {
       setError(err.message || "Le paiement n'a pas pu être lancé.");
     } finally {
@@ -54,30 +74,43 @@ export default function Subscribe() {
           Ton suivi de bankroll, tes statistiques et ton coach IA — synchronisés sur tous tes appareils.
         </p>
 
-        <div className="plan-picker">
-          {CRYPTO_PLANS.map((p) => (
+        <div className="produit-tabs">
+          {PRODUITS.map((p) => (
             <button
               key={p.id}
-              className={`plan-option ${planId === p.id ? "active" : ""}`}
-              onClick={() => setPlanId(p.id)}
-              aria-pressed={planId === p.id}
+              className={produit === p.id ? "active" : ""}
+              onClick={() => setProduit(p.id)}
+              aria-pressed={produit === p.id}
             >
-              <span className="plan-duration">{p.label}</span>
-              <span className="plan-price">{p.price}</span>
-              {p.note && <span className="plan-note">{p.note}</span>}
+              {p.label}
+              {p.remise && <span className="produit-remise">−40 %</span>}
+              {aAcces(p.id) && <Check size={12} />}
+            </button>
+          ))}
+        </div>
+
+        <div className="plan-picker">
+          {DUREES.map((d) => (
+            <button
+              key={d.id}
+              className={`plan-option ${duree === d.id ? "active" : ""}`}
+              onClick={() => setDuree(d.id)}
+              aria-pressed={duree === d.id}
+            >
+              <span className="plan-duration">{d.label}</span>
+              <span className="plan-price">{tarif(produit, d.id)}</span>
+              <span className="plan-note">{tarifMensuel(produit, d.id)}</span>
             </button>
           ))}
         </div>
 
         <ul className="paywall-features">
-          {FEATURES.map((f) => (
-            <li key={f}>
-              <Check size={15} /> {f}
-            </li>
+          {AVANTAGES[produit].map((f) => (
+            <li key={f}><Check size={15} /> {f}</li>
           ))}
         </ul>
 
-        <button className="btn-primary paywall-cta" onClick={pay} disabled={busy}>
+        <button className="btn-primary paywall-cta" onClick={payer} disabled={busy}>
           {busy ? (
             <><Loader2 size={15} className="spin" /> Ouverture du paiement…</>
           ) : (

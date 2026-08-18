@@ -5,11 +5,36 @@ import { supabase } from "../supabase";
 
 // Formules d'accès prépayé. Les montants ci-dessous ne servent QU'À L'AFFICHAGE :
 // le prix réellement facturé est décidé côté serveur, dans l'Edge Function.
-export const CRYPTO_PLANS = [
-  { id: "m1", label: "1 mois", price: "9,90 $", note: null },
-  { id: "m3", label: "3 mois", price: "26,90 $", note: "≈ 9 $ / mois" },
-  { id: "m12", label: "12 mois", price: "94,90 $", note: "≈ 7,90 $ / mois" },
+// L'identifiant envoyé est de la forme `${produit}_${duree}`.
+export const PRODUITS = [
+  { id: "cash", label: "Cash game", desc: "Suivi et analyse de tes parties de cash game" },
+  { id: "spin", label: "Spin", desc: "ROI, multiplicateurs et ranges de push/fold" },
+  { id: "duo", label: "Les deux", desc: "Cash game et spin réunis", remise: "−40 % sur le second" },
 ];
+
+export const DUREES = [
+  { id: "m1", label: "1 mois" },
+  { id: "m3", label: "3 mois" },
+  { id: "m12", label: "12 mois" },
+];
+
+const TARIFS = {
+  cash: { m1: "9,90 $", m3: "26,90 $", m12: "94,90 $" },
+  spin: { m1: "9,90 $", m3: "26,90 $", m12: "94,90 $" },
+  duo: { m1: "15,90 $", m3: "42,90 $", m12: "151,90 $" },
+};
+
+export function tarif(produit, duree) {
+  return TARIFS[produit]?.[duree] ?? "—";
+}
+
+// Prix mensuel équivalent, pour rendre les durées comparables d'un coup d'œil.
+export function tarifMensuel(produit, duree) {
+  const mois = { m1: 1, m3: 3, m12: 12 }[duree];
+  const montant = parseFloat(TARIFS[produit]?.[duree]?.replace(",", ".") ?? "");
+  if (!mois || !Number.isFinite(montant)) return null;
+  return `${(montant / mois).toFixed(2).replace(".", ",")} $ / mois`;
+}
 
 // Ouvre une URL dans le navigateur du système. Dans l'application de bureau on
 // passe par le pont Electron : le paiement ne doit pas s'effectuer dans une
