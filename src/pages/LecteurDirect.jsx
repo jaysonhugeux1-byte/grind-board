@@ -10,10 +10,11 @@ import { apprendreZone, fusionnerGabarits, carteEncre, binariser } from "../lib/
 import {
   ZONES_PAR_DEFAUT, LIBELLES_ZONES, REGIONS_PAR_DEFAUT, extraireZone, lireTable,
   imageDepuisDataUrl, synchroniserTables, integrerLecture, partDeHero,
-  deduireResultat, zonesAbsolues, zoneDansRegion,
+  deduireResultat, zonesAbsolues, zoneDansRegion, lireCartesTable,
 } from "../lib/tableReader";
-import { addSpinTournament } from "../lib/supabaseData";
+import { addSpinTournament, enregistrerMainsLecteur } from "../lib/supabaseData";
 import calibragePrepare from "../calibrages/betclic-4tables.json";
+import { integrerImage, cloturerMain, mainExploitable, notation, evDeAbattage } from "../lib/mainEnDirect";
 import { listerAdversaires, trouverPseudo, styleAdversaire } from "../lib/adversaires";
 
 const CLE_ZONES = "gl_lecteur_zones";
@@ -25,6 +26,7 @@ const CLE_PERIODE = "gl_lecteur_periode";
 const CLE_AUTO = "gl_lecteur_auto";
 const CLE_HUD = "gl_lecteur_hud";
 const CLE_DECALAGE = "gl_lecteur_decalage";
+const CLE_MAINS = "gl_lecteur_mains";
 
 // Rythmes proposés. Un demi-tour de seconde est le réglage utile : ce qui
 // décide de l'issue d'un tournoi, c'est la toute dernière image avant que la
@@ -240,6 +242,10 @@ export default function LecteurDirect() {
   // Durée réelle d'un tour et nombre de tables lues : sans cette mesure,
   // impossible de savoir si le rythme demandé est effectivement tenu.
   const [cadence, setCadence] = useState(null);
+  // Lecture des cartes : plus coûteuse que celle des montants, et sans intérêt
+  // tant que les rangs ne sont pas appris. On la laisse débrayable.
+  const [lireLesMains, setLireLesMains] = useState(() => lireLocal(CLE_MAINS, false));
+  const [mainsLues, setMainsLues] = useState(0);
   // Ce que chaque table lit, tour par tour. Sans cette vue, un lecteur qui
   // n'enregistre rien ne dit pas POURQUOI — et c'est toujours la question.
   const [etatTables, setEtatTables] = useState([]);
@@ -259,6 +265,9 @@ export default function LecteurDirect() {
   // elle continue donc de passer par la file de confirmation.
   const [auto, setAuto] = useState(() => lireLocal(CLE_AUTO, true));
 
+  // Main en cours par table. Distinct du suivi de tournoi : un tournoi contient
+  // des dizaines de mains.
+  const mainsRef = useRef(new Map());
   const suivisRef = useRef(new Map());
   const boucleRef = useRef(null);
 
@@ -269,6 +278,7 @@ export default function LecteurDirect() {
   useEffect(() => { localStorage.setItem(CLE_AUTO, JSON.stringify(auto)); }, [auto]);
   useEffect(() => { localStorage.setItem(CLE_HUD, JSON.stringify(hudActif)); }, [hudActif]);
   useEffect(() => { localStorage.setItem(CLE_DECALAGE, JSON.stringify(decalage)); }, [decalage]);
+  useEffect(() => { localStorage.setItem(CLE_MAINS, JSON.stringify(lireLesMains)); }, [lireLesMains]);
 
   // Taille de l'ecran, demandee une fois : elle sert a convertir les
   // coordonnees relatives d'une table en pixels d'ecran.
@@ -481,6 +491,7 @@ export default function LecteurDirect() {
       const maintenant = Date.now();
       const etats = [];
       const pastilles = [];
+      const mainsFinies = [];
 
       // Un suivi par (fenêtre, région) : le système ne distingue pas les tables,
       // donc c'est le découpage de l'utilisateur qui en tient lieu.
@@ -520,6 +531,37 @@ export default function LecteurDirect() {
           const cle = `${capture.id}#${i}`;
           const zonesAbs = zonesAbsolues(region, zones);
           const lu = lireTable(image, zonesAbs, gabarits);
+
+          // Cartes : board, main de Hero, et abattage si l'instant est attrapé.
+          // Le tampon est en BGRA — la teinte n'étant pas symétrique, s'en
+          // remettre au hasard échangerait cœur et carreau.
+          if (lireLesMains) {
+            const vues = lireCartesTable(image, region, gabarits, { bgr: true });
+            const r = integrerImage(mainsRef.current.get(cle), { ...lu, ...vues }, maintenant);
+            mainsRef.current.set(cle, r.main);
+            if (r.mainTerminee && mainExploitable(r.mainTerminee)) {
+              const m = r.mainTerminee;
+              mainsFinies.push({
+                id: `lecteur-${cle}-${m.debut}`,
+                tourneyId: `direct-${suivi.debut}`,
+                ts: m.debut,
+                cartesHero: m.cartesHero,
+                notation: notation(m.cartesHero),
+                board: m.board,
+                rueFinale: m.rueFinale,
+                netBB: m.netBB,
+                potMax: m.potMax,
+                tapisDebut: m.tapisDebut,
+                tapisFin: m.tapisFin,
+                abattage: m.abattage,
+                // Calculée sur une main TERMINÉE : mesurer après coup ce qu'une
+                // main valait est du suivi, l'afficher pendant serait de
+                // l'assistance en temps réel.
+                ev: evDeAbattage(m),
+                etapes: m.etapes,
+              });
+            }
+          }
           const { suivi, tournoiTermine } = integrerLecture(suivis.get(cle), lu, maintenant);
 
           // Pastilles de l'affichage superposé : un adversaire reconnu, ses
@@ -610,12 +652,21 @@ export default function LecteurDirect() {
       }
 
       setCadence({ duree: Math.round(performance.now() - depart), tables: captures.length });
+      if (mainsFinies.length) {
+        try {
+          await enregistrerMainsLecteur(user.uid, mainsFinies);
+          setMainsLues((n) => n + mainsFinies.length);
+        } catch (e) {
+          setErreur(e.message || "Enregistrement des mains impossible.");
+        }
+      }
+
       setEtatTables(etats);
       if (hudActif) window.grandLivre.hudAfficher?.(pastilles);
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
-  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh, hudActif, pseudos, fiches, versEcran]);
+  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh, hudActif, pseudos, fiches, versEcran, lireLesMains, user]);
 
   useEffect(() => {
     if (!surveillance) return undefined;
@@ -704,6 +755,10 @@ export default function LecteurDirect() {
               >
                 {surveillance ? <><Square size={13} /> Arrêter</> : <><Play size={13} /> Surveiller</>}
               </button>
+              <label className="bascule" title="Reconstituer tes mains à partir des cartes affichées">
+                <input type="checkbox" checked={lireLesMains} onChange={(e) => setLireLesMains(e.target.checked)} />
+                Enregistrer les mains
+              </label>
               <label className="bascule" title="Poser les statistiques des adversaires par-dessus tes tables">
                 <input type="checkbox" checked={hudActif} onChange={(e) => setHudActif(e.target.checked)} />
                 Affichage sur les tables
@@ -739,7 +794,7 @@ export default function LecteurDirect() {
                     : "démarrage…"}
                   {cadence && cadence.duree > periodeMs && " — la machine ne suit pas ce rythme"}
                   {" · "}
-                  {enregistres} tournoi(s) enregistré(s)
+                  {enregistres} tournoi(s){lireLesMains ? ` · ${mainsLues} main(s)` : ""} enregistré(s)
                 </span>
               )}
             </div>

@@ -403,6 +403,48 @@ export async function importSpinData(uid, tournaments, hands, { onProgress } = {
   return { tournois: tournaments.length, mains: hands.length };
 }
 
+/**
+ * Écrit les mains reconstituées par le lecteur d'écran.
+ *
+ * Même table que les mains importées, mais une provenance explicite : ces
+ * mains-là ne portent ni actions ni pseudos d'adversaires, et il ne faut jamais
+ * les confondre avec celles de l'historique. L'import du lendemain les
+ * remplacera par la version complète — d'où l'upsert sur un identifiant stable.
+ */
+export async function enregistrerMainsLecteur(uid, mains) {
+  if (!mains.length) return 0;
+  const lignes = mains.map((m) => ({
+    user_id: uid,
+    hand_id: m.id,
+    tourney_id: m.tourneyId,
+    ts: new Date(m.ts).toISOString(),
+    bb_depth: m.tapisDebut ?? null,
+    data: {
+      source: "lecteur",
+      cards: m.cartesHero,
+      notation: m.notation,
+      board: m.board,
+      rueFinale: m.rueFinale,
+      // En grosses blindes : c'est l'unité affichée par la table, et la
+      // convertir en jetons demanderait la taille de la blinde, que le bandeau
+      // n'annonce pas de façon fiable.
+      netBB: m.netBB,
+      potMax: m.potMax,
+      tapisDebut: m.tapisDebut,
+      tapisFin: m.tapisFin,
+      abattage: m.abattage ?? null,
+      ev: m.ev ?? null,
+      etapes: m.etapes ?? [],
+    },
+  }));
+
+  for (const lot of chunk(lignes, 100)) {
+    const { error } = await supabase.from("spin_hands").upsert(lot, { onConflict: "user_id,hand_id" });
+    if (error) throw error;
+  }
+  return mains.length;
+}
+
 export async function deleteSpinTournaments(uid, tourneyIds, onChunkDone) {
   const lots = chunk(tourneyIds, 200);
   await runChunkedBatches(

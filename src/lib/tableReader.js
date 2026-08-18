@@ -14,6 +14,7 @@
 // Un doute part en file d'attente et se règle d'un clic, ce qui reste bien plus
 // rapide que la saisie manuelle et ne risque pas de fausser les statistiques.
 import { lireZone, versNombre } from "./vision.js";
+import { lireCarte } from "./cartes.js";
 
 // Betclic affiche les tapis en grosses blindes, pas en jetons — et le total en
 // BB DIMINUE au fil de la partie puisque les blindes montent, alors que le
@@ -69,6 +70,49 @@ export const ZONES_PAR_DEFAUT = {
   // en ait, bien meilleure que le bandeau du haut qui disparaît sur cet écran.
   finRejouer: { x: 0.33, y: 0.9, l: 0.34, h: 0.075 },
 };
+
+// ---------------------------------------------------------------------------
+// Cartes
+// ---------------------------------------------------------------------------
+//
+// Betclic aligne les cinq cartes du board au pas constant. Plutôt que cinq
+// cadres à tracer, on décrit la première et l'écart : cinq réglages de moins à
+// faire à la souris, et cinq occasions de moins de se tromper.
+//
+// Mesuré sur une table réelle de 1033 × 648 : première carte à 304, pas de 88,
+// carte de 76 × 112 à partir de 285.
+export const CARTE_BOARD = { x: 0.2943, y: 0.4398, l: 0.0736, h: 0.1728 };
+export const PAS_BOARD = 0.0852;
+
+// Le rang occupe le coin haut-gauche de la carte. Le cadre est volontairement
+// large : le dix s'écrit « 10 » sur deux signes, et un cadre calé sur un rang
+// d'un seul caractère le tronquerait en un bloc illisible.
+export const RANG_DANS_CARTE = { x: 0.04, y: 0.03, l: 0.58, h: 0.34 };
+
+// Les deux cartes de Hero, présentées en éventail : elles se chevauchent, donc
+// on ne vise que la partie visible de chacune.
+export const CARTES_HERO = [
+  { x: 0.4185, y: 0.7423, l: 0.0562, h: 0.1080 },
+  { x: 0.4767, y: 0.7423, l: 0.0562, h: 0.1080 },
+];
+
+// Position de chaque carte du board dans le repère de la table.
+export function zonesBoard() {
+  return Array.from({ length: 5 }, (_, i) => ({
+    ...CARTE_BOARD,
+    x: CARTE_BOARD.x + i * PAS_BOARD,
+  }));
+}
+
+// Sous-zone d'une carte : sert à isoler le rang de son fond coloré.
+export function sousZone(carte, sous) {
+  return {
+    x: carte.x + sous.x * carte.l,
+    y: carte.y + sous.y * carte.h,
+    l: sous.l * carte.l,
+    h: sous.h * carte.h,
+  };
+}
 
 export const LIBELLES_ZONES = {
   buyIn: "Buy-in (bandeau)",
@@ -249,6 +293,34 @@ export function partDeHero(lecture) {
 
   if (!(total > 0)) return null;
   return hero / total;
+}
+
+/**
+ * Lit les cartes visibles sur une table.
+ *
+ * Le board se lit toujours ; les cartes des adversaires ne sont visibles qu'à
+ * l'abattage, et l'instant est court. On les tente à chaque tour : les manquer
+ * ne coûte rien, les attraper donne l'EV de la main.
+ *
+ * @param bgr  true quand le tampon arrive en BGRA (capture Electron). La teinte
+ *             n'est pas symétrique : se tromper échangerait cœur et carreau.
+ */
+export function lireCartesTable(image, region, gabarits, { bgr = false, zonesAdversaires = [] } = {}) {
+  const carte = (zoneRelative) => {
+    const abs = zoneDansRegion(region, zoneRelative);
+    const fond = extraireZone(image, abs);
+    if (!fond) return null;
+    const rang = extraireZone(image, zoneDansRegion(region, sousZone(zoneRelative, RANG_DANS_CARTE)));
+    if (!rang) return null;
+    const lu = lireCarte(rang, fond, gabarits, { bgr });
+    return lu ? lu.carte : null;
+  };
+
+  return {
+    board: zonesBoard().map(carte),
+    cartesHero: CARTES_HERO.map(carte),
+    cartesAdversaires: zonesAdversaires.map(carte),
+  };
 }
 
 // ---------------------------------------------------------------------------
