@@ -13,9 +13,21 @@
 // que soit le nombre de tables, et pas d'encodage PNG sur le chemin rapide.
 const { desktopCapturer, screen } = require("electron");
 
-// Les tables Betclic portent un titre du type « Spin & Rush - 20€ ».
-// Le montant y figure : c'est le buy-in, qu'on récupère au passage.
-const TABLE_TITLE = /Spin\s*&\s*Rush/i;
+// Betclic Poker est une application Flutter : UNE seule fenêtre de haut niveau,
+// « Betclic Poker », avec un unique enfant « FLUTTERVIEW ». Les tables y sont
+// dessinées à l'intérieur du même canvas — ce ne sont pas des fenêtres au sens
+// du système, et aucune énumération ne les fera apparaître.
+//
+// Conséquence directe : on capture la fenêtre du client, et c'est l'utilisateur
+// qui délimite ensuite chaque table à l'intérieur. Le buy-in ne peut plus venir
+// du titre de la fenêtre puisqu'il n'y en a qu'un pour tout le client : il se
+// lit dans les pixels, comme le reste.
+//
+// Le motif reste large : d'autres salles ouvrent bel et bien une fenêtre par
+// table, et ce cas continue de fonctionner sans rien changer.
+const TABLE_TITLE = /Betclic|Spin\s*&\s*(?:Rush|Go)|PokerStars|Winamax/i;
+
+// Conservé pour les salles qui, elles, nomment leurs fenêtres de table.
 const BUYIN_IN_TITLE = /-\s*([\d.,]+)\s*€/;
 
 // Les vignettes de desktopCapturer sont contraintes à la taille demandée en

@@ -8,12 +8,14 @@ import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState } from "../components/ui";
 import { apprendreZone, fusionnerGabarits, carteEncre, binariser } from "../lib/vision";
 import {
-  ZONES_PAR_DEFAUT, LIBELLES_ZONES, extraireZone, lireTable, imageDepuisDataUrl,
-  synchroniserTables, integrerLecture, partDeHero, deduireResultat,
+  ZONES_PAR_DEFAUT, LIBELLES_ZONES, REGIONS_PAR_DEFAUT, extraireZone, lireTable,
+  imageDepuisDataUrl, synchroniserTables, integrerLecture, partDeHero,
+  deduireResultat, zonesAbsolues, zoneDansRegion,
 } from "../lib/tableReader";
 import { addSpinTournament } from "../lib/supabaseData";
 
 const CLE_ZONES = "gl_lecteur_zones";
+const CLE_REGIONS = "gl_lecteur_regions";
 // Version dans la clé : le descripteur a changé (flou), les anciens gabarits
 // ne sont plus comparables et doivent être réappris plutôt que mal lus.
 const CLE_GABARITS = "gl_lecteur_gabarits_v2";
@@ -87,9 +89,10 @@ function ApercuZone({ image, zone, echelle = 3, encre = false }) {
   return <canvas ref={ref} className="apercu-zone" />;
 }
 
-// Image de la table avec les cadres par-dessus ; un cliquer-glisser redéfinit
-// le cadre sélectionné.
-function Calibrateur({ image, zones, zoneActive, onZone }) {
+// Image capturee avec les cadres par-dessus ; un cliquer-glisser redefinit le
+// cadre selectionne. Deux modes : delimiter les TABLES dans la fenetre, ou
+// placer les zones a l'interieur d'une table.
+function Calibrateur({ image, regions, regionActive, zones, zoneActive, mode, onCadre }) {
   const ref = useRef(null);
   const [trace, setTrace] = useState(null);
 
@@ -106,8 +109,8 @@ function Calibrateur({ image, zones, zoneActive, onZone }) {
       const l = Math.abs(trace.x1 - trace.x0);
       const h = Math.abs(trace.y1 - trace.y0);
       // Un simple clic ne doit pas effacer un cadre existant.
-      if (l > 0.01 && h > 0.008) {
-        onZone(zoneActive, {
+      if (l > 0.005 && h > 0.005) {
+        onCadre({
           x: Math.min(trace.x0, trace.x1),
           y: Math.min(trace.y0, trace.y1),
           l,
@@ -125,6 +128,17 @@ function Calibrateur({ image, zones, zoneActive, onZone }) {
     h: Math.abs(trace.y1 - trace.y0),
   };
 
+  const cadre = (z, cle, libelle, actif) =>
+    z ? (
+      <div
+        key={cle}
+        className={`cadre-zone ${actif ? "actif" : ""}`}
+        style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, width: `${z.l * 100}%`, height: `${z.h * 100}%` }}
+      >
+        <span>{libelle}</span>
+      </div>
+    ) : null;
+
   return (
     <div
       className="calibrateur"
@@ -141,18 +155,19 @@ function Calibrateur({ image, zones, zoneActive, onZone }) {
       onMouseUp={terminer}
       onMouseLeave={terminer}
     >
-      <img src={image.dataUrl} alt="Table capturée" draggable={false} />
-      {Object.entries(zones).map(([cle, z]) =>
-        z ? (
-          <div
-            key={cle}
-            className={`cadre-zone ${cle === zoneActive ? "actif" : ""}`}
-            style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, width: `${z.l * 100}%`, height: `${z.h * 100}%` }}
-          >
-            <span>{LIBELLES_ZONES[cle]}</span>
-          </div>
-        ) : null
+      <img src={image.dataUrl} alt="Fenetre capturee" draggable={false} />
+
+      {regions.map((r, i) =>
+        cadre(r, `region-${i}`, `Table ${i + 1}`, mode === "regions" && i === regionActive)
       )}
+
+      {/* En mode zones, on ne montre que celles de la table selectionnee :
+          afficher les six cadres de chaque table rendrait l'image illisible. */}
+      {mode === "zones" && regions[regionActive] &&
+        Object.entries(zones).map(([cle, z]) =>
+          cadre(zoneDansRegion(regions[regionActive], z), cle, LIBELLES_ZONES[cle], cle === zoneActive)
+        )}
+
       {enCours && (
         <div
           className="cadre-zone actif"
@@ -173,6 +188,12 @@ export default function LecteurDirect() {
   const [tableChoisie, setTableChoisie] = useState(null);
   const [image, setImage] = useState(null);
   const [zones, setZones] = useState(() => lireLocal(CLE_ZONES, ZONES_PAR_DEFAUT));
+  // Betclic dessine toutes ses tables dans une seule fenetre : c'est
+  // l'utilisateur qui delimite chacune, et les zones ci-dessus s'appliquent
+  // ensuite au contenu de chaque region.
+  const [regions, setRegions] = useState(() => lireLocal(CLE_REGIONS, REGIONS_PAR_DEFAUT));
+  const [regionActive, setRegionActive] = useState(0);
+  const [modeCalibrage, setModeCalibrage] = useState("regions");
   const [gabarits, setGabarits] = useState(() => lireLocal(CLE_GABARITS, []));
   const [zoneActive, setZoneActive] = useState("dotation");
   const [saisieApprentissage, setSaisieApprentissage] = useState("");
@@ -193,8 +214,16 @@ export default function LecteurDirect() {
   const boucleRef = useRef(null);
 
   useEffect(() => { localStorage.setItem(CLE_ZONES, JSON.stringify(zones)); }, [zones]);
+  useEffect(() => { localStorage.setItem(CLE_REGIONS, JSON.stringify(regions)); }, [regions]);
   useEffect(() => { localStorage.setItem(CLE_GABARITS, JSON.stringify(gabarits)); }, [gabarits]);
   useEffect(() => { localStorage.setItem(CLE_PERIODE, JSON.stringify(periodeMs)); }, [periodeMs]);
+
+  // Zone active ramenee au repere de la fenetre capturee : c'est dans ce repere
+  // que vivent l'apercu et l'apprentissage.
+  const zoneActiveAbsolue = useMemo(
+    () => zoneDansRegion(regions[regionActive], zones[zoneActive]),
+    [regions, regionActive, zones, zoneActive]
+  );
 
   const signesConnus = useMemo(() => [...new Set(gabarits.map((g) => g.signe))].sort(), [gabarits]);
 
@@ -232,7 +261,7 @@ export default function LecteurDirect() {
 
   function apprendre() {
     if (!image || !saisieApprentissage.trim()) return;
-    const morceau = extraireZone(image, zones[zoneActive]);
+    const morceau = extraireZone(image, zoneActiveAbsolue);
     if (!morceau) {
       setErreur("Le cadre est trop petit.");
       return;
@@ -255,8 +284,8 @@ export default function LecteurDirect() {
   }
 
   function essayerLecture() {
-    if (!image) return;
-    const lu = lireTable(image, zones, gabarits);
+    if (!image || !regions[regionActive]) return;
+    const lu = lireTable(image, zonesAbsolues(regions[regionActive], zones), gabarits);
     setLectureLive(lu);
     setMessage(null);
     setErreur(null);
@@ -275,9 +304,13 @@ export default function LecteurDirect() {
       const captures = await window.grandLivre.capturerTables(null);
       const maintenant = Date.now();
 
+      // Un suivi par (fenêtre, région) : le système ne distingue pas les tables,
+      // donc c'est le découpage de l'utilisateur qui en tient lieu.
       const ouvertes = captures
         .filter((c) => !c.erreur)
-        .map((c) => ({ id: c.id, titre: c.titre, buyIn: c.buyIn }));
+        .flatMap((c) =>
+          regions.map((_, i) => ({ id: `${c.id}#${i}`, titre: `${c.titre} — table ${i + 1}`, buyIn: null }))
+        );
 
       const { suivis, termines } = synchroniserTables(suivisRef.current, ouvertes, maintenant);
       suivisRef.current = suivis;
@@ -294,11 +327,17 @@ export default function LecteurDirect() {
           largeur: capture.largeur,
           hauteur: capture.hauteur,
         };
-        const lu = lireTable(image, zones, gabarits);
-        const { suivi, tournoiTermine } = integrerLecture(suivis.get(capture.id), lu, maintenant);
-        suivis.set(capture.id, suivi);
-        if (tournoiTermine) nouvellesFiches.push(tournoiTermine);
-        if (capture.id === tableChoisie) setLectureLive(lu);
+        // Une seule fenêtre, mais autant de tables que de régions délimitées :
+        // c'est là que se fait la séparation que le système ne fournit pas.
+        regions.forEach((region, i) => {
+          if (!region) return;
+          const cle = `${capture.id}#${i}`;
+          const lu = lireTable(image, zonesAbsolues(region, zones), gabarits);
+          const { suivi, tournoiTermine } = integrerLecture(suivis.get(cle), lu, maintenant);
+          suivis.set(cle, suivi);
+          if (tournoiTermine) nouvellesFiches.push(tournoiTermine);
+          if (i === regionActive) setLectureLive(lu);
+        });
       }
 
       if (nouvellesFiches.length) {
@@ -312,7 +351,7 @@ export default function LecteurDirect() {
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
-  }, [zones, gabarits, tableChoisie]);
+  }, [zones, gabarits, regions, regionActive]);
 
   useEffect(() => {
     if (!surveillance) return undefined;
@@ -373,14 +412,14 @@ export default function LecteurDirect() {
 
       <div className="card">
         <div className="card-title-row">
-          <h2><Monitor size={15} style={{ verticalAlign: -2, marginRight: 6, color: "var(--gold)" }} />Tables ouvertes</h2>
+          <h2><Monitor size={15} style={{ verticalAlign: -2, marginRight: 6, color: "var(--gold)" }} />Fenêtre du client</h2>
           <button className="btn-secondary" onClick={rafraichirTables}>
             <RefreshCw size={13} /> Actualiser
           </button>
         </div>
 
         {!tables.length ? (
-          <EmptyState text="Aucune table détectée. Ouvre une table Spin & Rush sur Betclic, puis actualise." />
+          <EmptyState text="Aucune fenêtre de poker détectée. Lance le client Betclic Poker, puis actualise." />
         ) : (
           <>
             <div className="segmented" style={{ flexWrap: "wrap" }}>
@@ -444,51 +483,133 @@ export default function LecteurDirect() {
           <div className="card-title-row">
             <h2>Calibrage</h2>
             <span className="card-sub">
-              choisis une zone, puis trace son cadre à la souris sur l'image
+              {modeCalibrage === "regions"
+                ? "délimite chaque table dans la fenêtre du client"
+                : "place les zones à lire dans la table sélectionnée"}
             </span>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <div className="alert-info">
+            Betclic Poker n'ouvre qu'une seule fenêtre : ses tables y sont dessinées, elles n'existent
+            pas pour le système. C'est donc à toi de les délimiter — une fois fait, les zones internes
+            se calibrent une seule fois et servent pour toutes les tables, leur disposition étant
+            identique.
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "12px 0" }}>
             <div className="segmented">
-              {Object.keys(LIBELLES_ZONES).map((cle) => (
-                <button
-                  key={cle}
-                  className={zoneActive === cle ? "active" : ""}
-                  onClick={() => setZoneActive(cle)}
-                  title={zones[cle] ? "" : "zone désactivée"}
-                >
-                  {LIBELLES_ZONES[cle]}
-                  {!zones[cle] && " ✕"}
+              <button
+                className={modeCalibrage === "regions" ? "active" : ""}
+                onClick={() => setModeCalibrage("regions")}
+              >
+                1. Tables
+              </button>
+              <button
+                className={modeCalibrage === "zones" ? "active" : ""}
+                onClick={() => setModeCalibrage("zones")}
+              >
+                2. Zones à lire
+              </button>
+            </div>
+
+            <div className="segmented">
+              {regions.map((_, i) => (
+                <button key={i} className={regionActive === i ? "active" : ""} onClick={() => setRegionActive(i)}>
+                  Table {i + 1}
                 </button>
               ))}
             </div>
-            {/* En tête-à-tête il n'y a pas de second adversaire : sans moyen de
-                désactiver la zone, elle lirait de la décoration et bloquerait
-                le calcul de la part à chaque tour. */}
-            <button
-              className="btn-secondary"
-              onClick={() =>
-                setZones((p) => ({ ...p, [zoneActive]: p[zoneActive] ? null : ZONES_PAR_DEFAUT[zoneActive] }))
-              }
-            >
-              {zones[zoneActive] ? "Désactiver cette zone" : "Réactiver"}
-            </button>
+
+            {modeCalibrage === "regions" && (
+              <>
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setRegions((r) => [...r, { x: 0.3, y: 0.3, l: 0.3, h: 0.5 }]);
+                    setRegionActive(regions.length);
+                  }}
+                >
+                  Ajouter une table
+                </button>
+                {regions.length > 1 && (
+                  <button
+                    className="btn-secondary"
+                    onClick={() => {
+                      setRegions((r) => r.filter((_, i) => i !== regionActive));
+                      setRegionActive(0);
+                    }}
+                  >
+                    <Trash2 size={13} /> Retirer la table {regionActive + 1}
+                  </button>
+                )}
+              </>
+            )}
+
+            {modeCalibrage === "zones" && (
+              <>
+                <div className="segmented">
+                  {Object.keys(LIBELLES_ZONES).map((cle) => (
+                    <button
+                      key={cle}
+                      className={zoneActive === cle ? "active" : ""}
+                      onClick={() => setZoneActive(cle)}
+                      title={zones[cle] ? "" : "zone désactivée"}
+                    >
+                      {LIBELLES_ZONES[cle]}
+                      {!zones[cle] && " ✕"}
+                    </button>
+                  ))}
+                </div>
+                {/* En tête-à-tête il n'y a pas de second adversaire : sans moyen
+                    de désactiver la zone, elle lirait de la décoration et
+                    bloquerait le calcul de la part à chaque tour. */}
+                <button
+                  className="btn-secondary"
+                  onClick={() =>
+                    setZones((p) => ({ ...p, [zoneActive]: p[zoneActive] ? null : ZONES_PAR_DEFAUT[zoneActive] }))
+                  }
+                >
+                  {zones[zoneActive] ? "Désactiver cette zone" : "Réactiver"}
+                </button>
+              </>
+            )}
           </div>
 
           <Calibrateur
             image={image}
+            regions={regions}
+            regionActive={regionActive}
             zones={zones}
             zoneActive={zoneActive}
-            onZone={(cle, z) => setZones((prev) => ({ ...prev, [cle]: z }))}
+            mode={modeCalibrage}
+            onCadre={(cadre) => {
+              if (modeCalibrage === "regions") {
+                setRegions((r) => r.map((x, i) => (i === regionActive ? cadre : x)));
+                return;
+              }
+              // Le cadre est tracé sur la fenêtre entière ; on le ramène dans le
+              // repère de la table pour qu'il reste valable si elle se déplace.
+              const reg = regions[regionActive];
+              if (!reg || reg.l <= 0 || reg.h <= 0) return;
+              setZones((p) => ({
+                ...p,
+                [zoneActive]: {
+                  x: (cadre.x - reg.x) / reg.l,
+                  y: (cadre.y - reg.y) / reg.h,
+                  l: cadre.l / reg.l,
+                  h: cadre.h / reg.h,
+                },
+              }));
+            }}
           />
 
           <div className="apprentissage">
             <div>
               <label className="field-label">Ce que voit le lecteur</label>
-              {zones[zoneActive] ? (
+              {zoneActiveAbsolue ? (
                 <>
-                  <ApercuZone image={image} zone={zones[zoneActive]} />
-                  <ApercuZone image={image} zone={zones[zoneActive]} encre />
+                  <ApercuZone image={image} zone={zoneActiveAbsolue} />
+                  <ApercuZone image={image} zone={zoneActiveAbsolue} encre />
                   <p className="muted" style={{ fontSize: 11, marginTop: 6, maxWidth: 320, lineHeight: 1.5 }}>
                     En dessous, ce qu'il en retient. Les chiffres doivent y apparaître entiers et
                     détachés : un cadre qui rogne le haut ou le bas les déforme au point de les rendre

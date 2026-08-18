@@ -26,7 +26,18 @@ import { lireZone, versNombre } from "./vision.js";
 // points de départ, volontairement larges ; ils dépendent de la taille de
 // fenêtre et de la disposition choisie dans le client, et c'est bien pour cela
 // que les cadres se tracent à la souris.
+// Les zones sont relatives à une TABLE, pas à la fenêtre capturée.
+//
+// Betclic Poker est une application Flutter : une seule fenêtre de haut niveau
+// contient toutes les tables, dessinées dans le même canvas. Aucune énumération
+// système ne les distingue. On capture donc la fenêtre du client, l'utilisateur
+// délimite chaque table à l'intérieur, et ces zones-ci s'appliquent au contenu
+// de chaque table. Comme toutes les tables ont exactement la même disposition,
+// le calibrage interne ne se fait qu'une fois et sert pour toutes.
 export const ZONES_PAR_DEFAUT = {
+  // Le buy-in venait du titre de la fenêtre ; il n'y a plus de titre par table,
+  // donc il se lit dans le bandeau du haut comme le reste.
+  buyIn: { x: 0.3, y: 0.0, l: 0.4, h: 0.055 },
   // Large exprès : la dotation passe de « 40€ » à « 2000€ » selon le tirage,
   // et un cadre calé sur le cas court tronquerait le cas long.
   dotation: { x: 0.34, y: 0.1, l: 0.33, h: 0.12 },
@@ -37,12 +48,46 @@ export const ZONES_PAR_DEFAUT = {
 };
 
 export const LIBELLES_ZONES = {
+  buyIn: "Buy-in (bandeau)",
   dotation: "Dotation",
   tapisHero: "Ton tapis",
   adversaire1: "Adversaire 1",
   adversaire2: "Adversaire 2",
   pot: "Pot",
 };
+
+// Deux tables côte à côte : la disposition la plus courante sur écran large.
+// Ce ne sont que des rectangles de départ, à ajuster à la souris.
+export const REGIONS_PAR_DEFAUT = [
+  { x: 0.1, y: 0.1, l: 0.4, h: 0.85 },
+  { x: 0.5, y: 0.1, l: 0.4, h: 0.85 },
+];
+
+/**
+ * Compose une zone interne avec la région de sa table.
+ *
+ * Les zones sont exprimées dans le repère de la table ; la capture, elle, est
+ * celle de la fenêtre entière. Cette fonction fait le passage de l'un à l'autre
+ * pour que le reste du code n'ait jamais à s'en soucier.
+ */
+export function zoneDansRegion(region, zone) {
+  if (!region || !zone) return null;
+  return {
+    x: region.x + zone.x * region.l,
+    y: region.y + zone.y * region.h,
+    l: zone.l * region.l,
+    h: zone.h * region.h,
+  };
+}
+
+// Toutes les zones d'une table, ramenées au repère de la fenêtre capturée.
+export function zonesAbsolues(region, zones) {
+  const out = {};
+  for (const [cle, zone] of Object.entries(zones)) {
+    out[cle] = zone ? zoneDansRegion(region, zone) : null;
+  }
+  return out;
+}
 
 // Un spin se joue à trois ; en tête-à-tête le second siège est simplement vide.
 export const ZONES_ADVERSAIRES = ["adversaire1", "adversaire2"];
@@ -184,8 +229,17 @@ export function nouveauSuivi(table, maintenant = Date.now()) {
     partVueLe: null,
     lectures: 0,
     echecs: 0,
+    // Betclic n'ouvre pas une fenetre par table : le signal « la fenetre s'est
+    // fermee » n'existe plus. La fin d'un tournoi se voit donc a la table qui
+    // se vide — on compte les tours consecutifs sans dotation lisible.
+    toursVides: 0,
   };
 }
+
+// Nombre de tours sans rien a lire avant de considerer la table comme fermee.
+// Assez pour absorber une animation ou un tapis en cours, assez peu pour que la
+// fiche arrive tant que le tournoi est frais dans la tete du joueur.
+export const TOURS_AVANT_FERMETURE = 6;
 
 /**
  * Intègre une nouvelle lecture dans le suivi.
@@ -198,7 +252,23 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
   const s = { ...suivi, vuLe: maintenant, lectures: suivi.lectures + 1 };
   let tournoiTermine = null;
 
-  if (lecture.dotation == null && lecture.tapisHero == null) s.echecs = suivi.echecs + 1;
+  // Le buy-in se lit desormais dans le bandeau de la table : sans fenetre par
+  // table, aucun titre ne le porte plus. Une fois connu on le garde, il ne
+  // change pas en cours de tournoi.
+  if (lecture.buyIn != null && lecture.buyIn > 0 && s.buyIn == null) s.buyIn = lecture.buyIn;
+
+  // Table vide : ni dotation ni tapis. Plusieurs tours de suite, c'est que le
+  // tournoi est termine et que la zone montre autre chose.
+  const rienALire = lecture.dotation == null && lecture.tapisHero == null;
+  s.toursVides = rienALire ? (suivi.toursVides || 0) + 1 : 0;
+  if (rienALire) s.echecs = suivi.echecs + 1;
+
+  if (s.toursVides >= TOURS_AVANT_FERMETURE && suivi.dotation != null) {
+    return {
+      suivi: { ...nouveauSuivi({ id: suivi.sourceId, titre: suivi.titre, buyIn: suivi.buyIn }, maintenant) },
+      tournoiTermine: cloturer(suivi, maintenant),
+    };
+  }
 
   // Une dotation qui ne correspond à aucun multiplicateur du tirage est une
   // erreur de lecture, pas un tirage exotique : on la jette.

@@ -675,3 +675,4 @@ body {
    information à part entière, celle d'un joueur éliminé. */
 .lecture.vide { border-color: rgba(139, 148, 143, 0.5); }
 .lecture.vide .lecture-valeur { color: var(--text-muted); font-style: italic; }
+.alert-info { background: rgba(201,162,39,0.08); border: 1px solid rgba(201,162,39,0.35); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6; color: var(--text); }
