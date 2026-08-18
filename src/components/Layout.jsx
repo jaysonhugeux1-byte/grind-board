@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap } from "lucide-react";
+import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useMode } from "../contexts/ModeContext";
 import { useSubscription } from "../contexts/SubscriptionContext";
@@ -12,6 +12,7 @@ import { DataProvider } from "../contexts/DataContext";
 const NAV_ITEMS = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true, modes: ["cash", "spin"] },
   { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"] },
+  { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"] },
   { to: "/sessions", label: "Sessions", icon: ListOrdered, modes: ["cash"] },
   { to: "/ranges", label: "Ranges", icon: Grid3x3, modes: ["cash"] },
   { to: "/ev", label: "EV par position", icon: BarChart3, modes: ["cash"] },
