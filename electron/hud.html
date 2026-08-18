@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Grand Livre — affichage de table</title>
+<style>
+  /* Le fond doit rester parfaitement transparent : tout pixel opaque masquerait
+     la table qui se trouve dessous. */
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    /* La fenêtre est traversante au clic, mais on le redit ici : rien ne doit
+       jamais intercepter la souris. */
+    pointer-events: none;
+    user-select: none;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+
+  .pastille {
+    position: absolute;
+    /* Ancrée par son coin haut-gauche, mais centrée horizontalement sur le
+       point donné : les sièges sont repérés par leur milieu. */
+    transform: translateX(-50%);
+    background: rgba(12, 18, 20, 0.88);
+    border: 1px solid rgba(201, 162, 39, 0.55);
+    border-radius: 7px;
+    padding: 5px 9px;
+    color: #ede9dc;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: nowrap;
+    /* Un liseré sombre garde le texte lisible sur un feutre clair. */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  }
+
+  .pastille .nom {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .pastille .stats {
+    display: flex;
+    gap: 8px;
+    font-family: "Consolas", ui-monospace, monospace;
+    font-size: 11.5px;
+    color: #cfd6d1;
+  }
+
+  .pastille .stats b { color: #e0c25f; font-weight: 600; }
+
+  /* Trois tons : large et agressif à surveiller, serré et passif à attaquer,
+     échantillon trop court pour conclure. */
+  .pastille.danger { border-color: rgba(193, 92, 77, 0.75); }
+  .pastille.cible { border-color: rgba(95, 174, 121, 0.75); }
+  .pastille.faible { border-color: rgba(139, 148, 143, 0.4); opacity: 0.75; }
+
+  .pastille .note { display: block; font-size: 10.5px; color: #8b948f; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="couche"></div>
+<script>
+  const couche = document.getElementById("couche");
+
+  window.hud.surPastilles((pastilles) => {
+    couche.textContent = "";
+    for (const p of pastilles) {
+      const el = document.createElement("div");
+      el.className = "pastille" + (p.ton ? " " + p.ton : "");
+      el.style.left = p.x + "px";
+      el.style.top = p.y + "px";
+
+      const nom = document.createElement("span");
+      nom.className = "nom";
+      nom.textContent = p.nom;
+      el.appendChild(nom);
+
+      if (p.stats && p.stats.length) {
+        const s = document.createElement("div");
+        s.className = "stats";
+        for (const st of p.stats) {
+          const bloc = document.createElement("span");
+          bloc.textContent = st.label + " ";
+          const v = document.createElement("b");
+          v.textContent = st.valeur;
+          bloc.appendChild(v);
+          s.appendChild(bloc);
+        }
+        el.appendChild(s);
+      }
+
+      if (p.note) {
+        const n = document.createElement("span");
+        n.className = "note";
+        n.textContent = p.note;
+        el.appendChild(n);
+      }
+
+      couche.appendChild(el);
+    }
+  });
+</script>
+</body>
+</html>

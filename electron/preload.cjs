@@ -16,6 +16,13 @@ contextBridge.exposeInMainWorld("grandLivre", {
   // qui tourne plusieurs fois par seconde et n'a rien à afficher.
   capturerTables: (sourceIds) => ipcRenderer.invoke("tables:capturer-lot", sourceIds),
 
+  // Affichage superposé aux tables. Le rendu envoie des pastilles deja
+  // calculees, avec leur position a l'ecran : la fenetre d'affichage ne lit
+  // rien et ne decide rien.
+  hudAfficher: (pastilles) => ipcRenderer.invoke("hud:afficher", pastilles),
+  hudMasquer: () => ipcRenderer.invoke("hud:masquer"),
+  hudEcran: () => ipcRenderer.invoke("hud:ecran"),
+
   // Permet à l'interface de savoir si elle tourne dans l'application de bureau :
   // la lecture des tables n'existe pas dans un navigateur.
   estBureau: true,

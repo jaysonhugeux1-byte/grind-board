@@ -23,6 +23,8 @@ const CLE_REGIONS = "gl_lecteur_regions";
 const CLE_GABARITS = "gl_lecteur_gabarits_v2";
 const CLE_PERIODE = "gl_lecteur_periode";
 const CLE_AUTO = "gl_lecteur_auto";
+const CLE_HUD = "gl_lecteur_hud";
+const CLE_DECALAGE = "gl_lecteur_decalage";
 
 // Rythmes proposés. Un demi-tour de seconde est le réglage utile : ce qui
 // décide de l'issue d'un tournoi, c'est la toute dernière image avant que la
@@ -209,7 +211,7 @@ function Calibrateur({ image, regions, regionActive, region, zones, zoneActive, 
 
 export default function LecteurDirect() {
   const { user } = useAuth();
-  const { hands, refresh } = useData();
+  const { hands, tournois, refresh } = useData();
 
   const bureau = typeof window !== "undefined" && window.grandLivre?.estBureau;
 
@@ -245,6 +247,13 @@ export default function LecteurDirect() {
   // une image figee : les zones de table en jeu ne peuvent pas etre reglees sur
   // un ecran de fin, et inversement.
   const [apercuVivant, setApercuVivant] = useState(false);
+  // Affichage superposé aux tables. Le décalage compense la position de la
+  // fenêtre de jeu à l'écran : Electron sait capturer une fenêtre mais pas dire
+  // où elle se trouve, on part donc d'une fenêtre centrée — ce qui tombe juste
+  // quand elle est agrandie — et on laisse la possibilité de corriger.
+  const [hudActif, setHudActif] = useState(() => lireLocal(CLE_HUD, false));
+  const [decalage, setDecalage] = useState(() => lireLocal(CLE_DECALAGE, null));
+  const ecranRef = useRef(null);
   // Inscription sans clic. Ne concerne que les tournois dont l'issue est
   // CERTAINE : une issue indécise ne peut pas être inscrite sans être inventée,
   // elle continue donc de passer par la file de confirmation.
@@ -258,6 +267,22 @@ export default function LecteurDirect() {
   useEffect(() => { localStorage.setItem(CLE_GABARITS, JSON.stringify(gabarits)); }, [gabarits]);
   useEffect(() => { localStorage.setItem(CLE_PERIODE, JSON.stringify(periodeMs)); }, [periodeMs]);
   useEffect(() => { localStorage.setItem(CLE_AUTO, JSON.stringify(auto)); }, [auto]);
+  useEffect(() => { localStorage.setItem(CLE_HUD, JSON.stringify(hudActif)); }, [hudActif]);
+  useEffect(() => { localStorage.setItem(CLE_DECALAGE, JSON.stringify(decalage)); }, [decalage]);
+
+  // Taille de l'ecran, demandee une fois : elle sert a convertir les
+  // coordonnees relatives d'une table en pixels d'ecran.
+  useEffect(() => {
+    if (!bureau) return;
+    window.grandLivre.hudEcran?.().then((e) => { ecranRef.current = e; }).catch(() => {});
+  }, [bureau]);
+
+  // Rien ne doit rester affiche par-dessus les tables quand on arrete.
+  useEffect(() => {
+    if (!bureau) return undefined;
+    if (!hudActif || !surveillance) window.grandLivre.hudMasquer?.();
+    return () => { window.grandLivre.hudMasquer?.(); };
+  }, [bureau, hudActif, surveillance]);
 
   // Zone active ramenee au repere de la fenetre capturee : c'est dans ce repere
   // que vivent l'apercu et l'apprentissage.
@@ -276,7 +301,7 @@ export default function LecteurDirect() {
 
   // Fiches d'adversaires deja constituees : c'est elles qu'on interroge quand un
   // pseudo est lu sur la table.
-  const fiches = useMemo(() => listerAdversaires(hands), [hands]);
+  const fiches = useMemo(() => listerAdversaires(hands, tournois), [hands, tournois]);
   const pseudos = useMemo(() => fiches.map((f) => f.nom), [fiches]);
 
   // Adversaires reconnus dans la derniere lecture. La lecture d'un pseudo n'a
@@ -293,6 +318,22 @@ export default function LecteurDirect() {
       })
       .filter(Boolean);
   }, [lectureLive, pseudos, fiches]);
+
+  // Convertit une zone de table en position a l'ecran.
+  //
+  // Electron sait capturer une fenetre mais pas dire ou elle se trouve. On part
+  // donc d'une fenetre centree sur l'ecran — ce qui tombe juste quand elle est
+  // agrandie, le cas courant — et le decalage manuel corrige le reste.
+  const versEcran = useCallback((zoneAbsolue, capture) => {
+    const e = ecranRef.current;
+    if (!e || !capture) return null;
+    const dx = decalage?.x ?? Math.round((e.largeur - capture.largeur) / 2);
+    const dy = decalage?.y ?? Math.round((e.hauteur - capture.hauteur) / 2);
+    return {
+      x: Math.round((zoneAbsolue.x + zoneAbsolue.l / 2) * capture.largeur) + dx,
+      y: Math.round(zoneAbsolue.y * capture.hauteur) + dy,
+    };
+  }, [decalage]);
 
   // Calibrage prepare a l'avance sur une capture reelle de la fenetre Betclic :
   // decoupe des quatre tables, position du bouton « Rejouer », et gabarits du
@@ -386,7 +427,18 @@ export default function LecteurDirect() {
       prizePool: fiche.dotation,
       payout: gagne ? fiche.dotation : 0,
       finish: gagne ? 1 : null,
-      data: { source: "lecteur", part: fiche.part ?? null },
+      data: {
+        source: "lecteur",
+        part: fiche.part ?? null,
+        // Ce que le lecteur a vu pendant la partie. Il ne voit pas les actions
+        // et ne peut donc pas reconstituer une main : ce sont des instantanés,
+        // conservés pour revoir le déroulé avant que l'historique du lendemain
+        // n'apporte le détail.
+        observations: fiche.observations ?? [],
+        // Adversaires croisés, pour que leurs fiches se remplissent sans
+        // attendre l'import.
+        adversaires: fiche.adversaires ?? [],
+      },
     });
   }, [user]);
 
@@ -428,6 +480,7 @@ export default function LecteurDirect() {
       const captures = await window.grandLivre.capturerTables(null);
       const maintenant = Date.now();
       const etats = [];
+      const pastilles = [];
 
       // Un suivi par (fenêtre, région) : le système ne distingue pas les tables,
       // donc c'est le découpage de l'utilisateur qui en tient lieu.
@@ -465,8 +518,45 @@ export default function LecteurDirect() {
         aLire.forEach((region, i) => {
           if (!region) return;
           const cle = `${capture.id}#${i}`;
-          const lu = lireTable(image, zonesAbsolues(region, zones), gabarits);
+          const zonesAbs = zonesAbsolues(region, zones);
+          const lu = lireTable(image, zonesAbs, gabarits);
           const { suivi, tournoiTermine } = integrerLecture(suivis.get(cle), lu, maintenant);
+
+          // Pastilles de l'affichage superposé : un adversaire reconnu, ses
+          // chiffres posés au-dessus de son siège.
+          if (hudActif) {
+            for (const cleNom of ["nomAdversaire1", "nomAdversaire2"]) {
+              const texteLu = lu[cleNom];
+              if (!texteLu || !zonesAbs[cleNom]) continue;
+              const point = versEcran(zonesAbs[cleNom], capture);
+              if (!point) continue;
+              const trouve = trouverPseudo(texteLu, pseudos);
+              const f = trouve ? fiches.find((x) => x.nom === trouve.nom) : null;
+              if (!f) {
+                pastilles.push({
+                  nom: texteLu,
+                  ton: "faible",
+                  note: "jamais croisé",
+                  x: point.x,
+                  y: Math.max(0, point.y - 62),
+                });
+                continue;
+              }
+              const st = styleAdversaire(f);
+              pastilles.push({
+                nom: f.nom,
+                ton: !f.fiable ? "faible" : st?.ton === "loss" ? "danger" : st?.ton === "win" ? "cible" : "",
+                stats: [
+                  { label: "joue", valeur: `${f.tauxVolontaire?.toFixed(0) ?? "—"}%` },
+                  { label: "rel", valeur: `${f.tauxRelance?.toFixed(0) ?? "—"}%` },
+                  { label: "tapis", valeur: `${f.tauxTapis?.toFixed(0) ?? "—"}%` },
+                ],
+                note: f.fiable ? `${f.mains} mains · ${st?.label ?? ""}` : `${f.mains} mains — trop peu`,
+                x: point.x,
+                y: Math.max(0, point.y - 62),
+              });
+            }
+          }
           suivis.set(cle, suivi);
           if (tournoiTermine) nouvellesFiches.push(tournoiTermine);
           if (i === regionActive) setLectureLive(lu);
@@ -521,10 +611,11 @@ export default function LecteurDirect() {
 
       setCadence({ duree: Math.round(performance.now() - depart), tables: captures.length });
       setEtatTables(etats);
+      if (hudActif) window.grandLivre.hudAfficher?.(pastilles);
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
-  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh]);
+  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh, hudActif, pseudos, fiches, versEcran]);
 
   useEffect(() => {
     if (!surveillance) return undefined;
@@ -613,6 +704,10 @@ export default function LecteurDirect() {
               >
                 {surveillance ? <><Square size={13} /> Arrêter</> : <><Play size={13} /> Surveiller</>}
               </button>
+              <label className="bascule" title="Poser les statistiques des adversaires par-dessus tes tables">
+                <input type="checkbox" checked={hudActif} onChange={(e) => setHudActif(e.target.checked)} />
+                Affichage sur les tables
+              </label>
               <label className="bascule" title="Recapturer la table chaque seconde pendant le calibrage">
                 <input
                   type="checkbox"

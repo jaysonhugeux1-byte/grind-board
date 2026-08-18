@@ -42,7 +42,10 @@ function Fiche({ stats }) {
         <div className="import-summary-stat">
           <span className="import-summary-stat-label">Mains vues</span>
           <span className="import-summary-stat-value mono">{nombre(stats.mains)}</span>
-          <span className="card-sub">sur {nombre(stats.tournois)} tournoi(s)</span>
+          <span className="card-sub">
+            sur {nombre(stats.tournois)} tournoi(s)
+            {stats.rencontresDirectes > 0 && ` · ${nombre(stats.rencontresDirectes)} croisé(s) en direct`}
+          </span>
         </div>
         <div className="import-summary-stat">
           <span className="import-summary-stat-label">Mains jouées</span>
@@ -72,7 +75,16 @@ function Fiche({ stats }) {
         </div>
       </div>
 
-      {!stats.fiable && (
+      {!stats.mains && stats.rencontresDirectes > 0 && (
+        <p className="alert-info" style={{ marginTop: 14 }}>
+          <Info size={13} style={{ verticalAlign: -2, marginRight: 5 }} />
+          Croisé {stats.rencontresDirectes} fois par le lecteur d'écran, mais aucune main analysée. Le
+          lecteur voit les pseudos, pas les actions : ses statistiques n'apparaîtront qu'après l'import
+          de l'historique.
+        </p>
+      )}
+
+      {stats.mains > 0 && !stats.fiable && (
         <p className="alert-info" style={{ marginTop: 14 }}>
           <Info size={13} style={{ verticalAlign: -2, marginRight: 5 }} />
           {stats.mains} main(s) seulement. En dessous de {MAINS_MINIMUM_FIABLE}, ces fréquences ne
@@ -161,11 +173,11 @@ function Fiche({ stats }) {
 }
 
 export default function Adversaires() {
-  const { hands, loading } = useData();
+  const { hands, tournois, loading } = useData();
   const [requete, setRequete] = useState("");
   const [choisi, setChoisi] = useState(null);
 
-  const fiches = useMemo(() => listerAdversaires(hands), [hands]);
+  const fiches = useMemo(() => listerAdversaires(hands, tournois), [hands, tournois]);
   const resultats = useMemo(() => chercherAdversaires(fiches, requete), [fiches, requete]);
   const actif = useMemo(
     () => (choisi ? fiches.find((f) => f.nom === choisi) : null),

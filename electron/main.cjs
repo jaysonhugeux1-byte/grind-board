@@ -4,6 +4,7 @@ const http = require("http");
 const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
 const { listTables, captureTable, captureTables } = require("./capture.cjs");
+const hud = require("./hud.cjs");
 
 const isDev = !app.isPackaged;
 
@@ -101,6 +102,8 @@ ipcMain.handle("open-external", async (_event, rawUrl) => {
 
 // Lecture des tables de jeu. Le rendu ne reçoit qu'une image déjà encodée : il
 // n'obtient aucun accès direct à l'écran ni au système.
+hud.enregistrerIpc();
+
 ipcMain.handle("tables:lister", async () => listTables());
 ipcMain.handle("tables:capturer", async (_event, sourceId) => captureTable(String(sourceId)));
 // Chemin rapide de la surveillance : toutes les tables en un seul appel
@@ -202,6 +205,12 @@ app.whenReady().then(async () => {
   });
 });
 
+// L'affichage superposé est une fenêtre transparente posée par-dessus tout
+// l'écran : la laisser derrière soi serait le pire des oublis. On la ferme
+// explicitement avant de quitter.
+app.on("before-quit", () => hud.fermer());
+
 app.on("window-all-closed", () => {
+  hud.fermer();
   if (process.platform !== "darwin") app.quit();
 });

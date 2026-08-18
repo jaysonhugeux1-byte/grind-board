@@ -282,8 +282,20 @@ export function nouveauSuivi(table, maintenant = Date.now()) {
     // L'écran de fin reste affiché jusqu'à ce que le joueur relance : sans ce
     // drapeau, le même tournoi serait inscrit à chaque tour de lecture.
     ecranFinVu: false,
+    // Trace de ce qui a été vu pendant la partie. Le lecteur ne voit pas les
+    // actions et ne peut donc pas reconstituer une main : ce qu'il sait, ce sont
+    // des instantanés. Les conserver permet de revoir le déroulé d'un tournoi
+    // avant que l'historique du lendemain n'apporte le détail.
+    observations: [],
+    // Pseudos croisés à cette table. Ils alimentent les fiches d'adversaires
+    // sans attendre l'import, ce qui est tout l'intérêt d'un suivi en direct.
+    adversaires: [],
   };
 }
+
+// Au-delà, la trace ne dit rien de plus et alourdit inutilement la ligne :
+// un spin dure quelques minutes, cela laisse largement de quoi le revoir.
+export const MAX_OBSERVATIONS = 240;
 
 // Nombre de tours sans rien a lire avant de considerer la table comme fermee.
 // Assez pour absorber une animation ou un tapis en cours, assez peu pour que la
@@ -397,6 +409,38 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
     s.partVueLe = maintenant;
   }
 
+  // Pseudos croisés. On ne retient qu'une occurrence par nom : c'est la
+  // rencontre qui compte, pas le nombre de fois où on l'a relu.
+  for (const cle of ["nomAdversaire1", "nomAdversaire2"]) {
+    const nom = lecture[cle];
+    if (typeof nom === "string" && nom.length > 1 && !nom.includes("?") && !s.adversaires.includes(nom)) {
+      s.adversaires = [...s.adversaires, nom];
+    }
+  }
+
+  // Instantané, et seulement s'il apporte quelque chose : réenregistrer des
+  // valeurs identiques à chaque demi-seconde remplirait la trace de doublons.
+  const dernier = s.observations[s.observations.length - 1];
+  const change =
+    !dernier ||
+    dernier.tapis !== lecture.tapisHero ||
+    dernier.pot !== lecture.pot ||
+    dernier.a1 !== lecture.adversaire1 ||
+    dernier.a2 !== lecture.adversaire2;
+  if (change && s.observations.length < MAX_OBSERVATIONS) {
+    s.observations = [
+      ...s.observations,
+      {
+        t: maintenant - s.debut,
+        tapis: lecture.tapisHero ?? null,
+        pot: lecture.pot ?? null,
+        a1: lecture.adversaire1 ?? null,
+        a2: lecture.adversaire2 ?? null,
+        part: part ?? null,
+      },
+    ];
+  }
+
   return { suivi: s, tournoiTermine };
 }
 
@@ -448,6 +492,8 @@ export function cloturer(suivi, maintenant = Date.now()) {
     resultat,
     tapisFinal: suivi.tapisHero,
     part: suivi.part,
+    observations: suivi.observations ?? [],
+    adversaires: suivi.adversaires ?? [],
     debut: suivi.debut,
     fin: maintenant,
     // Une défaite lue sur l'écran de fin n'a PAS de dotation : le tournoi

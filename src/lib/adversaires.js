@@ -17,6 +17,9 @@ function fiche(nom) {
   return {
     nom,
     mains: 0,
+    // Mains réellement analysées, issues de l'historique. À distinguer des
+    // rencontres vues à l'écran, qui n'apportent aucune statistique.
+    rencontresDirectes: 0,
     tournois: new Set(),
     volontaires: 0,
     relances: 0,
@@ -42,8 +45,27 @@ function fiche(nom) {
  *               `adversaires` produit à l'import
  * @returns      Map pseudo -> fiche agrégée
  */
-export function construireFiches(hands) {
+export function construireFiches(hands, tournois = []) {
   const fiches = new Map();
+
+  // Rencontres relevées en direct par le lecteur d'écran. Elles ne portent ni
+  // action ni carte — il n'en voit aucune — donc elles ne nourrissent aucune
+  // fréquence. Elles disent seulement « tu l'as croisé », ce qui suffit à faire
+  // exister la fiche avant que l'historique du lendemain n'arrive.
+  for (const t of tournois) {
+    for (const nom of t.adversaires || []) {
+      if (!nom) continue;
+      let f = fiches.get(nom);
+      if (!f) {
+        f = fiche(nom);
+        fiches.set(nom, f);
+      }
+      f.rencontresDirectes++;
+      f.tournois.add(t.id);
+      if (t.ts < f.premiereVue) f.premiereVue = t.ts;
+      if (t.ts > f.derniereVue) f.derniereVue = t.ts;
+    }
+  }
 
   for (const h of hands) {
     const liste = h.adversaires;
@@ -102,6 +124,7 @@ export function statsAdversaire(f) {
   return {
     nom: f.nom,
     mains: f.mains,
+    rencontresDirectes: f.rencontresDirectes,
     tournois: f.tournois.size,
     // « Mains jouées » plutôt que VPIP : le sigle ne parle qu'aux initiés, et
     // la mesure est la même — avoir mis plus que sa blinde.
@@ -128,10 +151,10 @@ export function statsAdversaire(f) {
 }
 
 /** Toutes les fiches, des plus rencontrées aux moins vues. */
-export function listerAdversaires(hands) {
-  return [...construireFiches(hands).values()]
+export function listerAdversaires(hands, tournois = []) {
+  return [...construireFiches(hands, tournois).values()]
     .map(statsAdversaire)
-    .sort((a, b) => b.mains - a.mains || a.nom.localeCompare(b.nom));
+    .sort((a, b) => b.mains - a.mains || b.rencontresDirectes - a.rencontresDirectes || a.nom.localeCompare(b.nom));
 }
 
 /**
