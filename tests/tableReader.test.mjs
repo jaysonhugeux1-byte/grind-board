@@ -82,6 +82,8 @@ console.log("=== suivi d'une partie complete ===");
     { dotation: 60, tapisHero: 5.1, adversaire1: 11.2, adversaire2: 8.4, pot: 0.3 },
     { dotation: 60, tapisHero: 14.6, adversaire1: 0, adversaire2: 6.2, pot: 0 },
     { dotation: 60, tapisHero: 18.7, adversaire1: 0, adversaire2: 0, pot: 0 },
+    // Confirmee : une part ne fait foi qu'apres une seconde lecture identique.
+    { dotation: 60, tapisHero: 18.7, adversaire1: 0, adversaire2: 0, pot: 0 },
   ];
   let t = 1000;
   for (const e of etapes) { t += 500; ({ suivi: s } = integrerLecture(s, e, t)); }
@@ -98,6 +100,7 @@ console.log("");
 console.log("=== une lecture partielle n'efface pas la precedente ===");
 {
   let s = nouveauSuivi({ id: "w9", titre: "Spin & Rush - 20 EUR", buyIn: 20 }, 1000);
+  ({ suivi: s } = integrerLecture(s, { dotation: 40, tapisHero: 20, adversaire1: 0, adversaire2: 0, pot: 0 }, 1800));
   ({ suivi: s } = integrerLecture(s, { dotation: 40, tapisHero: 20, adversaire1: 0, adversaire2: 0, pot: 0 }, 2000));
   T("part mesuree", s.partReglee === 1, String(s.partReglee));
   // Juste avant la fermeture, un adversaire devient illisible.
@@ -111,14 +114,16 @@ console.log("=== nouvelle partie dans la meme fenetre ===");
 {
   let s = nouveauSuivi({ id: "w1", titre: "Spin & Rush - 20 EUR", buyIn: 20 }, 1000);
   ({ suivi: s } = integrerLecture(s, { dotation: 40, tapisHero: 8, adversaire1: 8, adversaire2: 9, pot: 0 }, 2000));
+  ({ suivi: s } = integrerLecture(s, { dotation: 40, tapisHero: 0, adversaire1: 12, adversaire2: 13, pot: 0 }, 3500));
   ({ suivi: s } = integrerLecture(s, { dotation: 40, tapisHero: 0, adversaire1: 12, adversaire2: 13, pot: 0 }, 4000));
-  const r = integrerLecture(s, { dotation: 100, tapisHero: 8.3, adversaire1: 8.3, adversaire2: 8.4, pot: 0 }, 6000);
+  let r = integrerLecture(s, { dotation: 100, tapisHero: 8.3, adversaire1: 8.3, adversaire2: 8.4, pot: 0 }, 6000);
+  const apres = integrerLecture(r.suivi, { dotation: 100, tapisHero: 8.3, adversaire1: 8.3, adversaire2: 8.4, pot: 0 }, 6500);
   T("la partie precedente est cloturee", r.tournoiTermine != null);
   T("  avec sa dotation d'origine", r.tournoiTermine?.dotation === 40, String(r.tournoiTermine?.dotation));
   T("  et son issue", r.tournoiTermine?.resultat === "perdu", String(r.tournoiTermine?.resultat));
   T("le suivi repart sur la nouvelle", r.suivi.dotation === 100 && r.suivi.tapisHero === 8.3);
   T("  avec les extremes remis a zero", r.suivi.tapisMax === 8.3 && r.suivi.tapisMin === 8.3);
-  T("  et la part recalculee", Math.abs(r.suivi.partReglee - 8.3 / 25) < 1e-9, String(r.suivi.partReglee));
+  T("  et la part recalculee apres confirmation", Math.abs(apres.suivi.partReglee - 8.3 / 25) < 1e-9, String(apres.suivi.partReglee));
 }
 
 console.log("");
@@ -132,8 +137,9 @@ console.log("=== apparition et fermeture de fenetres ===");
   T("deux tables detectees", r.apparues.length === 2 && r.suivis.size === 2);
   suivis = r.suivis;
 
-  suivis.set("a", integrerLecture(suivis.get("a"),
-    { dotation: 40, tapisHero: 22, adversaire1: 0, adversaire2: 0, pot: 0 }, 2000).suivi);
+  const lecture = { dotation: 40, tapisHero: 22, adversaire1: 0, adversaire2: 0, pot: 0 };
+  suivis.set("a", integrerLecture(suivis.get("a"), lecture, 1800).suivi);
+  suivis.set("a", integrerLecture(suivis.get("a"), lecture, 2000).suivi);
 
   r = synchroniserTables(suivis, [{ id: "b", titre: "Spin & Rush - 5 EUR", buyIn: 5 }], 3000);
   T("la fenetre fermee produit une fiche", r.termines.length === 1, `${r.termines.length}`);
@@ -186,6 +192,7 @@ console.log("=== un tapis en cours ne conclut rien ===");
   // peut encore tout rafler. Conclure la-dessus inscrirait une defaite sur une
   // main gagnee.
   let s = nouveauSuivi({ id: "t", titre: "T", buyIn: 1 }, 1000);
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 12, adversaire1: 13, adversaire2: 0, pot: 0 }, 1800));
   ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 12, adversaire1: 13, adversaire2: 0, pot: 0 }, 2000));
   T("part reglee mesuree pot vide", Math.abs(s.partReglee - 12/25) < 1e-9, String(s.partReglee));
 
@@ -197,8 +204,48 @@ console.log("=== un tapis en cours ne conclut rien ===");
 
   // Il remporte le coup : pot vide, tout chez lui.
   ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 25, adversaire1: 0, adversaire2: 0, pot: 0 }, 3000));
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 25, adversaire1: 0, adversaire2: 0, pot: 0 }, 3200));
   T("apres le coup, la part reglee suit", s.partReglee === 1, String(s.partReglee));
   T("  et l'issue devient gagne", deduireResultat(s) === "gagne");
+}
+
+console.log("");
+
+console.log("");
+console.log("=== l'instant ou tout affiche zero ===");
+{
+  // Entre le pot qui se vide et les jetons qui arrivent dans le tapis du
+  // gagnant, il existe une image ou TOUT vaut zero. Le pot vide seul y verrait
+  // une elimination — alors que le joueur vient de remporter le coup.
+  let s = nouveauSuivi({ id: "t", titre: "T", buyIn: 1 }, 1000);
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 12, adversaire1: 13, adversaire2: 0, pot: 0 }, 1500));
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 12, adversaire1: 13, adversaire2: 0, pot: 0 }, 2000));
+  T("part confirmee apres deux lectures identiques", Math.abs(s.partReglee - 12/25) < 1e-9, String(s.partReglee));
+
+  // Tapis : les jetons partent au milieu.
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 0, adversaire1: 0, adversaire2: 0, pot: 25 }, 2500));
+  T("pendant le tapis, rien ne bouge", Math.abs(s.partReglee - 12/25) < 1e-9);
+
+  // L'instant fugace : pot deja vide, jetons pas encore credites.
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 0, adversaire1: 0, adversaire2: 0, pot: 0 }, 2600));
+  T("l'image fugace ne regle rien", Math.abs(s.partReglee - 12/25) < 1e-9, String(s.partReglee));
+  T("  et ne fait donc pas conclure a une defaite", deduireResultat(s) !== "perdu", String(deduireResultat(s)));
+
+  // Les jetons arrivent : Hero a tout.
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 25, adversaire1: 0, adversaire2: 0, pot: 0 }, 3000));
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 25, adversaire1: 0, adversaire2: 0, pot: 0 }, 3500));
+  T("apres confirmation, la victoire est vue", deduireResultat(s) === "gagne", String(deduireResultat(s)));
+}
+
+console.log("");
+console.log("=== une elimination reelle reste detectee ===");
+{
+  // Le garde-fou ne doit pas empecher de voir une vraie sortie : celle-la dure.
+  let s = nouveauSuivi({ id: "u", titre: "T", buyIn: 1 }, 1000);
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 5, adversaire1: 20, adversaire2: 0, pot: 0 }, 1500));
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 0, adversaire1: 25, adversaire2: 0, pot: 0 }, 2000));
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 0, adversaire1: 25, adversaire2: 0, pot: 0 }, 2500));
+  T("issue : perdu", deduireResultat(s) === "perdu", String(deduireResultat(s)));
 }
 
 console.log("");
