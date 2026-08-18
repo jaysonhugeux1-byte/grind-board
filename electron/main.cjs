@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
-const { listTables, captureTable } = require("./capture.cjs");
+const { listTables, captureTable, captureTables } = require("./capture.cjs");
 
 const isDev = !app.isPackaged;
 
@@ -103,6 +103,11 @@ ipcMain.handle("open-external", async (_event, rawUrl) => {
 // n'obtient aucun accès direct à l'écran ni au système.
 ipcMain.handle("tables:lister", async () => listTables());
 ipcMain.handle("tables:capturer", async (_event, sourceId) => captureTable(String(sourceId)));
+// Chemin rapide de la surveillance : toutes les tables en un seul appel
+// système, pixels bruts, sans encodage PNG.
+ipcMain.handle("tables:capturer-lot", async (_event, sourceIds) =>
+  captureTables(Array.isArray(sourceIds) ? sourceIds.map(String) : null)
+);
 
 function createWindow(startUrl) {
   const win = new BrowserWindow({

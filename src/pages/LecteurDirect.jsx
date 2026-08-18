@@ -6,10 +6,10 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState } from "../components/ui";
-import { apprendreZone, fusionnerGabarits } from "../lib/vision";
+import { apprendreZone, fusionnerGabarits, carteEncre, binariser } from "../lib/vision";
 import {
   ZONES_PAR_DEFAUT, LIBELLES_ZONES, extraireZone, lireTable, imageDepuisDataUrl,
-  synchroniserTables, integrerLecture, cloturer,
+  synchroniserTables, integrerLecture, partDeHero, deduireResultat,
 } from "../lib/tableReader";
 import { addSpinTournament } from "../lib/supabaseData";
 
@@ -17,7 +17,17 @@ const CLE_ZONES = "gl_lecteur_zones";
 // Version dans la clé : le descripteur a changé (flou), les anciens gabarits
 // ne sont plus comparables et doivent être réappris plutôt que mal lus.
 const CLE_GABARITS = "gl_lecteur_gabarits_v2";
-const PERIODE_MS = 2500;
+const CLE_PERIODE = "gl_lecteur_periode";
+
+// Rythmes proposés. Un demi-tour de seconde est le réglage utile : ce qui
+// décide de l'issue d'un tournoi, c'est la toute dernière image avant que la
+// fenêtre ne se ferme, et à 2,5 secondes on la manque souvent.
+const RYTHMES = [
+  { ms: 500, label: "0,5 s" },
+  { ms: 1000, label: "1 s" },
+  { ms: 2500, label: "2,5 s" },
+];
+const PERIODE_DEFAUT = 500;
 
 const lireLocal = (cle, defaut) => {
   try {
@@ -34,7 +44,7 @@ const euros = (v) =>
 // Dessine une zone découpée dans un canvas, agrandie : c'est ce que le lecteur
 // voit réellement, et le seul moyen pour l'utilisateur de juger si son cadre
 // tombe juste.
-function ApercuZone({ image, zone, echelle = 3 }) {
+function ApercuZone({ image, zone, echelle = 3, encre = false }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -43,21 +53,36 @@ function ApercuZone({ image, zone, echelle = 3 }) {
     const morceau = extraireZone(image, zone);
     if (!morceau) return;
 
+    const tampon = document.createElement("canvas");
+    tampon.width = morceau.largeur;
+    tampon.height = morceau.hauteur;
+    const tctx = tampon.getContext("2d");
+
+    if (encre) {
+      // Vue « encre » : exactement ce que le lecteur retient après
+      // binarisation. C'est le seul moyen de voir qu'un cadre rogne le haut ou
+      // le bas des chiffres — un défaut invisible sur l'image d'origine, mais
+      // qui déforme les signes au point de les rendre méconnaissables.
+      const bin = binariser(carteEncre(morceau.data, morceau.largeur, morceau.hauteur));
+      const sortie = tctx.createImageData(morceau.largeur, morceau.hauteur);
+      for (let i = 0; i < bin.bits.length; i++) {
+        const v = bin.bits[i] ? 235 : 20;
+        sortie.data[i * 4] = v;
+        sortie.data[i * 4 + 1] = v;
+        sortie.data[i * 4 + 2] = v;
+        sortie.data[i * 4 + 3] = 255;
+      }
+      tctx.putImageData(sortie, 0, 0);
+    } else {
+      tctx.putImageData(new ImageData(morceau.data, morceau.largeur, morceau.hauteur), 0, 0);
+    }
+
     canvas.width = morceau.largeur * echelle;
     canvas.height = morceau.hauteur * echelle;
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
-
-    const tampon = document.createElement("canvas");
-    tampon.width = morceau.largeur;
-    tampon.height = morceau.hauteur;
-    tampon.getContext("2d").putImageData(
-      new ImageData(morceau.data, morceau.largeur, morceau.hauteur),
-      0,
-      0
-    );
     ctx.drawImage(tampon, 0, 0, canvas.width, canvas.height);
-  }, [image, zone, echelle]);
+  }, [image, zone, echelle, encre]);
 
   return <canvas ref={ref} className="apercu-zone" />;
 }
@@ -159,12 +184,17 @@ export default function LecteurDirect() {
   const [lectureLive, setLectureLive] = useState(null);
   const [file, setFile] = useState([]);
   const [enregistres, setEnregistres] = useState(0);
+  const [periodeMs, setPeriodeMs] = useState(() => lireLocal(CLE_PERIODE, PERIODE_DEFAUT));
+  // Durée réelle d'un tour et nombre de tables lues : sans cette mesure,
+  // impossible de savoir si le rythme demandé est effectivement tenu.
+  const [cadence, setCadence] = useState(null);
 
   const suivisRef = useRef(new Map());
   const boucleRef = useRef(null);
 
   useEffect(() => { localStorage.setItem(CLE_ZONES, JSON.stringify(zones)); }, [zones]);
   useEffect(() => { localStorage.setItem(CLE_GABARITS, JSON.stringify(gabarits)); }, [gabarits]);
+  useEffect(() => { localStorage.setItem(CLE_PERIODE, JSON.stringify(periodeMs)); }, [periodeMs]);
 
   const signesConnus = useMemo(() => [...new Set(gabarits.map((g) => g.signe))].sort(), [gabarits]);
 
@@ -235,27 +265,40 @@ export default function LecteurDirect() {
   // ---------------------------------------------------------------- surveillance
 
   const tick = useCallback(async () => {
+    const depart = performance.now();
     try {
-      const ouvertes = await window.grandLivre.listerTables();
+      // Un seul appel système pour toutes les tables. Les demander une par une
+      // multiplierait par leur nombre une opération qui photographie déjà
+      // l'écran entier : quatre tables coûteraient quatre fois le prix d'une.
+      // Et pas de PNG sur ce chemin — les pixels bruts évitent un encodage
+      // suivi d'un décodage, à chaque tour et pour chaque table.
+      const captures = await window.grandLivre.capturerTables(null);
       const maintenant = Date.now();
+
+      const ouvertes = captures
+        .filter((c) => !c.erreur)
+        .map((c) => ({ id: c.id, titre: c.titre, buyIn: c.buyIn }));
+
       const { suivis, termines } = synchroniserTables(suivisRef.current, ouvertes, maintenant);
       suivisRef.current = suivis;
 
       const nouvellesFiches = [...termines];
 
-      for (const table of ouvertes) {
-        let img;
-        try {
-          const brut = await window.grandLivre.capturerTable(table.id);
-          img = await imageDepuisDataUrl(brut.dataUrl);
-        } catch {
-          continue; // fenêtre réduite ou fermée entre-temps
-        }
-        const lu = lireTable(img, zones, gabarits);
-        const { suivi, tournoiTermine } = integrerLecture(suivis.get(table.id), lu, maintenant);
-        suivis.set(table.id, suivi);
+      for (const capture of captures) {
+        if (capture.erreur || !capture.bitmap) continue;
+        // Le tampon arrive en BGRA. Aucune conversion : la carte d'encre mesure
+        // un écart à la couleur dominante, distance euclidienne insensible à
+        // l'ordre des canaux. Les gabarits appris sur un PNG restent valables.
+        const image = {
+          data: capture.bitmap,
+          largeur: capture.largeur,
+          hauteur: capture.hauteur,
+        };
+        const lu = lireTable(image, zones, gabarits);
+        const { suivi, tournoiTermine } = integrerLecture(suivis.get(capture.id), lu, maintenant);
+        suivis.set(capture.id, suivi);
         if (tournoiTermine) nouvellesFiches.push(tournoiTermine);
-        if (table.id === tableChoisie) setLectureLive(lu);
+        if (capture.id === tableChoisie) setLectureLive(lu);
       }
 
       if (nouvellesFiches.length) {
@@ -264,6 +307,8 @@ export default function LecteurDirect() {
           return [...nouvellesFiches.filter((x) => x.exploitable && !connues.has(x.cle)), ...f];
         });
       }
+
+      setCadence({ duree: Math.round(performance.now() - depart), tables: captures.length });
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
@@ -272,16 +317,22 @@ export default function LecteurDirect() {
   useEffect(() => {
     if (!surveillance) return undefined;
     let vivant = true;
+    // Le tour suivant n'est planifié qu'une fois le précédent terminé : si la
+    // machine ne suit pas, le lecteur ralentit de lui-même au lieu d'empiler
+    // des captures qu'il ne traitera jamais.
     const boucle = async () => {
+      const depart = performance.now();
       await tick();
-      if (vivant) boucleRef.current = setTimeout(boucle, PERIODE_MS);
+      if (!vivant) return;
+      const reste = Math.max(0, periodeMs - (performance.now() - depart));
+      boucleRef.current = setTimeout(boucle, reste);
     };
     boucle();
     return () => {
       vivant = false;
       clearTimeout(boucleRef.current);
     };
-  }, [surveillance, tick]);
+  }, [surveillance, tick, periodeMs]);
 
   async function enregistrer(fiche, gagne) {
     try {
@@ -355,9 +406,25 @@ export default function LecteurDirect() {
               >
                 {surveillance ? <><Square size={13} /> Arrêter</> : <><Play size={13} /> Surveiller</>}
               </button>
+              <div className="segmented" title="Rythme de lecture">
+                {RYTHMES.map((r) => (
+                  <button
+                    key={r.ms}
+                    className={periodeMs === r.ms ? "active" : ""}
+                    onClick={() => setPeriodeMs(r.ms)}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
               {surveillance && (
                 <span className="muted" style={{ alignSelf: "center", fontSize: 12 }}>
-                  Lecture toutes les {PERIODE_MS / 1000} s · {enregistres} tournoi(s) enregistré(s)
+                  {cadence
+                    ? `${cadence.tables} table(s) lue(s) en ${cadence.duree} ms`
+                    : "démarrage…"}
+                  {cadence && cadence.duree > periodeMs && " — la machine ne suit pas ce rythme"}
+                  {" · "}
+                  {enregistres} tournoi(s) enregistré(s)
                 </span>
               )}
             </div>
@@ -381,12 +448,31 @@ export default function LecteurDirect() {
             </span>
           </div>
 
-          <div className="segmented" style={{ marginBottom: 12 }}>
-            {Object.keys(LIBELLES_ZONES).map((cle) => (
-              <button key={cle} className={zoneActive === cle ? "active" : ""} onClick={() => setZoneActive(cle)}>
-                {LIBELLES_ZONES[cle]}
-              </button>
-            ))}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            <div className="segmented">
+              {Object.keys(LIBELLES_ZONES).map((cle) => (
+                <button
+                  key={cle}
+                  className={zoneActive === cle ? "active" : ""}
+                  onClick={() => setZoneActive(cle)}
+                  title={zones[cle] ? "" : "zone désactivée"}
+                >
+                  {LIBELLES_ZONES[cle]}
+                  {!zones[cle] && " ✕"}
+                </button>
+              ))}
+            </div>
+            {/* En tête-à-tête il n'y a pas de second adversaire : sans moyen de
+                désactiver la zone, elle lirait de la décoration et bloquerait
+                le calcul de la part à chaque tour. */}
+            <button
+              className="btn-secondary"
+              onClick={() =>
+                setZones((p) => ({ ...p, [zoneActive]: p[zoneActive] ? null : ZONES_PAR_DEFAUT[zoneActive] }))
+              }
+            >
+              {zones[zoneActive] ? "Désactiver cette zone" : "Réactiver"}
+            </button>
           </div>
 
           <Calibrateur
@@ -399,7 +485,19 @@ export default function LecteurDirect() {
           <div className="apprentissage">
             <div>
               <label className="field-label">Ce que voit le lecteur</label>
-              <ApercuZone image={image} zone={zones[zoneActive]} />
+              {zones[zoneActive] ? (
+                <>
+                  <ApercuZone image={image} zone={zones[zoneActive]} />
+                  <ApercuZone image={image} zone={zones[zoneActive]} encre />
+                  <p className="muted" style={{ fontSize: 11, marginTop: 6, maxWidth: 320, lineHeight: 1.5 }}>
+                    En dessous, ce qu'il en retient. Les chiffres doivent y apparaître entiers et
+                    détachés : un cadre qui rogne le haut ou le bas les déforme au point de les rendre
+                    méconnaissables.
+                  </p>
+                </>
+              ) : (
+                <p className="muted" style={{ fontSize: 12, margin: 0 }}>Zone désactivée — elle ne sera pas lue.</p>
+              )}
             </div>
             <div style={{ flex: 1, minWidth: 240 }}>
               <label className="field-label">Ce qui y est écrit</label>
@@ -446,22 +544,45 @@ export default function LecteurDirect() {
               Tester la lecture
             </button>
             {lectureLive && (
-              <div className="lectures">
-                {Object.entries(LIBELLES_ZONES).map(([cle, libelle]) => {
-                  const l = lectureLive.lectures?.[cle];
-                  if (!l) return null;
+              <>
+                <div className="lectures">
+                  {Object.entries(LIBELLES_ZONES).map(([cle, libelle]) => {
+                    const l = lectureLive.lectures?.[cle];
+                    if (!l) return null;
+                    const etat = l.vide ? "vide" : l.fiable ? "sure" : "douteuse";
+                    return (
+                      <div key={cle} className={`lecture ${etat}`}>
+                        <span className="lecture-label">{libelle}</span>
+                        <span className="lecture-valeur mono">
+                          {l.vide ? "siège vide" : l.texte || "—"}
+                        </span>
+                        <span className="lecture-etat">
+                          {l.vide ? <Check size={12} /> : l.fiable ? <Check size={12} /> : <X size={12} />}
+                          {l.vide ? "rien à lire" : l.fiable ? "sûr" : "douteux"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {(() => {
+                  // La part est ce qui décide de l'issue : elle mérite d'être
+                  // affichée telle quelle plutôt que déduite de tête.
+                  const part = partDeHero(lectureLive);
                   return (
-                    <div key={cle} className={`lecture ${l.fiable ? "sure" : "douteuse"}`}>
-                      <span className="lecture-label">{libelle}</span>
-                      <span className="lecture-valeur mono">{l.texte || "—"}</span>
-                      <span className="lecture-etat">
-                        {l.fiable ? <Check size={12} /> : <X size={12} />}
-                        {l.fiable ? "sûr" : "douteux"}
-                      </span>
-                    </div>
+                    <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+                      {part == null ? (
+                        <>Part de tapis incalculable — un siège reste illisible, aucune conclusion possible.</>
+                      ) : (
+                        <>
+                          Tu détiens <strong style={{ color: "var(--gold)" }}>{(part * 100).toFixed(1)} %</strong>{" "}
+                          des jetons en jeu. Issue déduite :{" "}
+                          <strong>{deduireResultat({ part }) ?? "partie en cours"}</strong>.
+                        </>
+                      )}
+                    </p>
                   );
-                })}
-              </div>
+                })()}
+              </>
             )}
           </div>
         </div>
@@ -489,7 +610,7 @@ export default function LecteurDirect() {
                   {f.resultat && (
                     <span className={f.resultat === "gagne" ? "win" : "loss"} style={{ fontSize: 12 }}>
                       lu comme {f.resultat === "gagne" ? "gagné" : "perdu"}
-                      {f.tapisFinal != null && ` (tapis ${f.tapisFinal})`}
+                      {f.part != null && ` (${(f.part * 100).toFixed(0)} % des jetons)`}
                     </span>
                   )}
                 </div>
@@ -519,12 +640,20 @@ export default function LecteurDirect() {
           <h2>Comment ça marche</h2>
         </div>
         <p style={{ fontSize: 13, lineHeight: 1.7, margin: 0 }}>
-          Le lecteur photographie tes tables toutes les {PERIODE_MS / 1000} secondes et y lit deux
-          nombres : la dotation, qui donne le multiplicateur, et ton tapis, qui dit où en est la partie.
-          Le buy-in vient du titre de la fenêtre. Quand une table se ferme, il en déduit si tu as gagné —
-          un tapis proche de {1500} jetons ne peut être que celui du vainqueur, un tapis à zéro celui d'un
-          éliminé. Entre les deux, il te le demande plutôt que d'inventer. Rien n'est envoyé nulle part :
-          les captures ne quittent jamais ta machine.
+          Le lecteur photographie toutes tes tables en un seul cliché, plusieurs fois par seconde, et y
+          lit la dotation — qui donne le multiplicateur — ainsi que les tapis. Le buy-in vient du titre de
+          la fenêtre.
+        </p>
+        <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
+          Comme Betclic affiche les tapis en grosses blindes et que les blindes montent, aucun seuil en
+          valeur absolue n'aurait de sens : c'est la <strong>part du tapis total</strong> qui décide. Celui
+          qui détient tout a gagné, celui qui n'a plus rien est éliminé, et entre les deux le lecteur te
+          demande plutôt que d'inventer. Un siège sans la moindre encre est un joueur sorti ; un siège dont
+          le montant reste illisible interdit toute conclusion — confondre les deux ferait passer une
+          lecture ratée pour une victoire.
+        </p>
+        <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
+          Rien n'est envoyé nulle part : les captures ne quittent jamais ta machine.
         </p>
       </div>
     </div>

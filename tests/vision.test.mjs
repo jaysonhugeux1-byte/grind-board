@@ -138,6 +138,9 @@ console.log("\n=== 7. Conversion en nombre ===");
 const conversions = [
   ["60€", 60], ["2000€", 2000], ["1 250 €", 1250], ["1,250", 1250],
   ["1.250", 1250], ["20,00€", 20], ["1250,50", 1250.5], ["12?0", null], ["", null],
+  // Tapis en grosses blindes : une seule decimale, tels que Betclic les ecrit.
+  ["16,8 BB", 16.8], ["7,2BB", 7.2], ["0,5", 0.5], ["6,3 BB", 6.3],
+  ["1,5 BB", 1.5], ["25 BB", 25], ["18", 18], ["BB", null],
 ];
 for (const [texte, attendu] of conversions) {
   T(`versNombre(« ${texte} ») = ${attendu}`, versNombre(texte) === attendu, `obtenu ${versNombre(texte)}`);
@@ -162,5 +165,67 @@ console.log("\n=== 9. Espacement des mots ===");
   T("un ecart regulier ne cree pas de faux espace", !lu.texte.trim().includes(" "), `lu « ${lu.texte} »`);
 }
 
-console.log(`\n${ok} reussites, ${ko} echecs`);
+console.log("");
+console.log("=== 10. Signes accoles ===");
+{
+  // Betclic ecrit la dotation en italique gras : les chiffres s'y resserrent
+  // au point qu'aucune colonne vide ne les separe toujours.
+
+  // A l'apprentissage on connait le nombre de signes cherches, ce qui permet de
+  // recouper un bloc soude en toute securite.
+  const colle = rendre("1470", { echelle: 3, ecart: 0 });
+  const app = apprendreZone(colle.data, colle.largeur, colle.hauteur, "1470");
+  T("apprentissage : 4 signes retrouves dans un bloc soude",
+    app.erreur === null && app.gabarits.length === 4, app.erreur || String(app.gabarits.length));
+
+  // Mais on ne coupe QUE ce qui est manifestement trop large : sinon toute
+  // saisie fausse finirait par tomber juste et empoisonnerait les gabarits.
+  const espace = rendre("60", { echelle: 3, ecart: 2 });
+  const faux = apprendreZone(espace.data, espace.largeur, espace.hauteur, "600");
+  T("un compte annonce trop grand ne provoque pas de coupe arbitraire",
+    faux.gabarits.length === 0 && faux.erreur !== null, faux.erreur || "rien signale");
+
+  // En lecture, le rapport largeur/hauteur des gabarits donne la largeur qu'un
+  // signe isole devrait avoir : une tranche bien plus large en contient
+  // plusieurs. Verifie sur du texte resserre mais non fusionne.
+  const ref = rendre("0123456789", { echelle: 3, ecart: 1 });
+  const g = apprendreZone(ref.data, ref.largeur, ref.hauteur, "0123456789").gabarits;
+  for (const attendu of ["2385", "1470", "60", "900"]) {
+    const test = rendre(attendu, { echelle: 3, ecart: 1 });
+    const lu = lireZone(test.data, test.largeur, test.hauteur, g);
+    T(`lecture resserree « ${attendu} »`, versNombre(lu.texte) === Number(attendu),
+      `lu « ${lu.texte} » -> ${versNombre(lu.texte)}`);
+  }
+
+  // Garantie qui compte le plus : quand la fusion est totale et que le
+  // decoupage ne peut plus retrouver les signes, le lecteur REFUSE. Une valeur
+  // fausse inscrite en base coute bien plus cher qu'une lecture manquee, qui
+  // ne demande qu'un clic de confirmation.
+  const fusionne = rendre("2385", { echelle: 3, ecart: 0 });
+  const luFusionne = lireZone(fusionne.data, fusionne.largeur, fusionne.hauteur, g);
+  T("fusion totale : refus plutot qu'invention",
+    !luFusionne.fiable && versNombre(luFusionne.texte) === null,
+    `lu « ${luFusionne.texte} » -> ${versNombre(luFusionne.texte)}`);
+}
+
+console.log("");
+console.log("=== 11. Siege vide contre siege illisible ===");
+{
+  // La nuance decide de tout : un siege sans encre est un joueur elimine, un
+  // siege illisible interdit toute conclusion.
+  const vide = rendre("0", { echelle: 3 });
+  const fond = { data: new Uint8ClampedArray(vide.largeur * vide.hauteur * 4), largeur: vide.largeur, hauteur: vide.hauteur };
+  for (let i = 0; i < fond.data.length; i += 4) {
+    fond.data[i] = 30; fond.data[i+1] = 60; fond.data[i+2] = 45; fond.data[i+3] = 255;
+  }
+  const luVide = lireZone(fond.data, fond.largeur, fond.hauteur, []);
+  T("une zone sans encre est signalee vide", luVide.vide === true && luVide.texte === "");
+
+  const luIllisible = lireZone(vide.data, vide.largeur, vide.hauteur, []);
+  T("une zone avec encre non reconnue n'est PAS vide",
+    luIllisible.vide === false && luIllisible.fiable === false, `vide=${luIllisible.vide}`);
+}
+
+console.log("");
+console.log(`${ok} reussites, ${ko} echecs`);
 process.exit(ko ? 1 : 0);

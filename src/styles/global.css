@@ -671,3 +671,7 @@ body {
 
 .lien-discret { background: none; border: none; color: var(--text-muted); text-decoration: underline; cursor: pointer; font-size: 11.5px; font-family: var(--font-body); padding: 0; }
 .lien-discret:hover { color: var(--loss); }
+/* Un siège vide n'est ni une réussite ni un échec de lecture : c'est une
+   information à part entière, celle d'un joueur éliminé. */
+.lecture.vide { border-color: rgba(139, 148, 143, 0.5); }
+.lecture.vide .lecture-valeur { color: var(--text-muted); font-style: italic; }

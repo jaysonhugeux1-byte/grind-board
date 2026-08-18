@@ -6,32 +6,46 @@
 // en temps réel — le buy-in, la dotation, et qui a gagné.
 //
 // Le buy-in est dans le titre de la fenêtre. La dotation est le grand nombre en
-// haut de la table. Le résultat se déduit du tapis de Hero : le tournoi se
-// termine quand quelqu'un a tout, donc un tapis proche du total signe une
-// victoire, un tapis à zéro une élimination.
+// haut de la table. Le résultat se déduit de la PART du tapis total détenue par
+// Hero : le tournoi se termine quand quelqu'un a tout, donc une part proche de
+// la totalité signe une victoire, une part nulle une élimination.
 //
 // Le principe directeur : ne jamais inscrire un tournoi dont on n'est pas sûr.
 // Un doute part en file d'attente et se règle d'un clic, ce qui reste bien plus
 // rapide que la saisie manuelle et ne risque pas de fausser les statistiques.
 import { lireZone, versNombre } from "./vision.js";
 
-// Jetons totaux d'un spin à trois joueurs (500 chacun). Sert de repère pour
-// juger si un tapis est « presque tout » ou « presque rien ».
-export const JETONS_EN_JEU = 1500;
-
-// Zones exprimées en fractions de la fenêtre, jamais en pixels : la table peut
-// être redimensionnée, les proportions ne bougent pas.
+// Betclic affiche les tapis en grosses blindes, pas en jetons — et le total en
+// BB DIMINUE au fil de la partie puisque les blindes montent, alors que le
+// nombre de jetons ne bouge pas. Aucun seuil en BB n'a donc de sens dans
+// l'absolu : tout se raisonne en part du total présent sur la table.
+//
+// Proportions relevées sur une table Betclic réelle : dotation en haut au
+// centre, pot au milieu, tapis de Hero en bas, adversaires sur les côtés — en
+// tête-à-tête l'unique adversaire est en haut à droite. Ce ne sont que des
+// points de départ, volontairement larges ; ils dépendent de la taille de
+// fenêtre et de la disposition choisie dans le client, et c'est bien pour cela
+// que les cadres se tracent à la souris.
 export const ZONES_PAR_DEFAUT = {
-  dotation: { x: 0.38, y: 0.06, l: 0.24, h: 0.1 },
-  tapisHero: { x: 0.4, y: 0.78, l: 0.2, h: 0.06 },
-  pot: { x: 0.42, y: 0.36, l: 0.16, h: 0.06 },
+  // Large exprès : la dotation passe de « 40€ » à « 2000€ » selon le tirage,
+  // et un cadre calé sur le cas court tronquerait le cas long.
+  dotation: { x: 0.34, y: 0.1, l: 0.33, h: 0.12 },
+  tapisHero: { x: 0.44, y: 0.86, l: 0.21, h: 0.07 },
+  adversaire1: { x: 0.79, y: 0.45, l: 0.2, h: 0.07 },
+  adversaire2: { x: 0.01, y: 0.45, l: 0.2, h: 0.07 },
+  pot: { x: 0.38, y: 0.33, l: 0.19, h: 0.07 },
 };
 
 export const LIBELLES_ZONES = {
   dotation: "Dotation",
   tapisHero: "Ton tapis",
+  adversaire1: "Adversaire 1",
+  adversaire2: "Adversaire 2",
   pot: "Pot",
 };
+
+// Un spin se joue à trois ; en tête-à-tête le second siège est simplement vide.
+export const ZONES_ADVERSAIRES = ["adversaire1", "adversaire2"];
 
 // Multiplicateurs de la table de tirage. Sur les 1 059 tournois de l'historique
 // on n'observe que ×2, ×3, ×4, ×5 et ×10 ; les paliers supérieurs existent mais
@@ -100,16 +114,46 @@ export function lireTable(image, zones, gabarits) {
     if (!zone) continue;
     const morceau = extraireZone(image, zone);
     if (!morceau) {
-      lectures[cle] = { texte: "", fiable: false, horsCadre: true };
+      lectures[cle] = { texte: "", fiable: false, vide: false, horsCadre: true };
       valeurs[cle] = null;
       continue;
     }
     const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits);
-    lectures[cle] = { texte: lu.texte, fiable: lu.fiable, signes: lu.signes };
-    valeurs[cle] = lu.fiable ? versNombre(lu.texte) : null;
+    lectures[cle] = { texte: lu.texte, fiable: lu.fiable, vide: lu.vide, signes: lu.signes };
+    // Un siège vide vaut zéro ; un siège illisible ne vaut rien du tout.
+    valeurs[cle] = lu.vide ? 0 : lu.fiable ? versNombre(lu.texte) : null;
   }
 
   return { ...valeurs, lectures };
+}
+
+/**
+ * Part du tapis total détenue par Hero, de 0 à 1.
+ *
+ * C'est la seule mesure qui garde un sens du début à la fin : les tapis sont
+ * affichés en grosses blindes et les blindes montent, donc les valeurs
+ * absolues rétrécissent au fil du tournoi sans que rien ne change vraiment.
+ *
+ * Renvoie null dès qu'un siège est illisible. La distinction est capitale :
+ * un siège SANS ENCRE est un joueur éliminé et compte pour zéro, tandis qu'un
+ * siège où l'on voit un montant sans savoir le lire interdit toute conclusion.
+ * Les confondre reviendrait à annoncer une victoire chaque fois que la lecture
+ * d'un adversaire échoue.
+ */
+export function partDeHero(lecture) {
+  const hero = lecture.tapisHero;
+  if (hero == null || hero < 0) return null;
+
+  let total = hero + (lecture.pot ?? 0);
+  for (const cle of ZONES_ADVERSAIRES) {
+    if (!(cle in lecture)) continue; // zone non calibrée : on l'ignore
+    const v = lecture[cle];
+    if (v == null) return null; // encre présente mais illisible
+    total += v;
+  }
+
+  if (!(total > 0)) return null;
+  return hero / total;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +178,10 @@ export function nouveauSuivi(table, maintenant = Date.now()) {
     tapisHero: null,
     tapisMax: null,
     tapisMin: null,
+    // Part du tapis total détenue par Hero : la seule mesure comparable d'un
+    // bout à l'autre du tournoi.
+    part: null,
+    partVueLe: null,
     lectures: 0,
     echecs: 0,
   };
@@ -169,6 +217,8 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
       s.tapisHero = null;
       s.tapisMax = null;
       s.tapisMin = null;
+      s.part = null;
+      s.partVueLe = null;
     } else {
       s.dotation = lecture.dotation;
     }
@@ -180,32 +230,35 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
     s.tapisMin = s.tapisMin == null ? lecture.tapisHero : Math.min(s.tapisMin, lecture.tapisHero);
   }
 
+  // On ne garde que la dernière part CALCULABLE. Une lecture partielle en fin
+  // de partie ne doit pas effacer une mesure propre obtenue juste avant.
+  const part = partDeHero(lecture);
+  if (part != null) {
+    s.part = part;
+    s.partVueLe = maintenant;
+  }
+
   return { suivi: s, tournoiTermine };
 }
 
 /**
- * Décide de l'issue d'un tournoi à partir du dernier tapis observé.
+ * Décide de l'issue d'un tournoi à partir de la part de tapis de Hero.
  *
- * Le seuil est volontairement large des deux côtés : entre les deux, on préfère
- * rendre la main plutôt que d'inscrire un résultat inventé. Une lecture ratée
- * juste avant la fermeture de la fenêtre est le cas normal, pas l'exception.
+ * Pas de seuil en jetons ni en blindes : seule la part du total a un sens
+ * constant. Un joueur qui détient la quasi-totalité des jetons a gagné, un
+ * joueur qui n'en a plus est éliminé, et entre les deux on ne conclut pas.
+ *
+ * Les bornes sont volontairement franches. Une lecture ratée juste avant la
+ * fermeture de la fenêtre est le cas courant, pas l'exception : mieux vaut un
+ * clic de confirmation qu'un résultat inventé.
  *
  * @returns "gagne" | "perdu" | null (indécis)
  */
 export function deduireResultat(suivi) {
-  const { tapisHero, tapisMax } = suivi;
-  if (tapisHero == null) return null;
-
-  // Tout le monde a tout perdu sauf un : un tapis proche du total ne peut être
-  // que celui du vainqueur.
-  if (tapisHero >= JETONS_EN_JEU * 0.92) return "gagne";
-  // Un tapis nul ou dérisoire, c'est l'élimination.
-  if (tapisHero <= JETONS_EN_JEU * 0.02) return "perdu";
-  // Un tapis qui a culminé très haut puis s'est effondré : perdu aussi, mais on
-  // ne s'y risque que si la chute est franche.
-  if (tapisMax != null && tapisMax >= JETONS_EN_JEU * 0.6 && tapisHero <= JETONS_EN_JEU * 0.05) {
-    return "perdu";
-  }
+  const { part } = suivi;
+  if (part == null) return null;
+  if (part >= 0.93) return "gagne";
+  if (part <= 0.04) return "perdu";
   return null;
 }
 
@@ -229,6 +282,7 @@ export function cloturer(suivi, maintenant = Date.now()) {
     multiplicateur,
     resultat,
     tapisFinal: suivi.tapisHero,
+    part: suivi.part,
     debut: suivi.debut,
     fin: maintenant,
     // Un tournoi sans buy-in ni dotation n'apporte rien : autant ne pas

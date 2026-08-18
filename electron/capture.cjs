@@ -1,8 +1,16 @@
 // Capture des fenêtres de table de jeu.
 //
 // Tourne dans le processus principal : desktopCapturer n'est pas accessible
-// depuis le rendu. Celui-ci demande une capture par IPC et reçoit une image
-// encodée, sans jamais obtenir d'accès direct au système.
+// depuis le rendu. Celui-ci demande une capture par IPC et reçoit une image,
+// sans jamais obtenir d'accès direct au système.
+//
+// Deux contraintes pèsent sur ce module, et elles tirent en sens inverse.
+// D'un côté, il faut lire souvent : le tournoi se joue en quelques minutes et
+// c'est la toute dernière image, celle d'avant la fermeture de la fenêtre, qui
+// dit qui a gagné. De l'autre, desktopCapturer est cher — un appel photographie
+// TOUTES les fenêtres ouvertes de la machine, pas seulement celle qu'on
+// demande. D'où les deux partis pris ci-dessous : un seul appel par tour quel
+// que soit le nombre de tables, et pas d'encodage PNG sur le chemin rapide.
 const { desktopCapturer, screen } = require("electron");
 
 // Les tables Betclic portent un titre du type « Spin & Rush - 20€ ».
@@ -10,9 +18,10 @@ const { desktopCapturer, screen } = require("electron");
 const TABLE_TITLE = /Spin\s*&\s*Rush/i;
 const BUYIN_IN_TITLE = /-\s*([\d.,]+)\s*€/;
 
-// Les vignettes de desktopCapturer sont redimensionnées à la taille demandée.
-// Trop petites, le texte des tapis devient illisible ; on demande donc large,
-// quitte à réduire ensuite. La taille réelle de l'écran sert de plafond.
+// Les vignettes de desktopCapturer sont contraintes à la taille demandée en
+// conservant les proportions. On demande la taille de l'écran, qui majore
+// forcément celle d'une fenêtre : les tables sont donc rendues à leur taille
+// native, sans agrandissement inutile ni texte illisible.
 function maxThumbnailSize() {
   const { width, height } = screen.getPrimaryDisplay().size;
   const scale = screen.getPrimaryDisplay().scaleFactor || 1;
@@ -38,33 +47,62 @@ async function listTables() {
     .map((s) => ({ id: s.id, titre: s.name, buyIn: parseBuyIn(s.name) }));
 }
 
-// Capture une fenêtre précise en pleine résolution et renvoie une image PNG
-// encodée en data URL, directement affichable et découpable côté rendu.
-async function captureTable(sourceId) {
+function versSortie(source, { encoderPng }) {
+  const image = source.thumbnail;
+  const { width, height } = image.getSize();
+
+  // Une fenêtre réduite ou masquée renvoie une image vide : mieux vaut le
+  // signaler que de laisser la reconnaissance échouer sans explication.
+  if (width === 0 || height === 0) {
+    return { id: source.id, titre: source.name, erreur: "Fenêtre réduite : rien à capturer." };
+  }
+
+  const base = {
+    id: source.id,
+    titre: source.name,
+    buyIn: parseBuyIn(source.name),
+    largeur: width,
+    hauteur: height,
+  };
+
+  // Le PNG ne sert qu'à l'affichage pendant le calibrage. Sur le chemin de
+  // surveillance on transmet les pixels bruts : l'encodage puis le décodage
+  // d'un PNG coûtent, à eux deux, bien plus cher que le transfert du tampon.
+  return encoderPng
+    ? { ...base, dataUrl: image.toDataURL() }
+    : { ...base, bitmap: image.toBitmap() };
+}
+
+/**
+ * Capture plusieurs tables en un seul appel système.
+ *
+ * C'est tout l'intérêt de la fonction : demander les tables une par une
+ * multiplierait par leur nombre une opération qui photographie déjà l'écran
+ * entier. Quatre tables suivies coûtent ici exactement le même prix qu'une.
+ *
+ * @param sourceIds  identifiants à capturer ; toutes les tables si omis
+ * @param encoderPng true pour recevoir une data URL affichable (calibrage),
+ *                   false pour recevoir les pixels bruts (surveillance)
+ */
+async function captureTables(sourceIds = null, { encoderPng = false } = {}) {
   const sources = await desktopCapturer.getSources({
     types: ["window"],
     thumbnailSize: maxThumbnailSize(),
   });
 
-  const source = sources.find((s) => s.id === sourceId);
-  if (!source) throw new Error("Fenêtre introuvable — la table a peut-être été fermée.");
-
-  const image = source.thumbnail;
-  const { width, height } = image.getSize();
-
-  // Une fenêtre réduite ou masquée peut renvoyer une image vide : mieux vaut le
-  // signaler que de laisser la reconnaissance échouer sans explication.
-  if (width === 0 || height === 0) {
-    throw new Error("Capture vide — la fenêtre est probablement réduite.");
-  }
-
-  return {
-    dataUrl: image.toDataURL(),
-    largeur: width,
-    hauteur: height,
-    titre: source.name,
-    buyIn: parseBuyIn(source.name),
-  };
+  const voulus = sourceIds && sourceIds.length ? new Set(sourceIds.map(String)) : null;
+  return sources
+    .filter((s) => (voulus ? voulus.has(s.id) : TABLE_TITLE.test(s.name)))
+    .map((s) => versSortie(s, { encoderPng }));
 }
 
-module.exports = { listTables, captureTable, TABLE_TITLE };
+// Capture une fenêtre précise et renvoie une image PNG en data URL, directement
+// affichable. Réservé au calibrage, où l'on ne capture qu'une fois.
+async function captureTable(sourceId) {
+  const [table] = await captureTables([sourceId], { encoderPng: true });
+  if (!table) throw new Error("Fenêtre introuvable — la table a peut-être été fermée.");
+  if (table.erreur) throw new Error(table.erreur);
+  return table;
+}
+
+module.exports = { listTables, captureTable, captureTables, TABLE_TITLE };

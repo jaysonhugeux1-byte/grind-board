@@ -146,23 +146,64 @@ export function binariser({ encre, largeur, hauteur }, seuil = null) {
 // Découpe en signes
 // ---------------------------------------------------------------------------
 
+// Coupe une tranche trop large en `parts` morceaux, aux colonnes les moins
+// encrées. On cherche le creux près de chaque découpe théorique plutôt que de
+// couper à intervalle régulier : entre deux chiffres accolés il reste presque
+// toujours un étranglement, même sans colonne totalement vide.
+function couperTranche(colonnes, x0, x1, parts) {
+  if (parts <= 1) return [[x0, x1]];
+  const pas = (x1 - x0 + 1) / parts;
+  const marge = Math.max(1, Math.round(pas * 0.3));
+
+  const coupes = [];
+  for (let k = 1; k < parts; k++) {
+    const centre = x0 + Math.round(k * pas);
+    let meilleure = centre;
+    let creux = Infinity;
+    for (let x = Math.max(x0 + 1, centre - marge); x <= Math.min(x1 - 1, centre + marge); x++) {
+      if (colonnes[x] < creux) {
+        creux = colonnes[x];
+        meilleure = x;
+      }
+    }
+    coupes.push(meilleure);
+  }
+
+  const out = [];
+  let debut = x0;
+  for (const c of coupes) {
+    out.push([debut, c - 1]);
+    debut = c;
+  }
+  out.push([debut, x1]);
+  return out.filter(([a, b]) => b >= a);
+}
+
 /**
  * Découpe une bande de texte en signes par projection sur les colonnes.
  *
- * Une colonne sans le moindre pixel d'encre sépare deux signes. Les polices
- * d'interface n'accolent jamais leurs caractères, ce qui rend cette méthode
- * fiable ici, là où elle échouerait sur de l'écriture manuscrite.
+ * Une colonne sans le moindre pixel d'encre sépare deux signes. Cela suffit
+ * pour du texte droit, mais pas pour la dotation, écrite en gras italique : les
+ * chiffres s'y touchent et formeraient un seul bloc. On repère donc les
+ * tranches anormalement larges au regard des autres et on les recoupe à leur
+ * étranglement.
  *
+ * @param nombreAttendu  si connu (apprentissage), on découpe jusqu'à retomber
+ *                       sur ce compte — c'est le cas le plus sûr, puisqu'on
+ *                       sait exactement combien de signes chercher
  * @returns [{ x, y, largeur, hauteur, espaceAvant }] de gauche à droite
  */
-export function decouperSignes({ bits, largeur, hauteur }, { largeurMin = 1, hauteurMin = 3 } = {}) {
+export function decouperSignes(
+  { bits, largeur, hauteur },
+  { largeurMin = 1, hauteurMin = 3, nombreAttendu = null, largeurAttendue = null } = {}
+) {
   const colonnes = new Int32Array(largeur);
   for (let y = 0; y < hauteur; y++) {
     const ligne = y * largeur;
     for (let x = 0; x < largeur; x++) if (bits[ligne + x]) colonnes[x]++;
   }
 
-  const tranches = [];
+  let tranches = [];
   let debut = -1;
   for (let x = 0; x < largeur; x++) {
     if (colonnes[x] > 0 && debut < 0) debut = x;
@@ -172,6 +213,69 @@ export function decouperSignes({ bits, largeur, hauteur }, { largeurMin = 1, hau
     }
   }
   if (debut >= 0) tranches.push([debut, largeur - 1]);
+
+  const largeurDe = ([a, b]) => b - a + 1;
+
+  if (nombreAttendu && tranches.length && tranches.length < nombreAttendu) {
+    if (tranches.length === 1) {
+      // Tout est soudé en un seul bloc : aucune autre tranche à quoi le
+      // comparer, on s'en remet au compte annoncé.
+      const [a, b] = tranches[0];
+      if (b - a + 1 >= nombreAttendu * 2) {
+        tranches = couperTranche(colonnes, a, b, nombreAttendu);
+      }
+    } else {
+      // On ne coupe QUE ce qui est manifestement trop large. Couper à l'aveugle
+      // pour atteindre le compte annoncé rendrait le garde-fou inutile : toute
+      // saisie erronée finirait par « tomber juste » après assez de coupes, et
+      // des gabarits mal étiquetés empoisonneraient toutes les lectures.
+      while (tranches.length < nombreAttendu) {
+        let idx = 0;
+        for (let i = 1; i < tranches.length; i++) {
+          if (largeurDe(tranches[i]) > largeurDe(tranches[idx])) idx = i;
+        }
+        const autres = tranches.filter((_, i) => i !== idx).map(largeurDe).sort((a, b) => a - b);
+        const reference = autres[autres.length >> 1];
+        if (largeurDe(tranches[idx]) < Math.max(4, reference * 1.4)) break;
+
+        const [a, b] = tranches[idx];
+        const parts = Math.max(2, Math.min(nombreAttendu - tranches.length + 1,
+          Math.round(largeurDe(tranches[idx]) / reference)));
+        tranches.splice(idx, 1, ...couperTranche(colonnes, a, b, parts));
+      }
+    }
+  } else if (largeurAttendue > 0) {
+    // Largeur d'un signe isolé déduite des gabarits. C'est la référence la plus
+    // sûre en lecture : contrairement à la médiane des tranches observées, elle
+    // reste valable même quand TOUS les signes sont soudés en un seul bloc —
+    // cas où la médiane vaut la largeur du bloc et ne détecte plus rien.
+    const sorties = [];
+    for (const t of tranches) {
+      const parts = Math.round(largeurDe(t) / largeurAttendue);
+      if (parts > 1 && largeurDe(t) > largeurAttendue * 1.5) {
+        sorties.push(...couperTranche(colonnes, t[0], t[1], parts));
+      } else {
+        sorties.push(t);
+      }
+    }
+    tranches = sorties;
+  } else if (tranches.length > 1) {
+    // Sans gabarit pour référence, on se rabat sur la largeur médiane : dans un
+    // nombre tous les chiffres font la même largeur, donc une tranche nettement
+    // plus large en contient forcément plusieurs.
+    const largeurs = tranches.map(largeurDe).sort((a, b) => a - b);
+    const mediane = largeurs[largeurs.length >> 1];
+    const sorties = [];
+    for (const t of tranches) {
+      const parts = Math.round(largeurDe(t) / mediane);
+      if (parts > 1 && largeurDe(t) > mediane * 1.6) {
+        sorties.push(...couperTranche(colonnes, t[0], t[1], parts));
+      } else {
+        sorties.push(t);
+      }
+    }
+    tranches = sorties;
+  }
 
   const signes = [];
   let finPrecedente = null;
@@ -350,25 +454,53 @@ export function apparier(empreinte, ratio, gabarits, seuilRejet = 0.32, margeMax
 /**
  * Lit le texte d'une zone.
  *
- * @returns { texte, signes: [{ boite, signe, distance, sur }], fiable }
+ * @returns { texte, signes, fiable, vide }
  *          `texte` contient « ? » là où la lecture a échoué, et `fiable` est
  *          faux dès qu'un seul signe pose problème — mieux vaut ne rien
  *          enregistrer qu'enregistrer un montant faux.
+ *
+ *          `vide` distingue « il n'y a rien à lire » de « je n'ai pas su
+ *          lire », et cette nuance décide de tout : un siège sans la moindre
+ *          encre est un joueur éliminé, alors qu'un montant présent mais
+ *          illisible ne permet aucune conclusion. Les confondre ferait passer
+ *          une lecture ratée pour une victoire.
  */
 export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
   const binaire = binariser(carteEncre(data, largeur, hauteur), options.seuil);
-  const boites = decouperSignes(binaire, options);
+  let boites = decouperSignes(binaire, options);
+
+  // Deuxième passe guidée par les gabarits. Ils portent le rapport
+  // largeur/hauteur d'un signe isolé ; appliqué à la hauteur observée — que la
+  // soudure horizontale ne fausse pas — il donne la largeur qu'un signe seul
+  // devrait occuper. Toute tranche nettement plus large en contient plusieurs.
+  // Sans cela, « 1470 » écrit en italique serré resterait un bloc illisible.
+  if (boites.length && gabarits.length && !options.largeurAttendue) {
+    const hauteurs = boites.map((b) => b.hauteur).sort((a, b) => a - b);
+    const ratios = gabarits.map((g) => g.ratio).filter((r) => r > 0).sort((a, b) => a - b);
+    if (ratios.length) {
+      const largeurAttendue = ratios[ratios.length >> 1] * hauteurs[hauteurs.length >> 1];
+      const secondePasse = decouperSignes(binaire, { ...options, largeurAttendue });
+      if (secondePasse.length > boites.length) boites = secondePasse;
+    }
+  }
 
   const signes = [];
   let texte = "";
   let fiable = boites.length > 0;
-  // Un blanc plus large qu'un demi-signe sépare deux mots (« 40 € »).
-  const largeurMoyenne = boites.length
-    ? boites.reduce((s, b) => s + b.largeur, 0) / boites.length
-    : 0;
+
+  // Ce qui sépare deux mots n'est pas un blanc « large dans l'absolu » mais un
+  // blanc nettement plus large que ceux qui séparent les signes entre eux. Se
+  // caler sur la largeur des signes trahit dès qu'ils sont étroits : dans
+  // « 1,5 », un « 1 » et une virgule sont si fins que l'espacement normal
+  // passerait pour une séparation de mots.
+  const ecarts = boites.slice(1).map((b) => b.espaceAvant).sort((a, b) => a - b);
+  const ecartTypique = ecarts.length ? ecarts[ecarts.length >> 1] : 0;
+  const hauteurs = boites.map((b) => b.hauteur).sort((a, b) => a - b);
+  const hauteurTypique = hauteurs.length ? hauteurs[hauteurs.length >> 1] : 0;
+  const seuilEspace = Math.max(ecartTypique * 2.5 + 1, hauteurTypique * 0.35);
 
   for (const boite of boites) {
-    if (boite.espaceAvant > largeurMoyenne * 0.6) texte += " ";
+    if (boite.espaceAvant > seuilEspace) texte += " ";
     const resultat = apparier(
       normaliserSigne(binaire, boite),
       proportions(boite),
@@ -380,26 +512,33 @@ export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
     signes.push({ boite, ...resultat });
   }
 
-  return { texte, signes, fiable, binaire };
+  return { texte, signes, fiable, vide: boites.length === 0, binaire };
 }
 
 /**
  * Convertit une lecture en nombre.
  *
- * Les clients de poker écrivent aussi bien « 1 250 » que « 1.250 » ou
- * « 1,250 » selon la langue : on retire tout séparateur de milliers et on ne
- * garde comme décimale qu'un séparateur suivi d'exactement deux chiffres.
+ * Deux écritures se croisent sur une table : les montants en euros à deux
+ * décimales (« 20,00 € ») et les tapis en grosses blindes à une seule
+ * (« 16,8 BB »). Un séparateur suivi d'un ou deux chiffres est donc une
+ * décimale ; suivi de trois, c'est un séparateur de milliers (« 1.250 »).
+ *
+ * L'ambiguïté est réelle et sans solution générale : « 1,25 » peut valoir un
+ * et quart ou mille deux cent cinquante. On tranche pour la décimale, qui est
+ * de loin le cas le plus fréquent ici — les tapis en BB dépassent rarement 30.
  */
 export function versNombre(texte) {
   if (!texte || texte.includes("?")) return null;
-  let t = texte.replace(/[^\d.,]/g, "");
-  const m = t.match(/^(.*?)([.,])(\d{2})$/);
-  if (m) {
-    return parseFloat(m[1].replace(/[.,\s]/g, "") + "." + m[3]);
-  }
-  t = t.replace(/[.,]/g, "");
+  const t = texte.replace(/[^\d.,]/g, "");
   if (!t) return null;
-  const v = parseInt(t, 10);
+
+  const m = t.match(/^(\d[\d.,]*?)([.,])(\d{1,2})$/);
+  if (m) {
+    const entier = m[1].replace(/[.,]/g, "");
+    return parseFloat(`${entier}.${m[3]}`);
+  }
+
+  const v = parseInt(t.replace(/[.,]/g, ""), 10);
   return Number.isFinite(v) ? v : null;
 }
 
@@ -421,8 +560,11 @@ export function versNombre(texte) {
  */
 export function apprendreZone(data, largeur, hauteur, texteAttendu, options = {}) {
   const binaire = binariser(carteEncre(data, largeur, hauteur), options.seuil);
-  const boites = decouperSignes(binaire, options);
   const attendus = [...texteAttendu.replace(/\s+/g, "")];
+  // On souffle au découpage le nombre de signes à trouver : c'est la seule
+  // occasion où on le connaît, et cela permet de séparer des caractères
+  // accolés que la seule projection des colonnes laisserait collés.
+  const boites = decouperSignes(binaire, { ...options, nombreAttendu: attendus.length });
 
   if (boites.length !== attendus.length) {
     return {
