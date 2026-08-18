@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
 
   const { data: order, error: orderError } = await db
     .from("crypto_orders")
-    .select("user_id, months, amount, status")
+    .select("user_id, months, amount, status, products, currency")
     .eq("order_id", orderId)
     .maybeSingle();
 
@@ -98,25 +98,54 @@ Deno.serve(async (req) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Le montant facturé doit être celui de la formule commandée.
-  if (Number(body.price_amount) !== Number(order.amount)) {
-    console.error("Montant inattendu", {
+  // Le montant facturé doit être celui de la formule commandée — et dans la
+  // devise commandée. Vérifier le seul nombre laisserait passer un « 9,90 »
+  // libellé dans une monnaie sans rapport.
+  const deviseAttendue = String(order.currency ?? "eur").toLowerCase();
+  const deviseRecue = String(body.price_currency ?? "").toLowerCase();
+  if (
+    Number(body.price_amount) !== Number(order.amount) ||
+    (deviseRecue && deviseRecue !== deviseAttendue)
+  ) {
+    console.error("Montant ou devise inattendus", {
       orderId,
-      attendu: order.amount,
-      recu: body.price_amount,
+      attendu: `${order.amount} ${deviseAttendue}`,
+      recu: `${body.price_amount} ${deviseRecue}`,
     });
     return new Response("OK", { status: 200 });
   }
 
-  const { data: until, error: grantError } = await db.rpc("grant_access", {
-    p_user: order.user_id,
-    p_months: order.months,
-    p_provider: "nowpayments",
-  });
+  // Une formule combinée ouvre deux accès. Les commandes antérieures au modèle
+  // multi-produit n'ont pas la colonne remplie : elles portaient toutes sur le
+  // cash game.
+  const produits: string[] = Array.isArray(order.products) && order.products.length
+    ? order.products
+    : ["cash"];
+
+  let until: unknown = null;
+  let grantError: unknown = null;
+  for (const produit of produits) {
+    const res = await db.rpc("grant_access", {
+      p_user: order.user_id,
+      p_product: produit,
+      p_months: order.months,
+      p_provider: "nowpayments",
+    });
+    if (res.error) {
+      grantError = res.error;
+      break;
+    }
+    until = res.data;
+  }
 
   if (grantError) {
     console.error("Crédit d'accès impossible", grantError);
-    // 500 : là on VEUT que NOWPayments réessaie, le paiement est bien encaissé.
+    // Le verrou d'idempotence a déjà été posé plus haut. Si on le laissait en
+    // place, la nouvelle tentative de NOWPayments serait prise pour un doublon
+    // et l'accès ne serait jamais crédité — alors que le paiement, lui, est
+    // bien encaissé. On relâche donc le verrou avant de demander un renvoi.
+    await db.from("crypto_events").delete().eq("payment_id", paymentId);
+    // 500 : là on VEUT que NOWPayments réessaie.
     return new Response("Erreur interne", { status: 500 });
   }
 

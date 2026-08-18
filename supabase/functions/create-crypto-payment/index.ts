@@ -21,6 +21,11 @@ const SITE_URL = "https://jaysonhugeux1-byte.github.io/grind-board";
 // les deux accès en une seule transaction, à 40 % de remise sur le second.
 type Plan = { months: number; amount: number; label: string; products: string[] };
 
+// Devise de facturation. Une constante plutôt qu'une chaîne dispersée : elle
+// doit être identique dans la facture, dans la commande enregistrée et dans le
+// contrôle fait à la réception du paiement.
+const DEVISE = "eur";
+
 const PLANS: Record<string, Plan> = {
   // Cash game seul
   cash_m1: { months: 1, amount: 9.9, label: "Cash — 1 mois", products: ["cash"] },
@@ -95,7 +100,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         price_amount: plan.amount,
-        price_currency: "usd",
+        price_currency: DEVISE,
         order_id: orderId,
         order_description: `Grand Livre — ${plan.label}`,
         ipn_callback_url: ipnUrl,
@@ -131,6 +136,10 @@ Deno.serve(async (req) => {
     plan_id: planId,
     months: plan.months,
     amount: plan.amount,
+    // Sans cette liste, la notification de paiement ne saurait pas quels accès
+    // ouvrir : le montant seul ne distingue pas un abonnement cash d'un spin.
+    products: plan.products,
+    currency: DEVISE,
     status: "created",
   });
 

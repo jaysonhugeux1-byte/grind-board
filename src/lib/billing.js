@@ -18,10 +18,12 @@ export const DUREES = [
   { id: "m12", label: "12 mois" },
 ];
 
+// Facturé en euros : le public visé est français, et une conversion affichée
+// en dollars ferait payer un écart de change pour rien.
 const TARIFS = {
-  cash: { m1: "9,90 $", m3: "26,90 $", m12: "94,90 $" },
-  spin: { m1: "9,90 $", m3: "26,90 $", m12: "94,90 $" },
-  duo: { m1: "15,90 $", m3: "42,90 $", m12: "151,90 $" },
+  cash: { m1: "9,90 €", m3: "26,90 €", m12: "94,90 €" },
+  spin: { m1: "9,90 €", m3: "26,90 €", m12: "94,90 €" },
+  duo: { m1: "15,90 €", m3: "42,90 €", m12: "151,90 €" },
 };
 
 export function tarif(produit, duree) {
@@ -33,7 +35,7 @@ export function tarifMensuel(produit, duree) {
   const mois = { m1: 1, m3: 3, m12: 12 }[duree];
   const montant = parseFloat(TARIFS[produit]?.[duree]?.replace(",", ".") ?? "");
   if (!mois || !Number.isFinite(montant)) return null;
-  return `${(montant / mois).toFixed(2).replace(".", ",")} $ / mois`;
+  return `${(montant / mois).toFixed(2).replace(".", ",")} € / mois`;
 }
 
 // Ouvre une URL dans le navigateur du système. Dans l'application de bureau on
