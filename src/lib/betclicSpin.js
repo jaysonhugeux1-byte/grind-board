@@ -274,6 +274,62 @@ function parseBlock(block) {
 }
 
 // ---------------------------------------------------------------------------
+// Adversaires
+// ---------------------------------------------------------------------------
+
+/**
+ * Résumé compact d'une main pour chaque adversaire.
+ *
+ * On garde le strict nécessaire au calcul de statistiques, pas la main entière :
+ * multiplié par deux adversaires et des dizaines de milliers de mains, tout
+ * conserver ferait exploser le volume pour rien. Les agrégats se recalculent
+ * ensuite côté client, comme le reste de l'application.
+ *
+ * Le pseudo est la clé : sur un spin on ne recroise un joueur qu'au hasard des
+ * tirages, et c'est justement pour cela qu'un historique cumulé a de la valeur —
+ * quelques mains vues aujourd'hui s'ajoutent à celles de la semaine dernière.
+ */
+export function resumeAdversaires(hand) {
+  const out = [];
+
+  for (const p of hand.players) {
+    if (p.hero) continue;
+
+    const siennes = hand.actions.filter((a) => a.player === p.name);
+    const preflop = siennes.filter((a) => a.street === "Preflop");
+    const posted = preflop
+      .filter((a) => a.type === "post")
+      .reduce((s, a) => s + a.amount, 0);
+
+    // Volontaire = avoir mis plus que la blinde imposée.
+    const volontaire = p.contributed > posted;
+    const aRelance = preflop.some((a) => a.type === "raise" || a.type === "bet");
+    const tapisPreflop = preflop.some((a) => a.allIn);
+    const couche = p.folded;
+
+    out.push({
+      nom: p.name,
+      // Position au sens du spin : au bouton on ouvre, en grosse blinde on
+      // défend. Sans elle, un VPIP n'apprend rien.
+      position: p.tags.includes("BB") ? "BB" : p.tags.includes("BTN") ? "BTN" : "SB",
+      tapisBB: hand.bb ? Math.round((p.stack / hand.bb) * 10) / 10 : null,
+      volontaire,
+      aRelance,
+      tapisPreflop,
+      couche,
+      // Cartes uniquement si elles ont été montrées à l'abattage : c'est la
+      // seule information vraiment rare, celle qui dit ce qu'il joue.
+      cartes: p.cards && p.cards.length === 2 ? p.cards : null,
+      notation: cardsToNotation(p.cards),
+      abattage: Boolean(hand.sawShowdown && p.cards),
+      net: p.collected - p.effective,
+    });
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Pots latéraux
 // ---------------------------------------------------------------------------
 
@@ -383,6 +439,7 @@ export function parseBetclicSpin(text) {
     }
     if (hand) {
       hand.raw = "*** HEADER ***" + blocks[i].replace(/\n?-{6,}\s*$/, "").trimEnd();
+      hand.adversaires = resumeAdversaires(hand);
       hands.push(hand);
     }
   }

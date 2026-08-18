@@ -346,6 +346,10 @@ export async function importSpinData(uid, tournaments, hands, { onProgress } = {
       sawShowdown: h.sawShowdown,
       finish: h.finish,
       payout: h.payout,
+      // Adversaires rencontres : c'est ce qui alimente leur fiche. On garde le
+      // resume, jamais la main entiere — multiplie par deux adversaires et des
+      // dizaines de milliers de mains, tout conserver n'apporterait rien.
+      adversaires: h.adversaires ?? [],
     },
   }));
 

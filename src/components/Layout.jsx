@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true, modes: ["cash", "spin"] },
   { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"] },
   { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"] },
+  { to: "/adversaires", label: "Adversaires", icon: Users, modes: ["spin"] },
   { to: "/sessions", label: "Sessions", icon: ListOrdered, modes: ["cash"] },
   { to: "/ranges", label: "Ranges", icon: Grid3x3, modes: ["cash"] },
   { to: "/ev", label: "EV par position", icon: BarChart3, modes: ["cash"] },

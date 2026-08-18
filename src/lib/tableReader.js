@@ -175,6 +175,12 @@ export function lireTable(image, zones, gabarits) {
 /**
  * Part du tapis total détenue par Hero, de 0 à 1.
  *
+ * Un spin démarre TOUJOURS à trois joueurs et se termine en tête-à-tête : les
+ * deux sièges adverses doivent donc rester surveillés du début à la fin. Un
+ * siège vide n'est pas une zone mal réglée, c'est un joueur éliminé, et il
+ * compte pour zéro dans le total. C'est exactement ce qui fait que la part
+ * reste juste quand la table passe de trois à deux.
+ *
  * C'est la seule mesure qui garde un sens du début à la fin : les tapis sont
  * affichés en grosses blindes et les blindes montent, donc les valeurs
  * absolues rétrécissent au fil du tournoi sans que rien ne change vraiment.
@@ -193,7 +199,10 @@ export function partDeHero(lecture) {
   for (const cle of ZONES_ADVERSAIRES) {
     if (!(cle in lecture)) continue; // zone non calibrée : on l'ignore
     const v = lecture[cle];
-    if (v == null) return null; // encre présente mais illisible
+    // null = de l'encre qu'on n'a pas su lire : aucune conclusion possible.
+    // 0 = siège sans encre, donc joueur déjà éliminé, ce qui est une
+    // information parfaitement exploitable.
+    if (v == null) return null;
     total += v;
   }
 

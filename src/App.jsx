@@ -19,6 +19,7 @@ import Settings from "./pages/Settings";
 import SpinDashboard from "./pages/SpinDashboard";
 import SpinImport from "./pages/SpinImport";
 import LecteurDirect from "./pages/LecteurDirect";
+import Adversaires from "./pages/Adversaires";
 import { useMode } from "./contexts/ModeContext";
 
 // Le tableau de bord n'a rien de commun entre les deux formats : en cash game
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/" element={<TableauDeBord />} />
         <Route path="/import" element={<Importer />} />
         <Route path="/lecteur" element={<LecteurDirect />} />
+        <Route path="/adversaires" element={<Adversaires />} />
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/ranges" element={<Ranges />} />
         <Route path="/ev" element={<EvByPosition />} />

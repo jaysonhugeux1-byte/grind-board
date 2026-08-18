@@ -20,6 +20,7 @@ const CLE_REGIONS = "gl_lecteur_regions";
 // ne sont plus comparables et doivent être réappris plutôt que mal lus.
 const CLE_GABARITS = "gl_lecteur_gabarits_v2";
 const CLE_PERIODE = "gl_lecteur_periode";
+const CLE_AUTO = "gl_lecteur_auto";
 
 // Rythmes proposés. Un demi-tour de seconde est le réglage utile : ce qui
 // décide de l'issue d'un tournoi, c'est la toute dernière image avant que la
@@ -209,6 +210,10 @@ export default function LecteurDirect() {
   // Durée réelle d'un tour et nombre de tables lues : sans cette mesure,
   // impossible de savoir si le rythme demandé est effectivement tenu.
   const [cadence, setCadence] = useState(null);
+  // Inscription sans clic. Ne concerne que les tournois dont l'issue est
+  // CERTAINE : une issue indécise ne peut pas être inscrite sans être inventée,
+  // elle continue donc de passer par la file de confirmation.
+  const [auto, setAuto] = useState(() => lireLocal(CLE_AUTO, true));
 
   const suivisRef = useRef(new Map());
   const boucleRef = useRef(null);
@@ -217,6 +222,7 @@ export default function LecteurDirect() {
   useEffect(() => { localStorage.setItem(CLE_REGIONS, JSON.stringify(regions)); }, [regions]);
   useEffect(() => { localStorage.setItem(CLE_GABARITS, JSON.stringify(gabarits)); }, [gabarits]);
   useEffect(() => { localStorage.setItem(CLE_PERIODE, JSON.stringify(periodeMs)); }, [periodeMs]);
+  useEffect(() => { localStorage.setItem(CLE_AUTO, JSON.stringify(auto)); }, [auto]);
 
   // Zone active ramenee au repere de la fenetre capturee : c'est dans ce repere
   // que vivent l'apercu et l'apprentissage.
@@ -291,6 +297,18 @@ export default function LecteurDirect() {
     setErreur(null);
   }
 
+  const enregistrerFiche = useCallback(async (fiche, gagne) => {
+    await addSpinTournament(user.uid, {
+      id: `direct-${fiche.debut}`,
+      ts: fiche.debut,
+      buyIn: fiche.buyIn,
+      prizePool: fiche.dotation,
+      payout: gagne ? fiche.dotation : 0,
+      finish: gagne ? 1 : null,
+      data: { source: "lecteur", part: fiche.part ?? null },
+    });
+  }, [user]);
+
   // ---------------------------------------------------------------- surveillance
 
   const tick = useCallback(async () => {
@@ -340,18 +358,43 @@ export default function LecteurDirect() {
         });
       }
 
-      if (nouvellesFiches.length) {
-        setFile((f) => {
-          const connues = new Set(f.map((x) => x.cle));
-          return [...nouvellesFiches.filter((x) => x.exploitable && !connues.has(x.cle)), ...f];
-        });
+      const utiles = nouvellesFiches.filter((x) => x.exploitable);
+      if (utiles.length) {
+        // Issue certaine : on inscrit sans rien demander. Issue indécise : la
+        // file, parce qu'aucune valeur ne peut être inventée à la place.
+        const certaines = auto ? utiles.filter((x) => x.resultat) : [];
+        const douteuses = utiles.filter((x) => !certaines.includes(x));
+        let aRecharger = false;
+
+        for (const fiche of certaines) {
+          try {
+            await enregistrerFiche(fiche, fiche.resultat === "gagne");
+            setEnregistres((n) => n + 1);
+            aRecharger = true;
+          } catch (e) {
+            // Un échec d'écriture ne doit pas perdre le tournoi : il repart en
+            // file de confirmation plutôt que de disparaître.
+            douteuses.push(fiche);
+            setErreur(e.message || "Enregistrement automatique impossible.");
+          }
+        }
+
+        if (douteuses.length) {
+          setFile((f) => {
+            const connues = new Set(f.map((x) => x.cle));
+            return [...douteuses.filter((x) => !connues.has(x.cle)), ...f];
+          });
+        }
+        // Un seul rechargement pour tout le lot : le tableau de bord n'a pas
+        // besoin d'etre reconstruit une fois par tournoi.
+        if (aRecharger) await refresh();
       }
 
       setCadence({ duree: Math.round(performance.now() - depart), tables: captures.length });
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
-  }, [zones, gabarits, regions, regionActive]);
+  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh]);
 
   useEffect(() => {
     if (!surveillance) return undefined;
@@ -375,15 +418,7 @@ export default function LecteurDirect() {
 
   async function enregistrer(fiche, gagne) {
     try {
-      await addSpinTournament(user.uid, {
-        id: `direct-${fiche.debut}`,
-        ts: fiche.debut,
-        buyIn: fiche.buyIn,
-        prizePool: fiche.dotation,
-        payout: gagne ? fiche.dotation : 0,
-        finish: gagne ? 1 : null,
-        data: { source: "lecteur" },
-      });
+      await enregistrerFiche(fiche, gagne);
       setFile((f) => f.filter((x) => x.cle !== fiche.cle));
       setEnregistres((n) => n + 1);
       await refresh();
@@ -445,6 +480,10 @@ export default function LecteurDirect() {
               >
                 {surveillance ? <><Square size={13} /> Arrêter</> : <><Play size={13} /> Surveiller</>}
               </button>
+              <label className="bascule" title="Inscrire sans confirmation les tournois dont l'issue est certaine">
+                <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+                Enregistrement direct
+              </label>
               <div className="segmented" title="Rythme de lecture">
                 {RYTHMES.map((r) => (
                   <button
@@ -714,7 +753,9 @@ export default function LecteurDirect() {
           <div className="card-title-row">
             <h2>Tournois terminés</h2>
             <span className="card-sub">
-              le lecteur n'inscrit rien dont il n'est pas sûr — un clic suffit à trancher
+              {auto
+                ? "issue incertaine : le lecteur ne l'inventera pas, un clic suffit à trancher"
+                : "enregistrement direct désactivé — tout passe par ici"}
             </span>
           </div>
           <div className="file-tournois">
