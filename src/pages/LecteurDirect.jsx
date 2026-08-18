@@ -13,6 +13,7 @@ import {
   deduireResultat, zonesAbsolues, zoneDansRegion,
 } from "../lib/tableReader";
 import { addSpinTournament } from "../lib/supabaseData";
+import { listerAdversaires, trouverPseudo, styleAdversaire } from "../lib/adversaires";
 
 const CLE_ZONES = "gl_lecteur_zones";
 const CLE_REGIONS = "gl_lecteur_regions";
@@ -181,7 +182,7 @@ function Calibrateur({ image, regions, regionActive, zones, zoneActive, mode, on
 
 export default function LecteurDirect() {
   const { user } = useAuth();
-  const { refresh } = useData();
+  const { hands, refresh } = useData();
 
   const bureau = typeof window !== "undefined" && window.grandLivre?.estBureau;
 
@@ -230,6 +231,26 @@ export default function LecteurDirect() {
     () => zoneDansRegion(regions[regionActive], zones[zoneActive]),
     [regions, regionActive, zones, zoneActive]
   );
+
+  // Fiches d'adversaires deja constituees : c'est elles qu'on interroge quand un
+  // pseudo est lu sur la table.
+  const fiches = useMemo(() => listerAdversaires(hands), [hands]);
+  const pseudos = useMemo(() => fiches.map((f) => f.nom), [fiches]);
+
+  // Adversaires reconnus dans la derniere lecture. La lecture d'un pseudo n'a
+  // pas besoin d'etre exacte : le rapprochement fait le travail.
+  const reconnus = useMemo(() => {
+    if (!lectureLive) return [];
+    return ["nomAdversaire1", "nomAdversaire2"]
+      .map((cle) => {
+        const lu = lectureLive[cle];
+        if (!lu) return null;
+        const trouve = trouverPseudo(lu, pseudos);
+        if (!trouve) return { cle, lu, fiche: null };
+        return { cle, lu, fiche: fiches.find((f) => f.nom === trouve.nom), score: trouve.score };
+      })
+      .filter(Boolean);
+  }, [lectureLive, pseudos, fiches]);
 
   const signesConnus = useMemo(() => [...new Set(gabarits.map((g) => g.signe))].sort(), [gabarits]);
 
@@ -724,6 +745,40 @@ export default function LecteurDirect() {
                     );
                   })}
                 </div>
+                {reconnus.length > 0 && (
+                  <div className="face-a-toi">
+                    {reconnus.map(({ cle, lu, fiche, score }) => {
+                      const style = fiche ? styleAdversaire(fiche) : null;
+                      return (
+                        <div key={cle} className="adv-live">
+                          <div className="adv-live-tete">
+                            <strong>{fiche ? fiche.nom : "Inconnu"}</strong>
+                            {fiche && score < 0.95 && (
+                              <span className="muted" style={{ fontSize: 10.5 }}>
+                                lu « {lu} »
+                              </span>
+                            )}
+                            {style && <span className={`etiquette-style ${style.ton}`}>{style.label}</span>}
+                          </div>
+                          {fiche ? (
+                            <div className="adv-live-stats mono">
+                              <span>{fiche.mains} mains</span>
+                              <span>joue {fiche.tauxVolontaire?.toFixed(0) ?? "—"} %</span>
+                              <span>relance {fiche.tauxRelance?.toFixed(0) ?? "—"} %</span>
+                              <span>tapis {fiche.tauxTapis?.toFixed(0) ?? "—"} %</span>
+                              {!fiche.fiable && <span className="muted">échantillon court</span>}
+                            </div>
+                          ) : (
+                            <div className="adv-live-stats muted">
+                              {lu ? `« ${lu} » ne correspond à aucun joueur connu` : "pseudo illisible"}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {(() => {
                   // La part est ce qui décide de l'issue : elle mérite d'être
                   // affichée telle quelle plutôt que déduite de tête.

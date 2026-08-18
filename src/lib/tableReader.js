@@ -20,41 +20,51 @@ import { lireZone, versNombre } from "./vision.js";
 // nombre de jetons ne bouge pas. Aucun seuil en BB n'a donc de sens dans
 // l'absolu : tout se raisonne en part du total présent sur la table.
 //
-// Proportions relevées sur une table Betclic réelle : dotation en haut au
-// centre, pot au milieu, tapis de Hero en bas, adversaires sur les côtés — en
-// tête-à-tête l'unique adversaire est en haut à droite. Ce ne sont que des
-// points de départ, volontairement larges ; ils dépendent de la taille de
-// fenêtre et de la disposition choisie dans le client, et c'est bien pour cela
-// que les cadres se tracent à la souris.
-// Les zones sont relatives à une TABLE, pas à la fenêtre capturée.
+// Les zones sont relatives à une TABLE, pas à la fenêtre capturée. Betclic Poker
+// est une application Flutter : une seule fenêtre de haut niveau contient toutes
+// les tables, dessinées dans le même canvas, et aucune énumération système ne
+// les distingue. On capture donc la fenêtre du client, l'utilisateur délimite
+// chaque table à l'intérieur, et ces zones-ci s'appliquent au contenu de chaque
+// table. Toutes ayant exactement la même disposition, le calibrage interne ne se
+// fait qu'une fois et sert pour toutes.
 //
-// Betclic Poker est une application Flutter : une seule fenêtre de haut niveau
-// contient toutes les tables, dessinées dans le même canvas. Aucune énumération
-// système ne les distingue. On capture donc la fenêtre du client, l'utilisateur
-// délimite chaque table à l'intérieur, et ces zones-ci s'appliquent au contenu
-// de chaque table. Comme toutes les tables ont exactement la même disposition,
-// le calibrage interne ne se fait qu'une fois et sert pour toutes.
+// Proportions relevées sur une table réelle annotée par l'utilisateur, à
+// 986 × 623. Elles ne valent que pour cette disposition, mais placent les cadres
+// assez près pour n'avoir plus qu'à les affiner à la souris.
 export const ZONES_PAR_DEFAUT = {
   // Le buy-in venait du titre de la fenêtre ; il n'y a plus de titre par table,
   // donc il se lit dans le bandeau du haut comme le reste.
-  buyIn: { x: 0.3, y: 0.0, l: 0.4, h: 0.055 },
+  buyIn: { x: 0.42, y: 0.0, l: 0.17, h: 0.038 },
   // Large exprès : la dotation passe de « 40€ » à « 2000€ » selon le tirage,
   // et un cadre calé sur le cas court tronquerait le cas long.
-  dotation: { x: 0.34, y: 0.1, l: 0.33, h: 0.12 },
-  tapisHero: { x: 0.44, y: 0.86, l: 0.21, h: 0.07 },
-  adversaire1: { x: 0.79, y: 0.45, l: 0.2, h: 0.07 },
-  adversaire2: { x: 0.01, y: 0.45, l: 0.2, h: 0.07 },
-  pot: { x: 0.38, y: 0.33, l: 0.19, h: 0.07 },
+  dotation: { x: 0.36, y: 0.078, l: 0.3, h: 0.145 },
+  // Uniquement le montant : englober l'étiquette « Pot total » ferait entrer
+  // des lettres inconnues dans une zone qui ne doit contenir qu'un nombre.
+  pot: { x: 0.408, y: 0.348, l: 0.1, h: 0.045 },
+  tapisHero: { x: 0.446, y: 0.879, l: 0.106, h: 0.055 },
+  adversaire1: { x: 0.835, y: 0.475, l: 0.126, h: 0.052 },
+  adversaire2: { x: 0.03, y: 0.475, l: 0.138, h: 0.052 },
+  // Les pseudos servent à retrouver l'adversaire dans ta base de fiches. La
+  // lecture n'a pas besoin d'être parfaite : un rapprochement approximatif
+  // suffit à identifier qui est en face.
+  nomAdversaire1: { x: 0.835, y: 0.436, l: 0.126, h: 0.042 },
+  nomAdversaire2: { x: 0.03, y: 0.436, l: 0.138, h: 0.042 },
 };
 
 export const LIBELLES_ZONES = {
   buyIn: "Buy-in (bandeau)",
   dotation: "Dotation",
-  tapisHero: "Ton tapis",
-  adversaire1: "Adversaire 1",
-  adversaire2: "Adversaire 2",
   pot: "Pot",
+  tapisHero: "Ton tapis",
+  adversaire1: "Tapis adversaire droite",
+  adversaire2: "Tapis adversaire gauche",
+  nomAdversaire1: "Pseudo droite",
+  nomAdversaire2: "Pseudo gauche",
 };
+
+// Zones dont le contenu est du texte et non un nombre : elles ne participent pas
+// au calcul de la part de tapis et leur lecture n'a pas à être exacte.
+export const ZONES_TEXTE = ["nomAdversaire1", "nomAdversaire2"];
 
 // Deux tables côte à côte : la disposition la plus courante sur écran large.
 // Ce ne sont que des rectangles de départ, à ajuster à la souris.
@@ -165,8 +175,14 @@ export function lireTable(image, zones, gabarits) {
     }
     const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits);
     lectures[cle] = { texte: lu.texte, fiable: lu.fiable, vide: lu.vide, signes: lu.signes };
-    // Un siège vide vaut zéro ; un siège illisible ne vaut rien du tout.
-    valeurs[cle] = lu.vide ? 0 : lu.fiable ? versNombre(lu.texte) : null;
+    if (ZONES_TEXTE.includes(cle)) {
+      // Un pseudo n'est pas un nombre : on garde le texte tel qu'il a été lu,
+      // trous compris. Le rapprochement avec la base fera le reste.
+      valeurs[cle] = lu.vide ? null : lu.texte.trim();
+    } else {
+      // Un siège vide vaut zéro ; un siège illisible ne vaut rien du tout.
+      valeurs[cle] = lu.vide ? 0 : lu.fiable ? versNombre(lu.texte) : null;
+    }
   }
 
   return { ...valeurs, lectures };

@@ -154,6 +154,72 @@ export function chercherAdversaires(fiches, requete) {
     });
 }
 
+/**
+ * Retrouve un pseudo connu à partir d'une lecture approximative.
+ *
+ * C'est le point qui rend la reconnaissance des noms réaliste. Lire un pseudo
+ * lettre par lettre supposerait d'apprendre tout l'alphabet, majuscules
+ * comprises, et la moindre lettre manquante rendrait le nom inutilisable. Or on
+ * n'a pas besoin de LIRE le nom : on a besoin de savoir DUQUEL des joueurs déjà
+ * rencontrés il s'agit. Un « U?W?geM?ne » suffit largement à désigner
+ * « UrWageMine » parmi mille autres.
+ *
+ * Les positions illisibles sont donc traitées comme des jokers, et on exige que
+ * le candidat retenu se détache nettement du suivant — sinon on préfère ne
+ * reconnaître personne plutôt qu'afficher les statistiques du voisin.
+ *
+ * @param lu         texte lu, « ? » aux endroits non reconnus
+ * @param pseudos    pseudos connus
+ * @returns          { nom, score } ou null si rien ne se détache
+ */
+export function trouverPseudo(lu, pseudos) {
+  const cible = normaliser(lu).replace(/\s+/g, "");
+  // En dessous de trois signes lisibles, n'importe quel nom correspondrait.
+  const lisibles = [...cible].filter((c) => c !== "?").length;
+  if (lisibles < 3) return null;
+
+  let meilleur = null;
+  let meilleurScore = 0;
+  let second = 0;
+
+  for (const nom of pseudos) {
+    const candidat = normaliser(nom).replace(/\s+/g, "");
+    const score = similitude(cible, candidat);
+    if (score > meilleurScore) {
+      second = meilleurScore;
+      meilleurScore = score;
+      meilleur = nom;
+    } else if (score > second) {
+      second = score;
+    }
+  }
+
+  // Deux seuils : une ressemblance franche, et une avance nette sur le suivant.
+  if (!meilleur || meilleurScore < 0.6 || meilleurScore < second + 0.12) return null;
+  return { nom: meilleur, score: meilleurScore };
+}
+
+// Ressemblance de 0 à 1, les « ? » comptant comme des jokers. On compare
+// position par position après avoir aligné les longueurs : les pseudos lus ont
+// la bonne longueur, seuls certains signes manquent.
+function similitude(lu, candidat) {
+  if (!lu.length || !candidat.length) return 0;
+  const ecartLongueur = Math.abs(lu.length - candidat.length);
+  // Une longueur franchement differente désigne un autre joueur.
+  if (ecartLongueur > Math.max(2, Math.round(candidat.length * 0.25))) return 0;
+
+  const n = Math.min(lu.length, candidat.length);
+  let bons = 0;
+  for (let i = 0; i < n; i++) {
+    if (lu[i] === "?" || lu[i] === candidat[i]) bons++;
+  }
+  // Les jokers ne sont pas des réussites gratuites : on retire leur part du
+  // crédit, sans quoi « ????????? » vaudrait un sans-faute.
+  const jokers = [...lu.slice(0, n)].filter((c) => c === "?").length;
+  const credit = bons - jokers * 0.5;
+  return Math.max(0, credit / Math.max(lu.length, candidat.length));
+}
+
 function normaliser(s) {
   return String(s ?? "")
     .normalize("NFD")
