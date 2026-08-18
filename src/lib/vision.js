@@ -518,15 +518,14 @@ export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
 
   for (const boite of boites) {
     if (boite.espaceAvant > seuilEspace) texte += " ";
-    const resultat = apparier(
-      normaliserSigne(binaire, boite),
-      proportions(boite),
-      gabarits,
-      options.seuilRejet
-    );
+    const empreinte = normaliserSigne(binaire, boite);
+    const ratio = proportions(boite);
+    const resultat = apparier(empreinte, ratio, gabarits, options.seuilRejet);
     texte += resultat.signe ?? "?";
     if (!resultat.signe || !resultat.sur) fiable = false;
-    signes.push({ boite, ...resultat });
+    // L'empreinte accompagne le résultat : c'est elle qui permettra d'apprendre
+    // ce signe plus tard, quand l'historique en donnera le nom.
+    signes.push({ boite, empreinte, ratio, ...resultat });
   }
 
   // Tolérance au suffixe : on retire les signes illisibles de la FIN, et la

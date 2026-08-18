@@ -15,6 +15,7 @@ import {
 import { addSpinTournament, enregistrerMainsLecteur } from "../lib/supabaseData";
 import calibragePrepare from "../calibrages/betclic-4tables.json";
 import { integrerImage, cloturerMain, mainExploitable, notation, evDeAbattage } from "../lib/mainEnDirect";
+import { observation, ajouterObservation } from "../lib/apprentissageAuto";
 import { listerAdversaires, trouverPseudo, styleAdversaire } from "../lib/adversaires";
 
 const CLE_ZONES = "gl_lecteur_zones";
@@ -27,6 +28,7 @@ const CLE_AUTO = "gl_lecteur_auto";
 const CLE_HUD = "gl_lecteur_hud";
 const CLE_DECALAGE = "gl_lecteur_decalage";
 const CLE_MAINS = "gl_lecteur_mains";
+const CLE_OBSERVATIONS = "gl_lecteur_observations";
 
 // Rythmes proposés. Un demi-tour de seconde est le réglage utile : ce qui
 // décide de l'issue d'un tournoi, c'est la toute dernière image avant que la
@@ -268,6 +270,8 @@ export default function LecteurDirect() {
   // Main en cours par table. Distinct du suivi de tournoi : un tournoi contient
   // des dizaines de mains.
   const mainsRef = useRef(new Map());
+  // Signes vus mais non reconnus, en attente d'être nommés par l'historique.
+  const observationsRef = useRef(lireLocal(CLE_OBSERVATIONS, []));
   const suivisRef = useRef(new Map());
   const boucleRef = useRef(null);
 
@@ -492,6 +496,7 @@ export default function LecteurDirect() {
       const etats = [];
       const pastilles = [];
       const mainsFinies = [];
+      const aRetenir = [];
 
       // Un suivi par (fenêtre, région) : le système ne distingue pas les tables,
       // donc c'est le découpage de l'utilisateur qui en tient lieu.
@@ -563,6 +568,19 @@ export default function LecteurDirect() {
             }
           }
           const { suivi, tournoiTermine } = integrerLecture(suivis.get(cle), lu, maintenant);
+
+          // Mémoire des signes non reconnus. Le lecteur ne sait pas les nommer
+          // aujourd'hui ; l'historique de demain le fera pour lui, et ce sont
+          // justement ceux-là qu'il faut garder.
+          for (const [cle2, lect] of Object.entries(lu.lectures || {})) {
+            if (!lect || lect.vide || lect.fiable || !lect.signes?.length) continue;
+            if (lect.signes.length > 6) continue;
+            aRetenir.push(
+              observation(cle2, maintenant, lect.signes.map((x) => ({
+                empreinte: x.empreinte, ratio: x.ratio, lu: x.signe,
+              })))
+            );
+          }
 
           // Pastilles de l'affichage superposé : un adversaire reconnu, ses
           // chiffres posés au-dessus de son siège.
@@ -658,6 +676,19 @@ export default function LecteurDirect() {
           setMainsLues((n) => n + mainsFinies.length);
         } catch (e) {
           setErreur(e.message || "Enregistrement des mains impossible.");
+        }
+      }
+
+      if (aRetenir.length) {
+        observationsRef.current = aRetenir.reduce(ajouterObservation, observationsRef.current);
+        // Écriture différée : sauvegarder à chaque tour userait le stockage pour
+        // rien, et une session perdue ne coûte qu'un apprentissage.
+        if (observationsRef.current.length % 40 < aRetenir.length) {
+          try {
+            localStorage.setItem(CLE_OBSERVATIONS, JSON.stringify(observationsRef.current));
+          } catch {
+            // Stockage plein : on continue sans mémoriser plutôt que d'échouer.
+          }
         }
       }
 

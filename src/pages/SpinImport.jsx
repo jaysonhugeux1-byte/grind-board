@@ -8,6 +8,7 @@ import {
   parseBetclicSpin, groupTournaments, computeSpinHandEV, looksLikeBetclicSpin,
 } from "../lib/betclicSpin";
 import { importSpinData, deleteSpinTournaments } from "../lib/supabaseData";
+import { apprendreDepuisHistorique, contexteDepuisMains } from "../lib/apprentissageAuto";
 
 const euros = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)} €`;
 
@@ -95,7 +96,28 @@ export default function SpinImport() {
       const nouvellesM = mains.filter((h) => !idsMains.has(h.id)).length;
       const avecEv = mains.filter((h) => h.allInStreet).length;
 
+      // L'historique nomme ce que le lecteur d'écran n'a pas su lire. C'est la
+      // seule source d'étiquettes exacte : elle couvre tous les signes, y
+      // compris ceux qu'on ne croise qu'une fois par mois, et ne se trompe pas.
+      let apprentissage = null;
+      try {
+        const obs = JSON.parse(localStorage.getItem("gl_lecteur_observations") || "[]");
+        if (obs.length) {
+          const gabarits = JSON.parse(localStorage.getItem("gl_lecteur_gabarits_v2") || "[]");
+          const r = apprendreDepuisHistorique(obs, contexteDepuisMains(mains), gabarits);
+          if (r.appris.length) {
+            localStorage.setItem("gl_lecteur_gabarits_v2", JSON.stringify(r.gabarits));
+            // Les observations exploitées ont fait leur office.
+            localStorage.setItem("gl_lecteur_observations", "[]");
+            apprentissage = r;
+          }
+        }
+      } catch {
+        // Un apprentissage raté ne doit jamais empêcher un import.
+      }
+
       setApercu({
+        apprentissage,
         fichiers: fichiers.map((f) => f.name),
         mains,
         tournois: tournoisLus,
@@ -128,6 +150,7 @@ export default function SpinImport() {
     try {
       await importSpinData(user.uid, apercu.tournois, apercu.mains, { onProgress: setProgression });
       setBilan({
+        apprentissage: apercu.apprentissage,
         tournois: apercu.tournois.length,
         mains: apercu.mains.length,
         nouveauxT: apercu.nouveauxT,
@@ -276,6 +299,18 @@ export default function SpinImport() {
               Annuler
             </button>
           </div>
+
+          {apercu.apprentissage && (
+            <p className="alert-info" style={{ marginTop: 14 }}>
+              Le lecteur d'écran a appris{" "}
+              <strong className="mono">
+                {apercu.apprentissage.appris.map(([s]) => s).join(" ")}
+              </strong>{" "}
+              en rapprochant ce qu'il avait vu de cet historique — sans que tu aies rien à saisir.
+              {apercu.apprentissage.rejetees > 0 &&
+                ` ${apercu.apprentissage.rejetees} observation(s) écartée(s) : le cadre n'y capturait pas le bon nombre de signes.`}
+            </p>
+          )}
 
           {apercu.nouveauxT === 0 && (
             <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
