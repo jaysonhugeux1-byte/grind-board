@@ -38,11 +38,11 @@ console.log("=== victoire lue sur l'ecran de fin ===");
 }
 
 console.log("");
-console.log("=== defaite : aucun gain affiche ===");
+console.log("=== defaite : zone du gain sans encre ===");
 {
   let s = nouveauSuivi(table, 1000);
   ({ suivi: s } = integrerLecture(s, { buyIn: 1, dotation: 2, tapisHero: 8, adversaire1: 8, adversaire2: 9, pot: 0 }, 2000));
-  const r = integrerLecture(s, { finRejouer: 1, finGain: null }, 3000);
+  const r = integrerLecture(s, { finRejouer: 1, finGain: 0 }, 3000);
   T("issue : perdu", r.tournoiTermine?.resultat === "perdu", String(r.tournoiTermine?.resultat));
   T("  dotation conservee du tournoi", r.tournoiTermine?.dotation === 2, String(r.tournoiTermine?.dotation));
   T("  exploitable", r.tournoiTermine?.exploitable === true);
@@ -53,7 +53,7 @@ console.log("=== defaite sans dotation jamais lue ===");
 {
   // Cas reel : la surveillance demarre alors que la partie est deja finie.
   let s = nouveauSuivi(table, 1000);
-  const r = integrerLecture(s, { finRejouer: 1, finGain: null }, 2000);
+  const r = integrerLecture(s, { finRejouer: 1, finGain: 0 }, 2000);
   T("le tournoi est quand meme inscrit", r.tournoiTermine?.exploitable === true,
     `exploitable=${r.tournoiTermine?.exploitable}`);
   T("  un buy-in perdu ne doit pas disparaitre", r.tournoiTermine?.resultat === "perdu");
@@ -68,8 +68,38 @@ console.log("=== l'ecrit prime sur la deduction par les tapis ===");
   // Les tapis suggerent une victoire (part = 1) mais l'ecran dit perdu.
   ({ suivi: s } = integrerLecture(s, { buyIn: 1, dotation: 2, tapisHero: 24, adversaire1: 0, adversaire2: 0, pot: 0 }, 2000));
   T("la part vaut 1", s.part === 1, String(s.part));
-  const r = integrerLecture(s, { finRejouer: 1, finGain: null }, 3000);
+  const r = integrerLecture(s, { finRejouer: 1, finGain: 0 }, 3000);
   T("l'ecran de fin l'emporte", r.tournoiTermine?.resultat === "perdu", String(r.tournoiTermine?.resultat));
+}
+
+console.log("");
+
+console.log("");
+console.log("=== gain illisible : surtout ne pas conclure ===");
+{
+  // Le piege le plus dangereux du lecteur. Si un cadre est mal place ou qu'un
+  // chiffre n'est pas encore appris, la zone du gain renvoie null. La prendre
+  // pour une absence de gain ferait enregistrer TOUS les tournois comme perdus,
+  // en silence, et la courbe s'effondrerait sans raison visible.
+  let s = nouveauSuivi(table, 1000);
+  ({ suivi: s } = integrerLecture(s, { buyIn: 1, dotation: 3, tapisHero: 8, adversaire1: 8, adversaire2: 9, pot: 0 }, 2000));
+  const r = integrerLecture(s, { finRejouer: 1, finGain: null }, 3000);
+  T("le tournoi est bien cloture", r.tournoiTermine != null);
+  T("  mais SANS issue affirmee", r.tournoiTermine?.resultat === null,
+    `obtenu ${r.tournoiTermine?.resultat}`);
+  T("  il partira donc en confirmation", r.tournoiTermine?.exploitable === true);
+}
+
+console.log("");
+console.log("=== zone vide = elimination certaine ===");
+{
+  // Une zone SANS ENCRE, elle, est une information : rien n'est affiche donc
+  // il n'y a rien gagne. lireTable renvoie 0 dans ce cas, jamais null.
+  let s = nouveauSuivi(table, 1000);
+  ({ suivi: s } = integrerLecture(s, { buyIn: 1, dotation: 3, tapisHero: 8, adversaire1: 8, adversaire2: 9, pot: 0 }, 2000));
+  const r = integrerLecture(s, { finRejouer: 1, finGain: 0 }, 3000);
+  T("issue : perdu", r.tournoiTermine?.resultat === "perdu", String(r.tournoiTermine?.resultat));
+  T("  dotation du tournoi conservee", r.tournoiTermine?.dotation === 3);
 }
 
 console.log("");

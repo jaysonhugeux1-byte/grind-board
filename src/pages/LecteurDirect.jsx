@@ -13,6 +13,7 @@ import {
   deduireResultat, zonesAbsolues, zoneDansRegion,
 } from "../lib/tableReader";
 import { addSpinTournament } from "../lib/supabaseData";
+import calibragePrepare from "../calibrages/betclic-4tables.json";
 import { listerAdversaires, trouverPseudo, styleAdversaire } from "../lib/adversaires";
 
 const CLE_ZONES = "gl_lecteur_zones";
@@ -292,6 +293,24 @@ export default function LecteurDirect() {
       })
       .filter(Boolean);
   }, [lectureLive, pseudos, fiches]);
+
+  // Calibrage prepare a l'avance sur une capture reelle de la fenetre Betclic :
+  // decoupe des quatre tables, position du bouton « Rejouer », et gabarits du
+  // chiffre et du symbole qui s'y trouvent. Evite a l'utilisateur la partie la
+  // plus ingrate — tracer quatre rectangles a la souris sur une image reduite.
+  function chargerCalibragePrepare() {
+    setRegions(calibragePrepare.regions);
+    setZones((z) => ({ ...z, ...calibragePrepare.zones }));
+    setGabarits((g) => fusionnerGabarits(g, calibragePrepare.gabarits));
+    setRegionActive(0);
+    setModeCalibrage("zones");
+    setMessage(
+      `Calibrage chargé : ${calibragePrepare.regions.length} tables et ` +
+      `${calibragePrepare.gabarits.map((x) => x.signe).join(" ")} appris. ` +
+      `Vérifie les cadres, ils supposent la même disposition que la mienne.`
+    );
+    setErreur(null);
+  }
 
   const signesConnus = useMemo(() => [...new Set(gabarits.map((g) => g.signe))].sort(), [gabarits]);
 
@@ -580,6 +599,9 @@ export default function LecteurDirect() {
               ))}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+              <button className="btn-secondary" onClick={chargerCalibragePrepare} title={calibragePrepare.note}>
+                Charger le calibrage préparé
+              </button>
               <button className="btn-primary" onClick={capturer} disabled={occupe || !tableChoisie}>
                 {occupe ? <Loader2 size={14} className="spin" /> : <Crosshair size={14} />} Capturer
               </button>

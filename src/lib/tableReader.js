@@ -59,7 +59,11 @@ export const ZONES_PAR_DEFAUT = {
   // C'est de très loin le meilleur signal disponible. Déduire l'issue des tapis
   // demande d'attraper la toute dernière image avant qu'elle disparaisse ; ici
   // le résultat est écrit noir sur blanc et reste affiché jusqu'à ce qu'on
-  // relance. Un gain présent veut dire gagné, son absence veut dire éliminé.
+  // relance.
+  //
+  // Attention au réglage de « Fin : gain » : ce cadre doit tomber là où le
+  // montant s'affiche en cas de victoire, et sur du VIDE en cas de défaite.
+  // S'il attrape « Tu termines 2e », il lirait un gain de 2 € à chaque défaite.
   finGain: { x: 0.3, y: 0.5, l: 0.4, h: 0.16 },
   // Le bouton de relance porte le buy-in : c'est la lecture la plus sûre qu'on
   // en ait, bien meilleure que le bandeau du haut qui disparaît sur cet écran.
@@ -310,19 +314,27 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
   if (lecture.finRejouer != null && lecture.finRejouer > 0) {
     const buyIn = lecture.finRejouer;
     const gain = lecture.finGain;
-    // Un gain affiché = victoire, son absence = élimination. C'est écrit, pas
-    // déduit : aucune place pour l'interprétation.
-    const gagne = gain != null && gain > 0;
-    const dotation = gagne ? gain : suivi.dotation;
+
+    // Trois cas, et il faut absolument les trois.
+    //
+    //   gain > 0  : un montant est affiché, c'est une victoire ;
+    //   gain === 0 : la zone est SANS ENCRE, donc rien n'est affiché — le
+    //                joueur est éliminé, et c'est une certitude ;
+    //   gain null  : il y a quelque chose mais on n'a pas su le lire, ce qui
+    //                n'autorise aucune conclusion.
+    //
+    // Confondre le troisième cas avec le second serait grave : un cadre mal
+    // placé ou un chiffre pas encore appris ferait enregistrer TOUS les
+    // tournois comme perdus, en silence, et le joueur ne verrait qu'une courbe
+    // qui s'effondre sans raison.
+    const resultatEcrit = gain == null ? null : gain > 0 ? "gagne" : "perdu";
+    const dotation = gain > 0 ? gain : suivi.dotation;
 
     // On ne clôture que si un tournoi était bien en cours : sinon on
     // enregistrerait une partie déjà inscrite à chaque tour où l'écran reste
     // affiché, et il reste affiché jusqu'à ce que le joueur relance.
     if (!suivi.ecranFinVu) {
-      const fiche = cloturer(
-        { ...suivi, buyIn, dotation, resultatEcrit: gagne ? "gagne" : "perdu" },
-        maintenant
-      );
+      const fiche = cloturer({ ...suivi, buyIn, dotation, resultatEcrit }, maintenant);
       const suivant = nouveauSuivi({ id: suivi.sourceId, titre: suivi.titre, buyIn }, maintenant);
       suivant.ecranFinVu = true;
       return { suivi: suivant, tournoiTermine: fiche };
