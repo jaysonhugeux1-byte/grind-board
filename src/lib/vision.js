@@ -613,10 +613,22 @@ export function versNombre(texte) {
 export function apprendreZone(data, largeur, hauteur, texteAttendu, options = {}) {
   const binaire = binariser(carteEncre(data, largeur, hauteur), options.seuil);
   const attendus = [...texteAttendu.replace(/\s+/g, "")];
-  // On souffle au découpage le nombre de signes à trouver : c'est la seule
-  // occasion où on le connaît, et cela permet de séparer des caractères
-  // accolés que la seule projection des colonnes laisserait collés.
-  const boites = decouperSignes(binaire, { ...options, nombreAttendu: attendus.length });
+  let boites = decouperSignes(binaire, { ...options, nombreAttendu: attendus.length });
+
+  // Tolérance au suffixe, symétrique de celle de la lecture. La zone d'un tapis
+  // contient « 23,5 BB » : le nombre, puis une unité qu'on n'apprend pas — le
+  // « B » gras se confondrait avec un « 5 ». Sans cette tolérance, aucune leçon
+  // sur un tapis ne passerait, ni de la main de l'utilisateur ni de
+  // l'historique.
+  //
+  // On ne rogne QUE par la fin, et seulement si ce qu'on retire est séparé du
+  // nombre par un blanc : retirer au milieu décalerait toutes les étiquettes.
+  if (options.suffixeTolere && boites.length > attendus.length) {
+    const coupe = boites[attendus.length];
+    const ecarts = boites.slice(1).map((b) => b.espaceAvant).sort((a, b) => a - b);
+    const typique = ecarts.length ? ecarts[Math.floor((ecarts.length - 1) / 2)] : 0;
+    if (coupe && coupe.espaceAvant > typique * 2 + 1) boites = boites.slice(0, attendus.length);
+  }
 
   if (boites.length !== attendus.length) {
     return {

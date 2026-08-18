@@ -70,20 +70,20 @@ export function reperePanneaux(image, { seuil = 26 } = {}) {
 }
 
 // Apprend les signes d'une zone dont on connaît le contenu, et rend compte.
-export function apprendre(image, zoneAbsolue, texte, gabarits) {
+export function apprendre(image, zoneAbsolue, texte, gabarits, options = {}) {
   const m = extraireZone(image, zoneAbsolue);
   if (!m) return { gabarits, erreur: "zone hors cadre" };
-  const r = apprendreZone(m.data, m.largeur, m.hauteur, texte);
+  const r = apprendreZone(m.data, m.largeur, m.hauteur, texte, { suffixeTolere: true, ...options });
   if (r.erreur) return { gabarits, erreur: r.erreur };
   return { gabarits: fusionnerGabarits(gabarits, r.gabarits), appris: r.gabarits.map((g) => g.signe) };
 }
 
 // Relit une zone avec les gabarits courants : le contrôle qui dit si le
 // calibrage tient debout.
-export function relire(image, zoneAbsolue, gabarits) {
+export function relire(image, zoneAbsolue, gabarits, options = {}) {
   const m = extraireZone(image, zoneAbsolue);
   if (!m) return { texte: "", fiable: false };
-  const lu = lireZone(m.data, m.largeur, m.hauteur, gabarits);
+  const lu = lireZone(m.data, m.largeur, m.hauteur, gabarits, options);
   return { texte: lu.texte, fiable: lu.fiable, vide: lu.vide, nombre: versNombre(lu.texte) };
 }
 
