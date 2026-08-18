@@ -1,145 +1,160 @@
-// Évaluateur de mains 7 cartes + calcul d'équité all-in (2 joueurs ou plus).
-// Utilisé pour estimer l'EV bb/100 : le résultat "juste" si les cartes avaient
-// toujours été distribuées selon leur probabilité réelle, indépendamment de la chance.
+// Équité à l'abattage et EV all-in.
+//
+// Le principe : quand tout l'argent est au milieu et qu'il reste des cartes à
+// venir, le résultat affiché n'est qu'un tirage parmi d'autres. On remplace donc
+// ce tirage par son espérance — la répartition du pot pondérée par la
+// probabilité de chaque board restant. C'est la seule façon de séparer le jeu de
+// la chance sur un échantillon court.
+import { evaluate7, cardToInt } from "./evaluator.js";
 
-const RANK_ORDER = "23456789TJQKA";
-const SUITS = ["s", "h", "d", "c"];
+export { cardToInt };
 
-function parseCard(str) {
-  const rank = RANK_ORDER.indexOf(str[0].toUpperCase()) + 2;
-  const suit = str[1] ? str[1].toLowerCase() : "";
-  return { rank, suit };
+// Générateur pseudo-aléatoire déterministe. Indispensable : l'EV d'une main
+// donnée doit valoir la même chose à chaque recalcul, sinon les courbes bougent
+// toutes seules d'un import à l'autre.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-const isValidCard = (c) => c.rank >= 2 && c.rank <= 14 && SUITS.includes(c.suit);
+export function hashSeed(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
-function fullDeck() {
+// Au-delà de deux cartes à venir, l'énumération exacte devient trop lourde
+// (près de deux millions de boards en préflop) : on échantillonne.
+const SAMPLES = 8000;
+
+/**
+ * Espérance de gain de chaque joueur à l'abattage, pots latéraux compris.
+ *
+ * @param playersCards  [[c1,c2], …] cartes connues de chaque joueur encore en jeu
+ * @param knownBoard    cartes du board déjà dévoilées au moment du dernier tapis
+ * @param pots          [{ amount, eligible: [indices de joueurs] }]
+ * @param seedStr       chaîne servant de graine (l'identifiant de la main)
+ * @returns             tableau des espérances de gain, une par joueur
+ */
+export function expectedPotShares(playersCards, knownBoard, pots, seedStr = "") {
+  const n = playersCards.length;
+  const expected = new Float64Array(n);
+  if (!n || !pots.length) return Array.from(expected);
+
+  const used = new Uint8Array(52);
+  for (const p of playersCards) for (const c of p) used[c] = 1;
+  for (const c of knownBoard) used[c] = 1;
+
   const deck = [];
-  for (const r of RANK_ORDER) for (const s of SUITS) deck.push({ rank: RANK_ORDER.indexOf(r) + 2, suit: s });
-  return deck;
-}
+  for (let c = 0; c < 52; c++) if (!used[c]) deck.push(c);
 
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-// Score d'une main de 5 cartes -> nombre comparable (plus haut = meilleur).
-function evaluate5(cards) {
-  const ranks = cards.map((c) => c.rank).sort((a, b) => b - a);
-  const suits = cards.map((c) => c.suit);
-  const isFlush = suits.every((s) => s === suits[0]);
-
-  const counts = {};
-  for (const r of ranks) counts[r] = (counts[r] || 0) + 1;
-  const groups = Object.entries(counts)
-    .map(([r, c]) => ({ r: Number(r), c }))
-    .sort((a, b) => b.c - a.c || b.r - a.r);
-
-  const uniq = [...new Set(ranks)];
-  let isStraight = false, straightHigh = 0;
-  if (uniq.length === 5) {
-    if (uniq[0] - uniq[4] === 4) { isStraight = true; straightHigh = uniq[0]; }
-    else if (uniq[0] === 14 && uniq[1] === 5 && uniq[2] === 4 && uniq[3] === 3 && uniq[4] === 2) {
-      isStraight = true; straightHigh = 5;
-    }
-  }
-
-  let category, kickers;
-  if (isStraight && isFlush) { category = 8; kickers = [straightHigh]; }
-  else if (groups[0].c === 4) { category = 7; kickers = [groups[0].r, groups[1].r]; }
-  else if (groups[0].c === 3 && groups[1].c === 2) { category = 6; kickers = [groups[0].r, groups[1].r]; }
-  else if (isFlush) { category = 5; kickers = ranks; }
-  else if (isStraight) { category = 4; kickers = [straightHigh]; }
-  else if (groups[0].c === 3) { category = 3; kickers = [groups[0].r, ...groups.slice(1).map((g) => g.r)]; }
-  else if (groups[0].c === 2 && groups[1].c === 2) {
-    category = 2;
-    kickers = [Math.max(groups[0].r, groups[1].r), Math.min(groups[0].r, groups[1].r), groups[2].r];
-  } else if (groups[0].c === 2) { category = 1; kickers = [groups[0].r, ...groups.slice(1).map((g) => g.r)]; }
-  else { category = 0; kickers = ranks; }
-
-  let n = category;
-  for (let i = 0; i < 5; i++) n = n * 15 + (kickers[i] || 0);
-  return n;
-}
-
-function combinations5of7(cards7) {
-  const out = [];
-  const idx = [0, 1, 2, 3, 4];
-  const n = 7, k = 5;
-  const c = [...idx];
-  const combo = () => c.map((i) => cards7[i]);
-  while (true) {
-    out.push(combo());
-    let i = k - 1;
-    while (i >= 0 && c[i] === i + n - k) i--;
-    if (i < 0) break;
-    c[i]++;
-    for (let j = i + 1; j < k; j++) c[j] = c[j - 1] + 1;
-  }
-  return out;
-}
-
-function evaluate7(cards7) {
-  let best = -1;
-  for (const combo of combinations5of7(cards7)) {
-    const score = evaluate5(combo);
-    if (score > best) best = score;
-  }
-  return best;
-}
-
-const sameCard = (a, b) => a.rank === b.rank && a.suit === b.suit;
-
-// Renvoie l'équité de Hero (0 à 1) face à un ou plusieurs adversaires (abattage
-// multiway inclus), sachant le board déjà connu. villainsCards : tableau de
-// paires de cartes, une par adversaire encore dans le coup à l'abattage.
-export function calcEquity(heroCards, villainsCards, knownBoard) {
-  const used = [...heroCards, ...villainsCards.flat(), ...knownBoard];
-  const deck = fullDeck().filter((c) => !used.some((u) => sameCard(u, c)));
   const need = 5 - knownBoard.length;
+  // Tampons réutilisés : sept cartes par joueur, board partagé.
+  const hand = new Int32Array(7);
+  const board = new Int32Array(5);
+  for (let i = 0; i < knownBoard.length; i++) board[i] = knownBoard[i];
+  const scores = new Int32Array(n);
 
-  let equitySum = 0, total = 0;
-  const compare = (board) => {
-    const heroScore = evaluate7([...heroCards, ...board]);
-    const villainScores = villainsCards.map((v) => evaluate7([...v, ...board]));
-    const best = Math.max(heroScore, ...villainScores);
-    total++;
-    if (heroScore === best) {
-      const winners = 1 + villainScores.filter((s) => s === best).length;
-      equitySum += 1 / winners;
+  let boards = 0;
+  const settle = () => {
+    boards++;
+    for (let p = 0; p < n; p++) {
+      hand[0] = playersCards[p][0];
+      hand[1] = playersCards[p][1];
+      for (let i = 0; i < 5; i++) hand[2 + i] = board[i];
+      scores[p] = evaluate7(hand);
+    }
+    for (const pot of pots) {
+      let best = -1;
+      let winners = 0;
+      for (const p of pot.eligible) {
+        const s = scores[p];
+        if (s > best) { best = s; winners = 1; }
+        else if (s === best) winners++;
+      }
+      const part = pot.amount / winners;
+      for (const p of pot.eligible) if (scores[p] === best) expected[p] += part;
     }
   };
 
   if (need === 0) {
-    compare(knownBoard);
+    settle();
   } else if (need === 1) {
-    for (const c of deck) compare([...knownBoard, c]);
+    for (let i = 0; i < deck.length; i++) {
+      board[4] = deck[i];
+      settle();
+    }
   } else if (need === 2) {
     for (let i = 0; i < deck.length; i++) {
-      for (let j = i + 1; j < deck.length; j++) compare([...knownBoard, deck[i], deck[j]]);
+      board[3] = deck[i];
+      for (let j = i + 1; j < deck.length; j++) {
+        board[4] = deck[j];
+        settle();
+      }
     }
   } else {
-    // Préflop : trop de combinaisons pour une énumération exacte -> Monte Carlo.
-    const SAMPLES = 2000;
+    const rnd = mulberry32(hashSeed(seedStr) || 1);
+    const pool = Int32Array.from(deck);
+    const len = pool.length;
+    const start = 5 - need;
     for (let s = 0; s < SAMPLES; s++) {
-      const draw = shuffle(deck).slice(0, need);
-      compare([...knownBoard, ...draw]);
+      // Mélange partiel de Fisher-Yates : seules les `need` premières cases ont
+      // besoin d'être tirées, inutile de brasser tout le paquet.
+      for (let k = 0; k < need; k++) {
+        const j = k + ((rnd() * (len - k)) | 0);
+        const t = pool[k];
+        pool[k] = pool[j];
+        pool[j] = t;
+        board[start + k] = pool[k];
+      }
+      settle();
     }
   }
 
-  return total ? equitySum / total : 1 / (1 + villainsCards.length);
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) out[i] = expected[i] / boards;
+  return out;
 }
 
-// Détecte un tapis (all-in) de Hero suivi d'un abattage (heads-up ou multiway)
-// et calcule le résultat "EV" de la main pour Hero. Renvoie null si la main
-// n'est pas éligible (pas de tapis, Hero pas concerné par l'abattage, cartes
-// d'un adversaire inconnues...) — dans ce cas le résultat réel de la main doit
-// être utilisé tel quel.
+// Équité brute d'un joueur (part d'un pot unique) — pratique pour afficher
+// « tu étais à 62 % ».
+export function equityOf(playersCards, knownBoard, index = 0, seedStr = "") {
+  const eligible = playersCards.map((_, i) => i);
+  const shares = expectedPotShares(playersCards, knownBoard, [{ amount: 1, eligible }], seedStr);
+  return shares[index];
+}
+
+// ---------------------------------------------------------------------------
+// Compatibilité cash game (CoinPoker) : mêmes signatures qu'avant, cartes en
+// texte, un seul pot.
+// ---------------------------------------------------------------------------
+
+const rankObjToStr = (c) => "23456789TJQKA"[c.rank - 2] + c.suit;
+
+const toInts = (cards) =>
+  cards
+    .map((c) => (c && typeof c === "object" && c.rank ? rankObjToStr(c) : c))
+    .map((c) => (typeof c === "string" ? cardToInt(c) : c))
+    .filter((c) => Number.isInteger(c) && c >= 0);
+
+export function calcEquity(heroCards, villainsCards, knownBoard) {
+  const hero = toInts(heroCards);
+  const villains = villainsCards.map(toInts);
+  const board = toInts(knownBoard);
+  if (hero.length !== 2 || villains.some((v) => v.length !== 2)) {
+    return 1 / (1 + villainsCards.length);
+  }
+  return equityOf([hero, ...villains], board, 0, hero.join("-") + "|" + board.join("-"));
+}
+
 export function computeHandEV(raw, heroInvested) {
   if (!raw || !/: ALLIN ₮/.test(raw)) return null;
 
@@ -160,10 +175,9 @@ export function computeHandEV(raw, heroInvested) {
   const finalBoard = boardMatch[1].trim().split(/\s+/);
   if (finalBoard.length !== 5) return null;
 
-  // Le tapis décisif est le dernier "ALLIN" posé par un joueur qui va effectivement
-  // à l'abattage (on ignore les tapis d'autres joueurs éliminés plus tôt dans la
-  // main, qui pourraient sinon faire croire à tort qu'on connaît moins de cartes
-  // du board qu'en réalité au moment où l'argent de Hero et des adversaires est engagé).
+  // Le tapis décisif est le dernier posé par un joueur qui va effectivement à
+  // l'abattage : ignorer ceux des joueurs déjà couchés éviterait sinon de croire
+  // le board moins avancé qu'il ne l'était quand l'argent est entré.
   const involved = new Set([heroShow.player, ...villainShows.map((s) => s.player)]);
   const lines = raw.split("\n");
   let allinIdx = -1;
@@ -180,25 +194,21 @@ export function computeHandEV(raw, heroInvested) {
     if (/^\*\*\* FLOP \*\*\*/.test(lines[i])) { knownLen = 3; break; }
     if (/^\*\*\* HOLE CARDS \*\*\*/.test(lines[i])) { knownLen = 0; break; }
   }
-  if (knownLen === 5) return null; // tapis à la river : aucun aléa restant, EV = résultat réel
+  if (knownLen === 5) return null; // tapis à la river : plus rien d'aléatoire
 
   const potMatch = raw.match(/Total pot ₮([\d.]+) \| Rake ₮([\d.]+) \| Splash Fee ₮([\d.]+)/);
   if (!potMatch) return null;
   const potTotal = parseFloat(potMatch[1]) - parseFloat(potMatch[2]) - parseFloat(potMatch[3]);
   if (!Number.isFinite(potTotal) || !Number.isFinite(heroInvested)) return null;
 
-  const heroCards = heroShow.cards.trim().split(/\s+/).map(parseCard);
-  const villainsCards = villainShows.map((s) => s.cards.trim().split(/\s+/).map(parseCard));
-  const knownBoard = finalBoard.slice(0, knownLen).map(parseCard);
-  if (
-    heroCards.length !== 2 ||
-    villainsCards.some((v) => v.length !== 2) ||
-    ![...heroCards, ...villainsCards.flat(), ...knownBoard].every(isValidCard)
-  ) {
+  const hero = toInts(heroShow.cards.trim().split(/\s+/));
+  const villains = villainShows.map((s) => toInts(s.cards.trim().split(/\s+/)));
+  const board = toInts(finalBoard.slice(0, knownLen));
+  if (hero.length !== 2 || villains.some((v) => v.length !== 2) || board.length !== knownLen) {
     return null;
   }
 
-  const equity = calcEquity(heroCards, villainsCards, knownBoard);
+  const equity = equityOf([hero, ...villains], board, 0, heroShow.cards + "|" + board.join("-"));
   if (!Number.isFinite(equity)) return null;
   return Math.round((equity * potTotal - heroInvested) * 1e6) / 1e6;
 }

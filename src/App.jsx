@@ -17,6 +17,7 @@ import Statistics from "./pages/Statistics";
 import HandSearch from "./pages/HandSearch";
 import Settings from "./pages/Settings";
 import SpinDashboard from "./pages/SpinDashboard";
+import SpinImport from "./pages/SpinImport";
 import { useMode } from "./contexts/ModeContext";
 
 // Le tableau de bord n'a rien de commun entre les deux formats : en cash game
@@ -24,6 +25,13 @@ import { useMode } from "./contexts/ModeContext";
 function TableauDeBord() {
   const { estSpin } = useMode();
   return estSpin ? <SpinDashboard /> : <Dashboard />;
+}
+
+// Les deux salles n'écrivent pas le même format : CoinPoker dépose ses mains au
+// fil de l'eau, Betclic livre une archive par jour.
+function Importer() {
+  const { estSpin } = useMode();
+  return estSpin ? <SpinImport /> : <Import />;
 }
 
 export default function App() {
@@ -48,7 +56,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<TableauDeBord />} />
-        <Route path="/import" element={<Import />} />
+        <Route path="/import" element={<Importer />} />
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/ranges" element={<Ranges />} />
         <Route path="/ev" element={<EvByPosition />} />

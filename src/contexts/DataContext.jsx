@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../supabase";
-import { getAllHands, getAllEntries, getAllSpinTournaments } from "../lib/supabaseData";
+import {
+  getAllHands,
+  getAllEntries,
+  getAllSpinTournaments,
+  getAllSpinHands,
+} from "../lib/supabaseData";
 import { useAuth } from "./AuthContext";
 import { useMode } from "./ModeContext";
 
@@ -23,8 +28,11 @@ export function DataProvider({ children }) {
   const loadJeu = useCallback(async (uid, modeActuel) => {
     try {
       if (modeActuel === "spin") {
-        setTournois(await getAllSpinTournaments(uid));
-        setHands([]);
+        // Tournois et mains ensemble : le résultat se lit au tournoi, mais les
+        // courbes de jetons et l'EV all-in se lisent à la main.
+        const [t, m] = await Promise.all([getAllSpinTournaments(uid), getAllSpinHands(uid)]);
+        setTournois(t);
+        setHands(m);
       } else {
         setHands(await getAllHands(uid));
         setTournois([]);

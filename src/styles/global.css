@@ -595,3 +595,43 @@ body {
   .sidebar-user-info { display: none; }
   .main-content { padding: 20px 16px 50px; }
 }
+
+/* ---------------------------------------------------------------- spin */
+
+/* Bandeau de tête : les quatre chiffres qu'on regarde en premier. */
+.kpi-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 8px; }
+.kpi-value { font-family: var(--font-mono); font-size: 24px; font-weight: 600; line-height: 1.1; }
+.kpi-value.win { color: var(--win); }
+.kpi-value.loss { color: var(--loss); }
+.kpi-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; }
+
+.chart-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+
+/* Légende cliquable : chaque entrée masque ou réaffiche sa courbe. */
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.chart-legend-item {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 5px 12px; font-size: 12px; color: var(--text); cursor: pointer;
+  font-family: var(--font-body);
+}
+.chart-legend-item:hover { border-color: var(--gold-soft); }
+.chart-legend-item.off { opacity: 0.42; }
+.chart-legend-item.off .chart-legend-dot { background: var(--text-muted) !important; }
+.chart-legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+.chart-tip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font-size: 12px; }
+.chart-tip-head { font-family: var(--font-mono); color: var(--text-muted); font-size: 11px; margin-bottom: 6px; }
+.chart-tip-row { display: flex; align-items: center; gap: 7px; padding: 1.5px 0; }
+.chart-tip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.chart-tip-label { flex: 1; color: var(--text-muted); }
+.chart-tip-value { font-family: var(--font-mono); font-weight: 600; }
+
+.chart-reglages { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--border); }
+.chart-reglages label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.reglage-court { width: 70px; font-family: var(--font-mono); }
+
+.stats-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 26px; }
+.stats-grille section h3 { font-family: var(--font-display); font-size: 14px; margin: 0 0 10px; font-weight: 600; }

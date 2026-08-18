@@ -249,6 +249,172 @@ export function deduireMultiplicateur(buyIn, prizePool) {
   return Math.round((prizePool / buyIn) * 100) / 100;
 }
 
+// Mains jouées dans les tournois. Séparées des tournois parce qu'elles servent
+// à autre chose : la courbe de jetons, l'EV all-in, le détail par position.
+export async function getAllSpinHands(uid) {
+  const rows = await fetchAllPages(() =>
+    supabase
+      .from("spin_hands")
+      .select("hand_id, tourney_id, ts, bb_depth, data")
+      .eq("user_id", uid)
+      .order("ts", { ascending: true })
+  );
+  return rows.map((r) => ({
+    id: r.hand_id,
+    tourneyId: r.tourney_id,
+    ts: new Date(r.ts).getTime(),
+    bbDepth: r.bb_depth == null ? null : Number(r.bb_depth),
+    ...(r.data || {}),
+  }));
+}
+
+export async function getAllSpinHandIds(uid) {
+  const rows = await fetchAllPages(() =>
+    supabase.from("spin_hands").select("hand_id").eq("user_id", uid).order("hand_id")
+  );
+  return new Set(rows.map((r) => r.hand_id));
+}
+
+export async function getSpinHandRaw(uid, handId) {
+  const { data, error } = await supabase
+    .from("spin_hand_raw")
+    .select("raw")
+    .eq("user_id", uid)
+    .eq("hand_id", handId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.raw ?? null;
+}
+
+/**
+ * Écrit un import de spins : les tournois et leurs mains.
+ *
+ * Les deux tables sont écrites en upsert. Rejouer un import ne doit jamais
+ * échouer, et un parseur amélioré doit pouvoir réécrire les mains déjà connues
+ * avec des valeurs recalculées (l'EV, notamment).
+ */
+export async function importSpinData(uid, tournaments, hands, { onProgress } = {}) {
+  const lignesTournois = tournaments.map((t) => ({
+    user_id: uid,
+    tourney_id: t.id,
+    ts: new Date(t.ts).toISOString(),
+    buy_in: t.buyIn ?? 0,
+    multiplier: t.multiplier ?? deduireMultiplicateur(t.buyIn, t.prizePool),
+    prize_pool: t.prizePool ?? null,
+    finish: t.finish ?? null,
+    payout: t.payout ?? 0,
+    net: Math.round(((t.payout ?? 0) - (t.buyIn ?? 0)) * 100) / 100,
+    data: {
+      source: "import",
+      nbMains: t.nbMains ?? null,
+      chipsInPlay: t.chipsInPlay ?? null,
+      chipsHero: t.chipsHero ?? null,
+      evChipsHero: t.evChipsHero ?? null,
+      evEcart: t.evEcart ?? null,
+      evNet: t.evNet ?? null,
+    },
+  }));
+
+  const lignesMains = hands.map((h) => ({
+    user_id: uid,
+    hand_id: h.id,
+    tourney_id: h.tourneyId,
+    ts: new Date(h.ts).toISOString(),
+    bb_depth: h.bbDepth ?? null,
+    // On ne conserve que ce dont les écrans ont besoin : le texte intégral vit
+    // dans spin_hand_raw et n'est lu qu'à l'ouverture d'une main.
+    data: {
+      buyIn: h.buyIn,
+      prizePool: h.prizePool,
+      multiplier: h.multiplier,
+      sb: h.sb,
+      bb: h.bb,
+      position: h.position,
+      cards: h.cards,
+      notation: h.notation,
+      tableSize: h.tableSize,
+      chipsInPlay: h.chipsInPlay,
+      stack: h.stack,
+      board: h.board,
+      invested: h.invested,
+      posted: h.posted,
+      collected: h.collected,
+      netChips: h.netChips,
+      evChips: h.evChips,
+      equity: h.equity,
+      allInStreet: h.allInStreet,
+      sawShowdown: h.sawShowdown,
+      finish: h.finish,
+      payout: h.payout,
+    },
+  }));
+
+  const lotsT = chunk(lignesTournois, 200);
+  const lotsM = chunk(lignesMains, 200);
+  const lotsR = chunk(
+    hands.filter((h) => h.raw).map((h) => ({ user_id: uid, hand_id: h.id, raw: h.raw })),
+    100
+  );
+  const total = lotsT.length + lotsM.length + lotsR.length;
+  let faits = 0;
+  const avance = () => {
+    faits++;
+    onProgress?.(Math.round((faits / total) * 100));
+  };
+
+  await runChunkedBatches(
+    lotsT.length,
+    async (i) => {
+      const { error } = await supabase
+        .from("spin_tournaments")
+        .upsert(lotsT[i], { onConflict: "user_id,tourney_id" });
+      if (error) throw error;
+    },
+    avance
+  );
+
+  await runChunkedBatches(
+    lotsM.length,
+    async (i) => {
+      const { error } = await supabase
+        .from("spin_hands")
+        .upsert(lotsM[i], { onConflict: "user_id,hand_id" });
+      if (error) throw error;
+    },
+    avance
+  );
+
+  await runChunkedBatches(
+    lotsR.length,
+    async (i) => {
+      const { error } = await supabase
+        .from("spin_hand_raw")
+        .upsert(lotsR[i], { onConflict: "user_id,hand_id" });
+      if (error) throw error;
+    },
+    avance
+  );
+
+  onProgress?.(100);
+  return { tournois: tournaments.length, mains: hands.length };
+}
+
+export async function deleteSpinTournaments(uid, tourneyIds, onChunkDone) {
+  const lots = chunk(tourneyIds, 200);
+  await runChunkedBatches(
+    lots.length,
+    async (i) => {
+      const { error } = await supabase
+        .from("spin_tournaments")
+        .delete()
+        .eq("user_id", uid)
+        .in("tourney_id", lots[i]);
+      if (error) throw error;
+    },
+    onChunkDone
+  );
+}
+
 export async function addSpinTournament(uid, t) {
   const buyIn = Number(t.buyIn) || 0;
   const prizePool = t.prizePool == null ? null : Number(t.prizePool);

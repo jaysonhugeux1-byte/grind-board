@@ -1,18 +1,45 @@
-import React, { useMemo, useState } from "react";
-import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine,
-} from "recharts";
-import { Loader2, Plus, Zap, Trophy, X } from "lucide-react";
+import React, { useMemo, useState, useEffect } from "react";
+import { Loader2, Plus, Zap, Trophy, X, Info } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { EmptyState, PageHeader } from "../components/ui";
-import { aggregateSpin, buildSpinChart, buildMultiplierBreakdown } from "../lib/spinStats";
+import { CourbeSpin, SERIES_JETONS, SERIES_BANKROLL } from "../components/SpinCharts";
+import {
+  aggregateSpin, buildBankrollChart, buildChipsChart, calculerCev, calculerRake,
+  rakeObserve, buildMultiplierBreakdown, buildPositionBreakdown, buildDepthBreakdown,
+  RAKE_PAR_DEFAUT,
+} from "../lib/spinStats";
 import { addSpinTournament } from "../lib/supabaseData";
 
 // Multiplicateurs proposés en raccourci. Le ×2 domine largement : c'est lui qui
 // finance à la fois la marge de la salle et les rares gros tirages.
 const MULTIS_COURANTS = [2, 3, 4, 5, 10, 25, 100];
+
+const CLE_RAKE = "gl_spin_rake";
+const CLE_RAKEBACK = "gl_spin_rakeback";
+
+const lireReglage = (cle, defaut) => {
+  const v = parseFloat(localStorage.getItem(cle));
+  return Number.isFinite(v) ? v : defaut;
+};
+
+const euros = (v, signe = true) =>
+  v == null
+    ? "—"
+    : `${signe && v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("fr-FR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} €`;
+
+// Virgule décimale et espace insécable avant l'unité : le reste de l'écran est
+// en français, les nombres doivent l'être aussi.
+const nombre = (v, decimales = 1) =>
+  v == null
+    ? "—"
+    : v.toLocaleString("fr-FR", { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
+
+const pourcent = (v, decimales = 2) =>
+  v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${nombre(Math.abs(v), decimales)} %`;
 
 // Saisie éclair : Betclic ne permet qu'un téléchargement d'historique par jour,
 // ce qui rend impossible tout retour immédiat sur ses courbes. Un spin tient en
@@ -148,31 +175,78 @@ function SaisieEclair({ derniersBuyIns, onAjout }) {
   );
 }
 
-function StatBlock({ label, value, sub, tone }) {
+function Kpi({ label, value, sub, tone }) {
   return (
-    <div className="stat-card">
-      <div className="stat-card-top"><span className="stat-label">{label}</span></div>
-      <div className={`stat-value ${tone || ""}`}>{value}</div>
-      {sub && <div className="card-sub" style={{ marginTop: 4 }}>{sub}</div>}
+    <div className="kpi-card">
+      <div className="kpi-label">{label}</div>
+      <div className={`kpi-value ${tone || ""}`}>{value}</div>
+      {sub && <div className="kpi-sub">{sub}</div>}
     </div>
   );
 }
 
+function Tableau({ colonnes, lignes }) {
+  return (
+    <table className="table">
+      <thead>
+        <tr>{colonnes.map((c) => <th key={c.cle}>{c.label}</th>)}</tr>
+      </thead>
+      <tbody>
+        {lignes.map((l, i) => (
+          <tr key={i}>{colonnes.map((c) => <td key={c.cle}>{c.rendu(l)}</td>)}</tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export default function SpinDashboard() {
-  const { tournois, loading, refresh } = useData();
-  const [echelle, setEchelle] = useState("euros");
+  const { tournois, hands, loading, refresh } = useData();
+  const [onglet, setOnglet] = useState("jetons");
+  const [buyInFiltre, setBuyInFiltre] = useState(null);
+  const [tauxRake, setTauxRake] = useState(() => lireReglage(CLE_RAKE, RAKE_PAR_DEFAUT));
+  const [tauxRakeback, setTauxRakeback] = useState(() => lireReglage(CLE_RAKEBACK, 0));
 
-  const agg = useMemo(() => aggregateSpin(tournois), [tournois]);
-  const courbe = useMemo(() => buildSpinChart(tournois), [tournois]);
-  const parMulti = useMemo(() => buildMultiplierBreakdown(tournois), [tournois]);
+  useEffect(() => { localStorage.setItem(CLE_RAKE, String(tauxRake)); }, [tauxRake]);
+  useEffect(() => { localStorage.setItem(CLE_RAKEBACK, String(tauxRakeback)); }, [tauxRakeback]);
 
-  // Buy-ins les plus joués, proposés en raccourci dans la saisie.
-  const derniersBuyIns = useMemo(() => {
+  // Niveaux de buy-in joués, du plus fréquent au moins fréquent.
+  const niveaux = useMemo(() => {
     const compte = new Map();
     for (const t of tournois) compte.set(t.buyIn, (compte.get(t.buyIn) || 0) + 1);
-    const tries = [...compte.entries()].sort((a, b) => b[1] - a[1]).map(([b]) => b).slice(0, 4);
-    return tries.length ? tries : [2, 5, 20];
+    return [...compte.entries()].sort((a, b) => b[1] - a[1]);
   }, [tournois]);
+
+  const derniersBuyIns = useMemo(() => {
+    const tries = niveaux.map(([b]) => b).slice(0, 4);
+    return tries.length ? tries : [2, 5, 20];
+  }, [niveaux]);
+
+  // Mélanger deux limites fausse toute lecture en euros : cent euros gagnés en
+  // 20 € et cent euros gagnés en 2 € ne disent pas du tout la même chose.
+  const tournoisVus = useMemo(
+    () => (buyInFiltre == null ? tournois : tournois.filter((t) => t.buyIn === buyInFiltre)),
+    [tournois, buyInFiltre]
+  );
+  const mainsVues = useMemo(
+    () => (buyInFiltre == null ? hands : hands.filter((h) => h.buyIn === buyInFiltre)),
+    [hands, buyInFiltre]
+  );
+
+  const agg = useMemo(() => aggregateSpin(tournoisVus), [tournoisVus]);
+  const rake = useMemo(() => calculerRake(tournoisVus, tauxRake), [tournoisVus, tauxRake]);
+  const rakeback = Math.round(rake * (Math.max(0, Math.min(100, tauxRakeback)) / 100) * 100) / 100;
+  const cev = useMemo(() => calculerCev(mainsVues, agg.total), [mainsVues, agg.total]);
+
+  const courbeBankroll = useMemo(
+    () => buildBankrollChart(tournoisVus, { tauxRake, tauxRakeback }),
+    [tournoisVus, tauxRake, tauxRakeback]
+  );
+  const courbeJetons = useMemo(() => buildChipsChart(mainsVues), [mainsVues]);
+  const parMulti = useMemo(() => buildMultiplierBreakdown(tournoisVus), [tournoisVus]);
+  const parPosition = useMemo(() => buildPositionBreakdown(mainsVues), [mainsVues]);
+  const parProfondeur = useMemo(() => buildDepthBreakdown(mainsVues), [mainsVues]);
+  const buyInMoyen = agg.total ? agg.misees / agg.total : null;
 
   if (loading) {
     return (
@@ -182,112 +256,280 @@ export default function SpinDashboard() {
     );
   }
 
-  const fmtEuro = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)} €`;
+  if (!tournois.length) {
+    return (
+      <div className="section">
+        <PageHeader title="Spin" subtitle="ROI, multiplicateurs, et ce que ton jeu vaut réellement" />
+        <SaisieEclair derniersBuyIns={derniersBuyIns} onAjout={refresh} />
+        <div className="card">
+          <EmptyState text="Aucun tournoi enregistré. Importe un historique Betclic, ou ajoute ton premier spin ci-dessus." />
+        </div>
+      </div>
+    );
+  }
+
+  const profitTotal = Math.round((agg.net + rakeback) * 100) / 100;
 
   return (
     <div className="section">
       <PageHeader title="Spin" subtitle="ROI, multiplicateurs, et ce que ton jeu vaut réellement" />
 
-      <SaisieEclair derniersBuyIns={derniersBuyIns} onAjout={refresh} />
+      <div className="kpi-bar">
+        <Kpi
+          label="Tournois"
+          value={agg.total.toLocaleString("fr-FR")}
+          sub={`${mainsVues.length.toLocaleString("fr-FR")} mains`}
+        />
+        <Kpi
+          label="CEV"
+          value={nombre(cev, 1)}
+          sub="jetons d'EV par tournoi"
+          tone={cev > 0 ? "win" : cev < 0 ? "loss" : ""}
+        />
+        <Kpi
+          label="Rakeback"
+          value={euros(rakeback, false)}
+          sub={`${tauxRakeback} % de ${euros(rake, false)}`}
+        />
+        <Kpi
+          label="Profit"
+          value={euros(profitTotal)}
+          sub={`ROI ${pourcent(agg.roi)}`}
+          tone={profitTotal > 0 ? "win" : profitTotal < 0 ? "loss" : ""}
+        />
+      </div>
 
-      {agg.total === 0 ? (
-        <div className="card">
-          <EmptyState text="Aucun tournoi enregistré. Ajoute ton premier spin ci-dessus." />
+      <div className="chart-toolbar">
+        <div className="segmented">
+          <button className={onglet === "jetons" ? "active" : ""} onClick={() => setOnglet("jetons")}>
+            Jetons gagnés
+          </button>
+          <button className={onglet === "bankroll" ? "active" : ""} onClick={() => setOnglet("bankroll")}>
+            Bankroll
+          </button>
+          <button className={onglet === "stats" ? "active" : ""} onClick={() => setOnglet("stats")}>
+            Stats
+          </button>
         </div>
-      ) : (
-        <>
-          <div className="stat-grid">
-            <StatBlock
-              label="ROI"
-              value={agg.roi == null ? "—" : `${agg.roi >= 0 ? "+" : ""}${agg.roi.toFixed(1)}%`}
-              tone={agg.roi >= 0 ? "win" : "loss"}
-              sub={`${agg.total} tournoi(s)`}
-            />
-            <StatBlock
-              label="Résultat"
-              value={fmtEuro(agg.net)}
-              tone={agg.net >= 0 ? "win" : "loss"}
-              sub={`${agg.misees.toFixed(2)} € misés`}
-            />
-            <StatBlock
-              label="Taux de victoire"
-              value={agg.tauxVictoire == null ? "—" : `${agg.tauxVictoire.toFixed(1)}%`}
-              sub={`${agg.victoires} victoire(s)`}
-            />
-            <StatBlock
-              label="Multiplicateur moyen"
-              value={agg.multiplicateurMoyen == null ? "—" : `×${agg.multiplicateurMoyen.toFixed(2)}`}
-              sub={agg.grosMultis ? `${agg.grosMultis} au-dessus de ×10` : "aucun gros tirage"}
-            />
-          </div>
 
-          <div className="card">
-            <div className="card-title-row">
-              <h2>Évolution</h2>
-              <div className="segmented">
-                <button className={echelle === "euros" ? "active" : ""} onClick={() => setEchelle("euros")}>En euros</button>
-                <button className={echelle === "buyins" ? "active" : ""} onClick={() => setEchelle("buyins")}>En buy-ins</button>
-              </div>
-            </div>
-            <div style={{ width: "100%", height: 260 }}>
-              <ResponsiveContainer>
-                <AreaChart data={courbe} margin={{ top: 10, right: 12, left: -10, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="spinFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--gold)" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="var(--gold)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="index" tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                  <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} width={52} />
-                  <ReferenceLine y={0} stroke="var(--border)" />
-                  <Tooltip
-                    contentStyle={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, fontFamily: "var(--font-mono)", fontSize: 12 }}
-                    labelFormatter={(i) => `Tournoi ${i}`}
-                    formatter={(v) => [echelle === "euros" ? `${v} €` : `${v} buy-ins`, "Cumul"]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey={echelle === "euros" ? "net" : "netBuyIns"}
-                    stroke="var(--gold)"
-                    strokeWidth={2}
-                    fill="url(#spinFill)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+        {niveaux.length > 1 && (
+          <div className="segmented">
+            <button className={buyInFiltre == null ? "active" : ""} onClick={() => setBuyInFiltre(null)}>
+              Tous
+            </button>
+            {niveaux.map(([b, n]) => (
+              <button
+                key={b}
+                className={buyInFiltre === b ? "active" : ""}
+                onClick={() => setBuyInFiltre(b)}
+                title={`${n} tournois`}
+              >
+                {b} €
+              </button>
+            ))}
           </div>
+        )}
+      </div>
 
-          <div className="card">
-            <div className="card-title-row">
-              <h2>D'où vient ton résultat</h2>
-              <span className="card-sub">résultat net par palier de multiplicateur</span>
-            </div>
-            <div style={{ width: "100%", height: 200 }}>
-              <ResponsiveContainer>
-                <BarChart data={parMulti} margin={{ top: 10, right: 12, left: -10, bottom: 0 }}>
-                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} axisLine={{ stroke: "var(--border)" }} tickLine={false} />
-                  <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} width={52} />
-                  <ReferenceLine y={0} stroke="var(--border)" />
-                  <Tooltip
-                    contentStyle={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, fontFamily: "var(--font-mono)", fontSize: 12 }}
-                    formatter={(v, _n, p) => [`${v} € sur ${p.payload.tournois} tournoi(s)`, "Net"]}
-                  />
-                  <Bar dataKey="net" fill="var(--felt-light)" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="dashboard-hint" style={{ marginTop: 12 }}>
-              Hors tirages au-dessus de ×10, ton résultat est de{" "}
-              <strong className={agg.netHorsGrosMultis >= 0 ? "win" : "loss"}>
-                {fmtEuro(agg.netHorsGrosMultis)}
-              </strong>. C'est le chiffre qui reflète ton jeu — le reste relève de la loterie.
-            </p>
+      <div className="card">
+        {onglet === "jetons" &&
+          (mainsVues.length ? (
+            <CourbeSpin
+              points={courbeJetons}
+              series={SERIES_JETONS}
+              cleReference="chips"
+              unite="jetons"
+              legendeX="mains jouées"
+              titreX="Mains jouées"
+            />
+          ) : (
+            <EmptyState text="Aucune main importée. Le détail main par main vient de l'historique Betclic — la saisie éclair n'enregistre que le résultat du tournoi." />
+          ))}
+
+        {onglet === "bankroll" && (
+          <CourbeSpin
+            points={courbeBankroll}
+            series={SERIES_BANKROLL}
+            cleReference="profit"
+            unite="euros"
+            legendeX="tournois joués"
+            titreX="Tournois joués"
+            buyInMoyen={buyInMoyen}
+          />
+        )}
+
+        {onglet === "stats" && (
+          <div className="stats-grille">
+            <section>
+              <h3>Ce que dit le résultat</h3>
+              <table className="table">
+                <tbody>
+                  <tr>
+                    <td>Résultat réel</td>
+                    <td className={agg.net >= 0 ? "win" : "loss"}>{euros(agg.net)}</td>
+                    <td className="muted">ROI {pourcent(agg.roi)}</td>
+                  </tr>
+                  <tr>
+                    <td>Résultat sans la chance des tapis</td>
+                    <td className={agg.evNet >= 0 ? "win" : "loss"}>{euros(agg.evNet)}</td>
+                    <td className="muted">ROI {pourcent(agg.evRoi)}</td>
+                  </tr>
+                  <tr>
+                    <td>Chance sur les tapis</td>
+                    <td className={agg.ecartChance >= 0 ? "win" : "loss"}>{euros(agg.ecartChance)}</td>
+                    <td className="muted">
+                      {agg.ecartChance < 0 ? "ce que les tirages t'ont coûté" : "ce que les tirages t'ont donné"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Victoires</td>
+                    <td>{agg.victoires}</td>
+                    <td className="muted">
+                      {nombre(agg.tauxVictoire, 2)} % — seuil de rentabilité{" "}
+                      {nombre(agg.multiplicateurMoyen ? 100 / agg.multiplicateurMoyen : null, 2)} %
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Multiplicateur moyen</td>
+                    <td>×{nombre(agg.multiplicateurMoyen, 3)}</td>
+                    <td className="muted">{agg.grosMultis} tournois au-delà de ×10</td>
+                  </tr>
+                  <tr>
+                    <td>Misé</td>
+                    <td>{euros(agg.misees, false)}</td>
+                    <td className="muted">soit {euros(buyInMoyen, false)} en moyenne</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p className="muted" style={{ fontSize: 11.5, marginTop: 10, lineHeight: 1.65 }}>
+                <Info size={12} style={{ verticalAlign: -2 }} /> « Sans la chance des tapis » remplace chaque
+                tapis suivi par son espérance : à équité égale, ce que la main aurait rapporté en moyenne
+                plutôt que sur ce tirage-là. Cela ne corrige pas la chance sur les multiplicateurs, qui se lit
+                dans le tableau ci-dessous.
+              </p>
+            </section>
+
+            <section>
+              <h3>Par multiplicateur</h3>
+              <Tableau
+                colonnes={[
+                  { cle: "label", label: "Palier", rendu: (l) => l.label },
+                  { cle: "tournois", label: "Tournois", rendu: (l) => l.tournois },
+                  {
+                    cle: "tauxVictoire",
+                    label: "Victoires",
+                    rendu: (l) => (l.tauxVictoire == null ? "—" : `${nombre(l.tauxVictoire, 1)} %`),
+                  },
+                  {
+                    cle: "net",
+                    label: "Résultat",
+                    rendu: (l) => <span className={l.net >= 0 ? "win" : "loss"}>{euros(l.net)}</span>,
+                  },
+                ]}
+                lignes={parMulti}
+              />
+              <p className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.6 }}>
+                Hors tirages au-dessus de ×10, ton résultat est de{" "}
+                <strong className={agg.netHorsGrosMultis >= 0 ? "win" : "loss"}>
+                  {euros(agg.netHorsGrosMultis)}
+                </strong>. C'est le chiffre qui reflète ton jeu — le reste relève de la loterie.
+              </p>
+            </section>
+
+            {parPosition.length > 0 && (
+              <section>
+                <h3>Par position</h3>
+                <Tableau
+                  colonnes={[
+                    { cle: "label", label: "Position", rendu: (l) => l.label },
+                    { cle: "mains", label: "Mains", rendu: (l) => l.mains.toLocaleString("fr-FR") },
+                    {
+                      cle: "vpip",
+                      label: "Mains jouées",
+                      rendu: (l) => (l.tauxVpip == null ? "—" : `${nombre(l.tauxVpip, 1)} %`),
+                    },
+                    {
+                      cle: "chipsParMain",
+                      label: "Jetons / main",
+                      rendu: (l) => (
+                        <span className={l.chipsParMain >= 0 ? "win" : "loss"}>{nombre(l.chipsParMain, 1)}</span>
+                      ),
+                    },
+                    {
+                      cle: "evParMain",
+                      label: "EV / main",
+                      rendu: (l) => (
+                        <span className={l.evParMain >= 0 ? "win" : "loss"}>{nombre(l.evParMain, 1)}</span>
+                      ),
+                    },
+                  ]}
+                  lignes={parPosition}
+                />
+              </section>
+            )}
+
+            {parProfondeur.some((p) => p.mains > 0) && (
+              <section>
+                <h3>Par profondeur de tapis</h3>
+                <Tableau
+                  colonnes={[
+                    { cle: "label", label: "Profondeur", rendu: (l) => l.label },
+                    { cle: "mains", label: "Mains", rendu: (l) => l.mains.toLocaleString("fr-FR") },
+                    {
+                      cle: "chips",
+                      label: "Jetons",
+                      rendu: (l) => (
+                        <span className={l.chips >= 0 ? "win" : "loss"}>{l.chips.toLocaleString("fr-FR")}</span>
+                      ),
+                    },
+                    { cle: "chipsParMain", label: "Par main", rendu: (l) => nombre(l.chipsParMain, 1) },
+                  ]}
+                  lignes={parProfondeur.filter((p) => p.mains > 0)}
+                />
+                <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+                  En hyper-turbo, la profondeur de tapis commande les décisions bien plus que les cartes.
+                </p>
+              </section>
+            )}
           </div>
-        </>
-      )}
+        )}
+
+        {onglet !== "stats" && (
+          <div className="chart-reglages">
+            <label>
+              Rake (%)
+              <input
+                className="input reglage-court"
+                type="number"
+                min="0"
+                max="20"
+                step="0.1"
+                value={tauxRake}
+                onChange={(e) => setTauxRake(parseFloat(e.target.value) || 0)}
+              />
+            </label>
+            <label>
+              Rakeback (%)
+              <input
+                className="input reglage-court"
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={tauxRakeback}
+                onChange={(e) => setTauxRakeback(parseFloat(e.target.value) || 0)}
+              />
+            </label>
+            <span className="muted" style={{ fontSize: 11.5, lineHeight: 1.5, flex: 1, minWidth: 220 }}>
+              Le rake ne se déduit pas des dotations reçues : la table des multiplicateurs a une queue trop
+              épaisse pour ça, un seul ×100 déplacerait l'estimation de trois points. Tes {agg.total} tournois
+              suggèrent {nombre(rakeObserve(tournoisVus), 1)} %, à prendre avec des pincettes.
+            </span>
+          </div>
+        )}
+      </div>
+
+      <SaisieEclair derniersBuyIns={derniersBuyIns} onAjout={refresh} />
     </div>
   );
 }
