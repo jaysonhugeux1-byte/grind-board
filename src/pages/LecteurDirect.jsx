@@ -211,6 +211,9 @@ export default function LecteurDirect() {
   // Durée réelle d'un tour et nombre de tables lues : sans cette mesure,
   // impossible de savoir si le rythme demandé est effectivement tenu.
   const [cadence, setCadence] = useState(null);
+  // Ce que chaque table lit, tour par tour. Sans cette vue, un lecteur qui
+  // n'enregistre rien ne dit pas POURQUOI — et c'est toujours la question.
+  const [etatTables, setEtatTables] = useState([]);
   // Inscription sans clic. Ne concerne que les tournois dont l'issue est
   // CERTAINE : une issue indécise ne peut pas être inscrite sans être inventée,
   // elle continue donc de passer par la file de confirmation.
@@ -342,6 +345,7 @@ export default function LecteurDirect() {
       // suivi d'un décodage, à chaque tour et pour chaque table.
       const captures = await window.grandLivre.capturerTables(null);
       const maintenant = Date.now();
+      const etats = [];
 
       // Un suivi par (fenêtre, région) : le système ne distingue pas les tables,
       // donc c'est le découpage de l'utilisateur qui en tient lieu.
@@ -376,6 +380,20 @@ export default function LecteurDirect() {
           suivis.set(cle, suivi);
           if (tournoiTermine) nouvellesFiches.push(tournoiTermine);
           if (i === regionActive) setLectureLive(lu);
+          etats.push({
+            table: i + 1,
+            buyIn: lu.buyIn ?? suivi.buyIn,
+            dotation: lu.dotation ?? suivi.dotation,
+            tapis: lu.tapisHero,
+            fin: lu.finRejouer != null,
+            gain: lu.finGain,
+            part: suivi.part,
+            phase: lu.finRejouer != null
+              ? "écran de fin"
+              : suivi.dotation != null
+                ? "en cours"
+                : "rien de lisible",
+          });
         });
       }
 
@@ -412,6 +430,7 @@ export default function LecteurDirect() {
       }
 
       setCadence({ duree: Math.round(performance.now() - depart), tables: captures.length });
+      setEtatTables(etats);
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
@@ -537,6 +556,43 @@ export default function LecteurDirect() {
           </p>
         )}
       </div>
+
+      {surveillance && etatTables.length > 0 && (
+        <div className="card">
+          <div className="card-title-row">
+            <h2>Ce que lit chaque table</h2>
+            <span className="card-sub">mis à jour à chaque tour de lecture</span>
+          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Table</th><th>Phase</th><th>Buy-in</th><th>Dotation</th>
+                <th>Ton tapis</th><th>Part</th><th>Gain de fin</th>
+              </tr>
+            </thead>
+            <tbody>
+              {etatTables.map((e) => (
+                <tr key={e.table}>
+                  <td>Table {e.table}</td>
+                  <td className={e.phase === "rien de lisible" ? "loss" : e.fin ? "win" : ""}>
+                    {e.phase}
+                  </td>
+                  <td className="mono">{e.buyIn == null ? "—" : `${e.buyIn} €`}</td>
+                  <td className="mono">{e.dotation == null ? "—" : `${e.dotation} €`}</td>
+                  <td className="mono">{e.tapis == null ? "—" : e.tapis}</td>
+                  <td className="mono">{e.part == null ? "—" : `${(e.part * 100).toFixed(0)} %`}</td>
+                  <td className="mono">{e.gain == null ? "—" : `${e.gain} €`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted" style={{ fontSize: 11.5, marginTop: 10, lineHeight: 1.6 }}>
+            Une ligne entièrement vide veut dire que les cadres de cette table ne tombent pas au bon
+            endroit, ou que les chiffres qu'elle affiche n'ont pas encore été appris. « Écran de fin »
+            est la phase où le tournoi s'inscrit : c'est là que le résultat est écrit noir sur blanc.
+          </p>
+        </div>
+      )}
 
       {image && (
         <div className="card">

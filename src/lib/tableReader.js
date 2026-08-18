@@ -49,6 +49,21 @@ export const ZONES_PAR_DEFAUT = {
   // suffit à identifier qui est en face.
   nomAdversaire1: { x: 0.835, y: 0.436, l: 0.126, h: 0.042 },
   nomAdversaire2: { x: 0.03, y: 0.436, l: 0.138, h: 0.042 },
+
+  // ------------------------------------------------------------ écran de fin
+  //
+  // À la fin d'un spin, la table n'affiche plus ni dotation ni tapis mais un
+  // écran de résultat : « TRY AGAIN — Tu termines 2e » ou « BOOOOOM — Tu es
+  // 1er » avec le gain, et un bouton « Rejouer 1 € ».
+  //
+  // C'est de très loin le meilleur signal disponible. Déduire l'issue des tapis
+  // demande d'attraper la toute dernière image avant qu'elle disparaisse ; ici
+  // le résultat est écrit noir sur blanc et reste affiché jusqu'à ce qu'on
+  // relance. Un gain présent veut dire gagné, son absence veut dire éliminé.
+  finGain: { x: 0.3, y: 0.5, l: 0.4, h: 0.16 },
+  // Le bouton de relance porte le buy-in : c'est la lecture la plus sûre qu'on
+  // en ait, bien meilleure que le bandeau du haut qui disparaît sur cet écran.
+  finRejouer: { x: 0.33, y: 0.9, l: 0.34, h: 0.075 },
 };
 
 export const LIBELLES_ZONES = {
@@ -60,6 +75,8 @@ export const LIBELLES_ZONES = {
   adversaire2: "Tapis adversaire gauche",
   nomAdversaire1: "Pseudo droite",
   nomAdversaire2: "Pseudo gauche",
+  finGain: "Fin : gain",
+  finRejouer: "Fin : bouton Rejouer",
 };
 
 // Zones dont le contenu est du texte et non un nombre : elles ne participent pas
@@ -258,6 +275,9 @@ export function nouveauSuivi(table, maintenant = Date.now()) {
     // fermee » n'existe plus. La fin d'un tournoi se voit donc a la table qui
     // se vide — on compte les tours consecutifs sans dotation lisible.
     toursVides: 0,
+    // L'écran de fin reste affiché jusqu'à ce que le joueur relance : sans ce
+    // drapeau, le même tournoi serait inscrit à chaque tour de lecture.
+    ecranFinVu: false,
   };
 }
 
@@ -282,6 +302,34 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
   // change pas en cours de tournoi.
   if (lecture.buyIn != null && lecture.buyIn > 0 && s.buyIn == null) s.buyIn = lecture.buyIn;
 
+  // Écran de fin : le bouton « Rejouer » est là, donc le tournoi est terminé et
+  // le résultat est affiché. On n'a plus rien à déduire.
+  //
+  // Le buy-in du bouton fait foi : il est écrit là quoi qu'il arrive, alors que
+  // le bandeau du haut a disparu avec la table.
+  if (lecture.finRejouer != null && lecture.finRejouer > 0) {
+    const buyIn = lecture.finRejouer;
+    const gain = lecture.finGain;
+    // Un gain affiché = victoire, son absence = élimination. C'est écrit, pas
+    // déduit : aucune place pour l'interprétation.
+    const gagne = gain != null && gain > 0;
+    const dotation = gagne ? gain : suivi.dotation;
+
+    // On ne clôture que si un tournoi était bien en cours : sinon on
+    // enregistrerait une partie déjà inscrite à chaque tour où l'écran reste
+    // affiché, et il reste affiché jusqu'à ce que le joueur relance.
+    if (!suivi.ecranFinVu) {
+      const fiche = cloturer(
+        { ...suivi, buyIn, dotation, resultatEcrit: gagne ? "gagne" : "perdu" },
+        maintenant
+      );
+      const suivant = nouveauSuivi({ id: suivi.sourceId, titre: suivi.titre, buyIn }, maintenant);
+      suivant.ecranFinVu = true;
+      return { suivi: suivant, tournoiTermine: fiche };
+    }
+    return { suivi: { ...s, ecranFinVu: true, buyIn }, tournoiTermine: null };
+  }
+
   // Table vide : ni dotation ni tapis. Plusieurs tours de suite, c'est que le
   // tournoi est termine et que la zone montre autre chose.
   const rienALire = lecture.dotation == null && lecture.tapisHero == null;
@@ -301,6 +349,10 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
     s.echecs = suivi.echecs + 1;
     return { suivi: s, tournoiTermine: null };
   }
+
+  // La dotation est de retour : une nouvelle partie a commencé, l'écran de fin
+  // n'est plus affiché.
+  if (lecture.dotation != null && lecture.dotation > 0) s.ecranFinVu = false;
 
   if (lecture.dotation != null && lecture.dotation > 0) {
     if (s.dotation != null && Math.abs(s.dotation - lecture.dotation) > 0.01) {
@@ -350,6 +402,10 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
  * @returns "gagne" | "perdu" | null (indécis)
  */
 export function deduireResultat(suivi) {
+  // Un résultat lu sur l'écran de fin n'est pas une déduction : il est écrit.
+  // Il prime donc sur tout raisonnement à partir des tapis.
+  if (suivi.resultatEcrit) return suivi.resultatEcrit;
+
   const { part } = suivi;
   if (part == null) return null;
   if (part >= 0.93) return "gagne";
@@ -370,6 +426,8 @@ export function cloturer(suivi, maintenant = Date.now()) {
 
   return {
     cle: `${suivi.sourceId}-${suivi.debut}`,
+    // Vrai quand l'issue vient de l'écran de fin plutôt que des tapis.
+    lueSurEcranFin: Boolean(suivi.resultatEcrit),
     sourceId: suivi.sourceId,
     titre: suivi.titre,
     buyIn: suivi.buyIn,
@@ -380,9 +438,12 @@ export function cloturer(suivi, maintenant = Date.now()) {
     part: suivi.part,
     debut: suivi.debut,
     fin: maintenant,
-    // Un tournoi sans buy-in ni dotation n'apporte rien : autant ne pas
-    // encombrer la file de confirmation avec une fiche vide.
-    exploitable: Boolean(suivi.buyIn && suivi.dotation),
+    // Une défaite lue sur l'écran de fin n'a PAS de dotation : le tournoi
+    // s'est terminé sans qu'on ait vu le tirage, ou le gain n'était pas
+    // affiché puisqu'il n'y en avait pas. Le tournoi vaut pourtant d'être
+    // inscrit — c'est un buy-in perdu, et l'ignorer fausserait le résultat vers
+    // le haut. Le buy-in suffit donc dès lors que l'issue est écrite.
+    exploitable: Boolean(suivi.buyIn) && Boolean(suivi.dotation || suivi.resultatEcrit),
   };
 }
 
