@@ -94,7 +94,7 @@ function ApercuZone({ image, zone, echelle = 3, encre = false }) {
 // Image capturee avec les cadres par-dessus ; un cliquer-glisser redefinit le
 // cadre selectionne. Deux modes : delimiter les TABLES dans la fenetre, ou
 // placer les zones a l'interieur d'une table.
-function Calibrateur({ image, regions, regionActive, zones, zoneActive, mode, onCadre }) {
+function Calibrateur({ image, regions, regionActive, region, zones, zoneActive, mode, onCadre }) {
   const ref = useRef(null);
   const [trace, setTrace] = useState(null);
 
@@ -165,9 +165,9 @@ function Calibrateur({ image, regions, regionActive, zones, zoneActive, mode, on
 
       {/* En mode zones, on ne montre que celles de la table selectionnee :
           afficher les six cadres de chaque table rendrait l'image illisible. */}
-      {mode === "zones" && regions[regionActive] &&
+      {mode === "zones" && region &&
         Object.entries(zones).map(([cle, z]) =>
-          cadre(zoneDansRegion(regions[regionActive], z), cle, LIBELLES_ZONES[cle], cle === zoneActive)
+          cadre(zoneDansRegion(region, z), cle, LIBELLES_ZONES[cle], cle === zoneActive)
         )}
 
       {enCours && (
@@ -214,6 +214,10 @@ export default function LecteurDirect() {
   // Ce que chaque table lit, tour par tour. Sans cette vue, un lecteur qui
   // n'enregistre rien ne dit pas POURQUOI — et c'est toujours la question.
   const [etatTables, setEtatTables] = useState([]);
+  // Capture rafraichie en continu pendant le calibrage. Sans elle on cadre sur
+  // une image figee : les zones de table en jeu ne peuvent pas etre reglees sur
+  // un ecran de fin, et inversement.
+  const [apercuVivant, setApercuVivant] = useState(false);
   // Inscription sans clic. Ne concerne que les tournois dont l'issue est
   // CERTAINE : une issue indécise ne peut pas être inscrite sans être inventée,
   // elle continue donc de passer par la file de confirmation.
@@ -230,9 +234,17 @@ export default function LecteurDirect() {
 
   // Zone active ramenee au repere de la fenetre capturee : c'est dans ce repere
   // que vivent l'apercu et l'apprentissage.
+  // Fenetre de table detachee : la fenetre EST la table, il n'y a pas de region
+  // a tracer et les zones s'appliquent directement.
+  const fenetreEstTable = useMemo(
+    () => Boolean(tables.find((t) => t.id === tableChoisie)?.estTable),
+    [tables, tableChoisie]
+  );
+  const regionCourante = fenetreEstTable ? { x: 0, y: 0, l: 1, h: 1 } : regions[regionActive];
+
   const zoneActiveAbsolue = useMemo(
-    () => zoneDansRegion(regions[regionActive], zones[zoneActive]),
-    [regions, regionActive, zones, zoneActive]
+    () => zoneDansRegion(regionCourante, zones[zoneActive]),
+    [regionCourante, zones, zoneActive]
   );
 
   // Fiches d'adversaires deja constituees : c'est elles qu'on interroge quand un
@@ -333,6 +345,31 @@ export default function LecteurDirect() {
     });
   }, [user]);
 
+  // Rafraichissement de l'apercu de calibrage. Deux boucles distinctes : celle-ci
+  // ne fait que recapturer pour l'affichage, l'autre lit et enregistre.
+  useEffect(() => {
+    if (!apercuVivant || !tableChoisie || surveillance) return undefined;
+    let vivant = true;
+    let minuteur = null;
+    const boucle = async () => {
+      try {
+        const brut = await window.grandLivre.capturerTable(tableChoisie);
+        const img = await imageDepuisDataUrl(brut.dataUrl);
+        img.buyIn = brut.buyIn;
+        img.titre = brut.titre;
+        if (vivant) setImage(img);
+      } catch {
+        // Fenetre reduite ou fermee : on reessaiera au tour suivant.
+      }
+      if (vivant) minuteur = setTimeout(boucle, 1000);
+    };
+    boucle();
+    return () => {
+      vivant = false;
+      clearTimeout(minuteur);
+    };
+  }, [apercuVivant, tableChoisie, surveillance]);
+
   // ---------------------------------------------------------------- surveillance
 
   const tick = useCallback(async () => {
@@ -352,7 +389,13 @@ export default function LecteurDirect() {
       const ouvertes = captures
         .filter((c) => !c.erreur)
         .flatMap((c) =>
-          regions.map((_, i) => ({ id: `${c.id}#${i}`, titre: `${c.titre} — table ${i + 1}`, buyIn: null }))
+          c.estTable
+            ? [{ id: `${c.id}#0`, titre: c.titre, buyIn: c.buyIn }]
+            : regions.map((_, i) => ({
+                id: `${c.id}#${i}`,
+                titre: `${c.titre} — table ${i + 1}`,
+                buyIn: null,
+              }))
         );
 
       const { suivis, termines } = synchroniserTables(suivisRef.current, ouvertes, maintenant);
@@ -370,9 +413,11 @@ export default function LecteurDirect() {
           largeur: capture.largeur,
           hauteur: capture.hauteur,
         };
-        // Une seule fenêtre, mais autant de tables que de régions délimitées :
-        // c'est là que se fait la séparation que le système ne fournit pas.
-        regions.forEach((region, i) => {
+        // Fenêtre de table détachée : elle EST la table, rien à découper. Sinon
+        // c'est la fenêtre du client, et les régions tracées par l'utilisateur
+        // font la séparation que le système ne fournit pas.
+        const aLire = capture.estTable ? [{ x: 0, y: 0, l: 1, h: 1 }] : regions;
+        aLire.forEach((region, i) => {
           if (!region) return;
           const cle = `${capture.id}#${i}`;
           const lu = lireTable(image, zonesAbsolues(region, zones), gabarits);
@@ -381,7 +426,7 @@ export default function LecteurDirect() {
           if (tournoiTermine) nouvellesFiches.push(tournoiTermine);
           if (i === regionActive) setLectureLive(lu);
           etats.push({
-            table: i + 1,
+            table: capture.estTable ? capture.titre : `Table ${i + 1}`,
             buyIn: lu.buyIn ?? suivi.buyIn,
             dotation: lu.dotation ?? suivi.dotation,
             tapis: lu.tapisHero,
@@ -520,6 +565,15 @@ export default function LecteurDirect() {
               >
                 {surveillance ? <><Square size={13} /> Arrêter</> : <><Play size={13} /> Surveiller</>}
               </button>
+              <label className="bascule" title="Recapturer la table chaque seconde pendant le calibrage">
+                <input
+                  type="checkbox"
+                  checked={apercuVivant}
+                  onChange={(e) => setApercuVivant(e.target.checked)}
+                  disabled={surveillance}
+                />
+                Aperçu vivant
+              </label>
               <label className="bascule" title="Inscrire sans confirmation les tournois dont l'issue est certaine">
                 <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
                 Enregistrement direct
@@ -606,37 +660,50 @@ export default function LecteurDirect() {
           </div>
 
           <div className="alert-info">
-            Betclic Poker n'ouvre qu'une seule fenêtre : ses tables y sont dessinées, elles n'existent
-            pas pour le système. C'est donc à toi de les délimiter — une fois fait, les zones internes
-            se calibrent une seule fois et servent pour toutes les tables, leur disposition étant
-            identique.
+            {fenetreEstTable ? (
+              <>
+                Cette fenêtre est une table détachée : elle EST la table, il n'y a rien à délimiter et
+                son titre donne déjà le buy-in. Place simplement les zones à lire. Elles servent pour
+                toutes tes tables, leur disposition étant identique.
+              </>
+            ) : (
+              <>
+                En mosaïque intégrée, Betclic dessine ses tables dans une seule fenêtre : elles
+                n'existent pas pour le système, c'est donc à toi de les délimiter. Détacher tes tables
+                dans le client rend cette étape inutile.
+              </>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "12px 0" }}>
-            <div className="segmented">
-              <button
-                className={modeCalibrage === "regions" ? "active" : ""}
-                onClick={() => setModeCalibrage("regions")}
-              >
-                1. Tables
-              </button>
-              <button
-                className={modeCalibrage === "zones" ? "active" : ""}
-                onClick={() => setModeCalibrage("zones")}
-              >
-                2. Zones à lire
-              </button>
-            </div>
-
-            <div className="segmented">
-              {regions.map((_, i) => (
-                <button key={i} className={regionActive === i ? "active" : ""} onClick={() => setRegionActive(i)}>
-                  Table {i + 1}
+            {!fenetreEstTable && (
+              <div className="segmented">
+                <button
+                  className={modeCalibrage === "regions" ? "active" : ""}
+                  onClick={() => setModeCalibrage("regions")}
+                >
+                  1. Tables
                 </button>
-              ))}
-            </div>
+                <button
+                  className={modeCalibrage === "zones" ? "active" : ""}
+                  onClick={() => setModeCalibrage("zones")}
+                >
+                  2. Zones à lire
+                </button>
+              </div>
+            )}
 
-            {modeCalibrage === "regions" && (
+            {!fenetreEstTable && (
+              <div className="segmented">
+                {regions.map((_, i) => (
+                  <button key={i} className={regionActive === i ? "active" : ""} onClick={() => setRegionActive(i)}>
+                    Table {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!fenetreEstTable && modeCalibrage === "regions" && (
               <>
                 <button
                   className="btn-secondary"
@@ -661,7 +728,7 @@ export default function LecteurDirect() {
               </>
             )}
 
-            {modeCalibrage === "zones" && (
+            {(fenetreEstTable || modeCalibrage === "zones") && (
               <>
                 <div className="segmented">
                   {Object.keys(LIBELLES_ZONES).map((cle) => (
@@ -693,19 +760,20 @@ export default function LecteurDirect() {
 
           <Calibrateur
             image={image}
-            regions={regions}
+            regions={fenetreEstTable ? [] : regions}
             regionActive={regionActive}
+            region={regionCourante}
             zones={zones}
             zoneActive={zoneActive}
-            mode={modeCalibrage}
+            mode={fenetreEstTable ? "zones" : modeCalibrage}
             onCadre={(cadre) => {
-              if (modeCalibrage === "regions") {
+              if (!fenetreEstTable && modeCalibrage === "regions") {
                 setRegions((r) => r.map((x, i) => (i === regionActive ? cadre : x)));
                 return;
               }
               // Le cadre est tracé sur la fenêtre entière ; on le ramène dans le
               // repère de la table pour qu'il reste valable si elle se déplace.
-              const reg = regions[regionActive];
+              const reg = regionCourante;
               if (!reg || reg.l <= 0 || reg.h <= 0) return;
               setZones((p) => ({
                 ...p,

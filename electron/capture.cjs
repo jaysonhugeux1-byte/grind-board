@@ -13,21 +13,29 @@
 // que soit le nombre de tables, et pas d'encodage PNG sur le chemin rapide.
 const { desktopCapturer, screen } = require("electron");
 
-// Betclic Poker est une application Flutter : UNE seule fenêtre de haut niveau,
-// « Betclic Poker », avec un unique enfant « FLUTTERVIEW ». Les tables y sont
-// dessinées à l'intérieur du même canvas — ce ne sont pas des fenêtres au sens
-// du système, et aucune énumération ne les fera apparaître.
+// Betclic Poker fonctionne de deux façons, et il faut savoir les deux.
 //
-// Conséquence directe : on capture la fenêtre du client, et c'est l'utilisateur
-// qui délimite ensuite chaque table à l'intérieur. Le buy-in ne peut plus venir
-// du titre de la fenêtre puisqu'il n'y en a qu'un pour tout le client : il se
-// lit dans les pixels, comme le reste.
+// En mosaïque intégrée, c'est une application Flutter : UNE seule fenêtre de
+// haut niveau avec un unique enfant « FLUTTERVIEW », et les tables dessinées
+// dans le même canvas. Elles n'existent pas pour le système, aucune énumération
+// ne les fera apparaître, et il faut les délimiter à la main.
 //
-// Le motif reste large : d'autres salles ouvrent bel et bien une fenêtre par
-// table, et ce cas continue de fonctionner sans rien changer.
+// Tables détachées, chacune redevient une vraie fenêtre — et tout redevient
+// simple : la fenêtre EST la table, son titre porte le buy-in.
+//
+// Le motif ci-dessous attrape les deux cas, ainsi que les salles qui ouvrent
+// toujours une fenêtre par table.
 const TABLE_TITLE = /Betclic|Spin\s*&\s*(?:Rush|Go)|PokerStars|Winamax/i;
 
-// Conservé pour les salles qui, elles, nomment leurs fenêtres de table.
+// Betclic sait faire les deux, et il faut distinguer les deux cas.
+//
+// En mosaïque intégrée, les tables sont dessinées dans la fenêtre du client et
+// n'existent pas pour le système : il faut alors les délimiter à la main.
+// Détachées, chaque table redevient une vraie fenêtre titrée « Spin & Rush -
+// 1€ » — et là il n'y a plus rien à délimiter, la fenêtre EST la table. Son
+// titre redonne même le buy-in au passage.
+const FENETRE_DE_TABLE = /Spin\s*&\s*(?:Rush|Go)/i;
+
 const BUYIN_IN_TITLE = /-\s*([\d.,]+)\s*€/;
 
 // Les vignettes de desktopCapturer sont contraintes à la taille demandée en
@@ -56,7 +64,14 @@ async function listTables() {
 
   return sources
     .filter((s) => TABLE_TITLE.test(s.name))
-    .map((s) => ({ id: s.id, titre: s.name, buyIn: parseBuyIn(s.name) }));
+    .map((s) => ({
+      id: s.id,
+      titre: s.name,
+      buyIn: parseBuyIn(s.name),
+      // Une fenêtre de table se lit entière ; la fenêtre du client, elle, doit
+      // être découpée en régions par l'utilisateur.
+      estTable: FENETRE_DE_TABLE.test(s.name),
+    }));
 }
 
 function versSortie(source, { encoderPng }) {
@@ -73,6 +88,7 @@ function versSortie(source, { encoderPng }) {
     id: source.id,
     titre: source.name,
     buyIn: parseBuyIn(source.name),
+    estTable: FENETRE_DE_TABLE.test(source.name),
     largeur: width,
     hauteur: height,
   };
@@ -117,4 +133,4 @@ async function captureTable(sourceId) {
   return table;
 }
 
-module.exports = { listTables, captureTable, captureTables, TABLE_TITLE };
+module.exports = { listTables, captureTable, captureTables, TABLE_TITLE, FENETRE_DE_TABLE };
