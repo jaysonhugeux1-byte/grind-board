@@ -215,6 +215,59 @@ export async function setChallenge(uid, challenge) {
   if (error) throw error;
 }
 
+// ---------------------------------------------------------------- spin
+
+// En spin l'unité de résultat est le TOURNOI, pas la main : un buy-in payé, un
+// multiplicateur tiré, une place obtenue. C'est de là que sortent le ROI,
+// l'ITM et le multiplicateur moyen.
+export async function getAllSpinTournaments(uid) {
+  const rows = await fetchAllPages(() =>
+    supabase
+      .from("spin_tournaments")
+      .select("tourney_id, ts, buy_in, multiplier, prize_pool, finish, payout, net, data")
+      .eq("user_id", uid)
+      .order("ts", { ascending: true })
+  );
+  return rows.map((r) => ({
+    id: r.tourney_id,
+    ts: new Date(r.ts).getTime(),
+    buyIn: Number(r.buy_in),
+    multiplier: r.multiplier == null ? null : Number(r.multiplier),
+    prizePool: r.prize_pool == null ? null : Number(r.prize_pool),
+    finish: r.finish,
+    payout: Number(r.payout),
+    net: Number(r.net),
+    ...(r.data || {}),
+  }));
+}
+
+export async function addSpinTournament(uid, t) {
+  const payout = Number(t.payout) || 0;
+  const buyIn = Number(t.buyIn) || 0;
+  const { error } = await supabase.from("spin_tournaments").insert({
+    user_id: uid,
+    tourney_id: t.id,
+    ts: new Date(t.ts).toISOString(),
+    buy_in: buyIn,
+    multiplier: t.multiplier ?? null,
+    prize_pool: t.prizePool ?? null,
+    finish: t.finish ?? null,
+    payout,
+    net: Math.round((payout - buyIn) * 100) / 100,
+    data: t.data || {},
+  });
+  if (error) throw error;
+}
+
+export async function deleteSpinTournament(uid, tourneyId) {
+  const { error } = await supabase
+    .from("spin_tournaments")
+    .delete()
+    .eq("user_id", uid)
+    .eq("tourney_id", tourneyId);
+  if (error) throw error;
+}
+
 // ------------------------------------------------------------ suppression
 
 // Supprime toutes les données de l'utilisateur. Irréversible — à n'appeler

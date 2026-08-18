@@ -1,25 +1,38 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../supabase";
-import { getAllHands, getAllEntries } from "../lib/supabaseData";
+import { getAllHands, getAllEntries, getAllSpinTournaments } from "../lib/supabaseData";
 import { useAuth } from "./AuthContext";
+import { useMode } from "./ModeContext";
 
 const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
   const { user } = useAuth();
+  const { mode } = useMode();
+
   const [hands, setHands] = useState([]);
+  const [tournois, setTournois] = useState([]);
   const [entries, setEntries] = useState([]);
-  const [handsReady, setHandsReady] = useState(false);
+  const [jeuPret, setJeuPret] = useState(false);
   const [entriesReady, setEntriesReady] = useState(false);
   const reloadTimer = useRef(null);
 
-  const loadHands = useCallback(async (uid) => {
+  // Cash game et spin ne partagent aucune table : en mode spin on lit les
+  // tournois, jamais les mains de cash game — sans quoi les deux modes
+  // afficheraient les mêmes données.
+  const loadJeu = useCallback(async (uid, modeActuel) => {
     try {
-      setHands(await getAllHands(uid));
+      if (modeActuel === "spin") {
+        setTournois(await getAllSpinTournaments(uid));
+        setHands([]);
+      } else {
+        setHands(await getAllHands(uid));
+        setTournois([]);
+      }
     } catch (err) {
-      console.error("Chargement des mains impossible :", err);
+      console.error("Chargement des données de jeu impossible :", err);
     } finally {
-      setHandsReady(true);
+      setJeuPret(true);
     }
   }, []);
 
@@ -36,35 +49,38 @@ export function DataProvider({ children }) {
   useEffect(() => {
     if (!user) {
       setHands([]);
+      setTournois([]);
       setEntries([]);
-      setHandsReady(false);
+      setJeuPret(false);
       setEntriesReady(false);
       return undefined;
     }
 
     const uid = user.uid;
-    setHandsReady(false);
+    setJeuPret(false);
     setEntriesReady(false);
-    loadHands(uid);
+    loadJeu(uid, mode);
     loadEntries(uid);
 
     // Un import écrit des milliers de lignes : réagir à chaque événement
-    // déclencherait autant de rechargements. On temporise donc pour n'en faire
-    // qu'un seul une fois la rafale terminée.
-    const scheduleReload = (what) => {
+    // déclencherait autant de rechargements. On temporise pour n'en faire qu'un
+    // une fois la rafale terminée.
+    const scheduleReload = (quoi) => {
       clearTimeout(reloadTimer.current);
       reloadTimer.current = setTimeout(() => {
-        if (what.hands) loadHands(uid);
-        if (what.entries) loadEntries(uid);
+        if (quoi.jeu) loadJeu(uid, mode);
+        if (quoi.entries) loadEntries(uid);
       }, 800);
     };
 
+    const tableJeu = mode === "spin" ? "spin_tournaments" : "hands";
+
     const channel = supabase
-      .channel(`data-${uid}`)
+      .channel(`data-${mode}-${uid}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "hands", filter: `user_id=eq.${uid}` },
-        () => scheduleReload({ hands: true })
+        { event: "*", schema: "public", table: tableJeu, filter: `user_id=eq.${uid}` },
+        () => scheduleReload({ jeu: true })
       )
       .on(
         "postgres_changes",
@@ -77,18 +93,18 @@ export function DataProvider({ children }) {
       clearTimeout(reloadTimer.current);
       supabase.removeChannel(channel);
     };
-  }, [user, loadHands, loadEntries]);
+  }, [user, mode, loadJeu, loadEntries]);
 
-  // Rechargement explicite, utilisé après un import : plus immédiat que
-  // d'attendre la temporisation du temps réel.
+  // Rechargement explicite, utilisé après un import ou une saisie : plus
+  // immédiat que d'attendre la temporisation du temps réel.
   const refresh = useCallback(async () => {
     if (!user) return;
-    await Promise.all([loadHands(user.uid), loadEntries(user.uid)]);
-  }, [user, loadHands, loadEntries]);
+    await Promise.all([loadJeu(user.uid, mode), loadEntries(user.uid)]);
+  }, [user, mode, loadJeu, loadEntries]);
 
   return (
     <DataContext.Provider
-      value={{ hands, entries, loading: !handsReady || !entriesReady, refresh }}
+      value={{ hands, tournois, entries, loading: !jeuPret || !entriesReady, refresh }}
     >
       {children}
     </DataContext.Provider>

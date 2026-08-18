@@ -120,6 +120,21 @@ body {
   font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--gold);
   margin-bottom: 20px;
 }
+/* ---------- saisie éclair (spin) ---------- */
+.saisie-ligne { display: flex; gap: 22px; flex-wrap: wrap; margin-bottom: 14px; }
+.saisie-presets { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.saisie-presets button {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted);
+  border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer;
+  font-family: var(--font-body);
+}
+.saisie-presets button:hover { border-color: var(--gold-soft); }
+.saisie-presets button.active {
+  border-color: var(--gold); color: var(--text); background: rgba(201,162,39,0.1); font-weight: 600;
+}
+.saisie-input-court { width: 96px; }
+
 /* ---------- bascule cash / spin ---------- */
 .mode-switch {
   display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border);

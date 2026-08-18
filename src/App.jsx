@@ -16,6 +16,15 @@ import TableTendencies from "./pages/TableTendencies";
 import Statistics from "./pages/Statistics";
 import HandSearch from "./pages/HandSearch";
 import Settings from "./pages/Settings";
+import SpinDashboard from "./pages/SpinDashboard";
+import { useMode } from "./contexts/ModeContext";
+
+// Le tableau de bord n'a rien de commun entre les deux formats : en cash game
+// on suit un gain en ₮ par main, en spin un ROI par tournoi.
+function TableauDeBord() {
+  const { estSpin } = useMode();
+  return estSpin ? <SpinDashboard /> : <Dashboard />;
+}
 
 export default function App() {
   return (
@@ -38,7 +47,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<TableauDeBord />} />
         <Route path="/import" element={<Import />} />
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/ranges" element={<Ranges />} />
