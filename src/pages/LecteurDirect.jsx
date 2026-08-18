@@ -305,9 +305,9 @@ export default function LecteurDirect() {
     setRegionActive(0);
     setModeCalibrage("zones");
     setMessage(
-      `Calibrage chargé : ${calibragePrepare.regions.length} tables et ` +
-      `${calibragePrepare.gabarits.map((x) => x.signe).join(" ")} appris. ` +
-      `Vérifie les cadres, ils supposent la même disposition que la mienne.`
+      `Calibrage chargé : ${calibragePrepare.regions.length} tables délimitées, ` +
+      `dotation et bouton Rejouer placés, signes ${calibragePrepare.gabarits.map((x) => x.signe).join(" ")} appris. ` +
+      `Il reste à placer « Fin : gain », tes tapis et le pot — le reste fonctionne déjà.`
     );
     setErreur(null);
   }
