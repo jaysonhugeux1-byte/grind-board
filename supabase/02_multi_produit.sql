@@ -3,6 +3,9 @@
 --
 -- L'accès devient PAR PRODUIT. La ligne existante est migrée en 'cash' : ton
 -- accès actuel est conservé tel quel, avec sa date d'expiration.
+--
+-- Le script est réexécutable sans dommage : chaque étape vérifie son état avant
+-- d'agir.
 
 -- ---------------------------------------------------------------------------
 -- 1. L'accès devient (utilisateur, produit)
@@ -18,15 +21,42 @@ alter table public.access
 
 -- La clé primaire passe de (user_id) à (user_id, product) : un même utilisateur
 -- peut détenir les deux accès, avec des échéances indépendantes.
-alter table public.access drop constraint if exists access_pkey;
-alter table public.access add primary key (user_id, product);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'access_pkey'
+      and conrelid = 'public.access'::regclass
+      and array_length(conkey, 1) = 2
+  ) then
+    alter table public.access drop constraint if exists access_pkey;
+    alter table public.access add primary key (user_id, product);
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
--- 2. Vérification d'accès, par produit
+-- 2. Retirer les politiques qui dépendent de l'ancienne fonction
+-- ---------------------------------------------------------------------------
+--
+-- Postgres refuse de supprimer une fonction encore référencée par une politique.
+-- Il faut donc les retirer AVANT, puis les recréer plus bas avec la nouvelle
+-- signature.
+
+drop policy if exists "mains: ajout si abonne"        on public.hands;
+drop policy if exists "mains: modification si abonne" on public.hands;
+drop policy if exists "brut: ajout si abonne"         on public.hand_raw;
+drop policy if exists "brut: modification si abonne"  on public.hand_raw;
+drop policy if exists "mouvements: ajout si abonne"        on public.entries;
+drop policy if exists "mouvements: modification si abonne" on public.entries;
+drop policy if exists "reglages: ecriture si abonne"  on public.settings;
+
+-- ---------------------------------------------------------------------------
+-- 3. Vérification d'accès, par produit
 -- ---------------------------------------------------------------------------
 
--- L'ancienne signature est remplacée : elle ne peut plus répondre correctement
--- maintenant qu'un utilisateur peut avoir l'un, l'autre, ou les deux.
+-- L'ancienne signature ne peut plus répondre correctement maintenant qu'un
+-- utilisateur peut avoir l'un des produits, l'autre, ou les deux.
 drop function if exists public.has_access(uuid);
 
 create or replace function public.has_access(uid uuid, p_product text)
@@ -45,13 +75,13 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- 3. Crédit d'accès, par produit
+-- 4. Crédit d'accès, par produit
 -- ---------------------------------------------------------------------------
 
 drop function if exists public.grant_access(uuid, int, text);
 
--- Reste atomique : deux notifications simultanées ne peuvent pas se marcher
--- dessus. Un rachat anticipé s'ajoute au temps restant.
+-- Reste atomique : deux notifications de paiement simultanées ne peuvent pas se
+-- marcher dessus. Un rachat anticipé s'ajoute au temps restant.
 create or replace function public.grant_access(
   p_user     uuid,
   p_product  text,
@@ -85,26 +115,22 @@ $$;
 revoke all on function public.grant_access(uuid, text, int, text) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 4. Les politiques du cash game visent explicitement le produit 'cash'
+-- 5. Recréer les politiques, en visant explicitement le produit
 -- ---------------------------------------------------------------------------
 
-drop policy if exists "mains: ajout si abonne" on public.hands;
 create policy "mains: ajout si abonne"
   on public.hands for insert
   with check (auth.uid() = user_id and public.has_access(auth.uid(), 'cash'));
 
-drop policy if exists "mains: modification si abonne" on public.hands;
 create policy "mains: modification si abonne"
   on public.hands for update
   using (auth.uid() = user_id and public.has_access(auth.uid(), 'cash'))
   with check (auth.uid() = user_id);
 
-drop policy if exists "brut: ajout si abonne" on public.hand_raw;
 create policy "brut: ajout si abonne"
   on public.hand_raw for insert
   with check (auth.uid() = user_id and public.has_access(auth.uid(), 'cash'));
 
-drop policy if exists "brut: modification si abonne" on public.hand_raw;
 create policy "brut: modification si abonne"
   on public.hand_raw for update
   using (auth.uid() = user_id and public.has_access(auth.uid(), 'cash'))
@@ -113,7 +139,6 @@ create policy "brut: modification si abonne"
 -- Les mouvements de bankroll et les réglages restent communs aux deux produits :
 -- ils décrivent l'utilisateur, pas un format de jeu. Un accès à l'un ou l'autre
 -- suffit donc.
-drop policy if exists "mouvements: ajout si abonne" on public.entries;
 create policy "mouvements: ajout si abonne"
   on public.entries for insert
   with check (
@@ -121,7 +146,6 @@ create policy "mouvements: ajout si abonne"
     and (public.has_access(auth.uid(), 'cash') or public.has_access(auth.uid(), 'spin'))
   );
 
-drop policy if exists "mouvements: modification si abonne" on public.entries;
 create policy "mouvements: modification si abonne"
   on public.entries for update
   using (
@@ -130,7 +154,6 @@ create policy "mouvements: modification si abonne"
   )
   with check (auth.uid() = user_id);
 
-drop policy if exists "reglages: ecriture si abonne" on public.settings;
 create policy "reglages: ecriture si abonne"
   on public.settings for all
   using (auth.uid() = user_id)
