@@ -428,11 +428,23 @@ export default function SpinDashboard() {
                 ]}
                 lignes={parMulti}
               />
+              {agg.grosMultis > 0 && (
+                <p className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.6 }}>
+                  Hors tirages au-dessus de ×10, ton résultat est de{" "}
+                  <strong className={agg.netHorsGrosMultis >= 0 ? "win" : "loss"}>
+                    {euros(agg.netHorsGrosMultis)}
+                  </strong>{" "}
+                  sur {agg.total - agg.grosMultis} tournois.
+                </p>
+              )}
               <p className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.6 }}>
-                Hors tirages au-dessus de ×10, ton résultat est de{" "}
-                <strong className={agg.netHorsGrosMultis >= 0 ? "win" : "loss"}>
-                  {euros(agg.netHorsGrosMultis)}
-                </strong>. C'est le chiffre qui reflète ton jeu — le reste relève de la loterie.
+                Un résultat négatif sur un palier ne veut pas dire qu'il faut l'éviter : le multiplicateur
+                est tiré avant que tu voies tes cartes, tu ne le choisis pas. Un ×2 est perdant par
+                construction — il faut y gagner une fois sur deux pour rentrer dans ses frais, contre une
+                fois sur trois en moyenne — et c'est sur les gros paliers qu'on se rattrape. Ce qu'il faut
+                lire ici, c'est l'écart de <em>fréquence de victoire</em> entre les paliers : elle devrait
+                être la même partout, puisque le tirage est indépendant de ton jeu. Un creux sur un palier
+                cher est la marque de la malchance, pas d'une fuite.
               </p>
             </section>
 
