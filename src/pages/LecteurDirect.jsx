@@ -91,10 +91,37 @@ function ApercuZone({ image, zone, echelle = 3, encre = false }) {
   return <canvas ref={ref} className="apercu-zone" />;
 }
 
+// Recadre la capture sur une région et renvoie une image affichable.
+//
+// Indispensable au calibrage : une fenêtre de 3440 × 1440 réduite à la largeur
+// d'une carte laisse chaque table dans 250 pixels, où tracer un cadre de la
+// taille d'un montant relève de l'acrobatie. En n'affichant que la table
+// concernée, on retrouve une précision utilisable.
+function recadrer(image, region) {
+  if (!image || !region) return null;
+  const morceau = extraireZone(image, region);
+  if (!morceau) return null;
+  const c = document.createElement("canvas");
+  c.width = morceau.largeur;
+  c.height = morceau.hauteur;
+  c.getContext("2d").putImageData(
+    new ImageData(morceau.data, morceau.largeur, morceau.hauteur),
+    0,
+    0
+  );
+  return c.toDataURL("image/png");
+}
+
 // Image capturee avec les cadres par-dessus ; un cliquer-glisser redefinit le
 // cadre selectionne. Deux modes : delimiter les TABLES dans la fenetre, ou
 // placer les zones a l'interieur d'une table.
 function Calibrateur({ image, regions, regionActive, region, zones, zoneActive, mode, onCadre }) {
+  // En mode zones l'image est celle de la table seule : les coordonnées de la
+  // souris sont donc déjà dans son repère, sans conversion.
+  const fond = useMemo(
+    () => (mode === "zones" ? recadrer(image, region) : image?.dataUrl),
+    [image, region, mode]
+  );
   const ref = useRef(null);
   const [trace, setTrace] = useState(null);
 
@@ -157,17 +184,16 @@ function Calibrateur({ image, regions, regionActive, region, zones, zoneActive, 
       onMouseUp={terminer}
       onMouseLeave={terminer}
     >
-      <img src={image.dataUrl} alt="Fenetre capturee" draggable={false} />
+      <img src={fond} alt="Table capturee" draggable={false} />
 
-      {regions.map((r, i) =>
-        cadre(r, `region-${i}`, `Table ${i + 1}`, mode === "regions" && i === regionActive)
-      )}
+      {/* En mode zones on n'affiche que la table concernée, agrandie : les
+          cadres s'y tracent alors directement dans son repère. */}
+      {mode === "regions" &&
+        regions.map((r, i) => cadre(r, `region-${i}`, `Table ${i + 1}`, i === regionActive))}
 
-      {/* En mode zones, on ne montre que celles de la table selectionnee :
-          afficher les six cadres de chaque table rendrait l'image illisible. */}
-      {mode === "zones" && region &&
+      {mode === "zones" &&
         Object.entries(zones).map(([cle, z]) =>
-          cadre(zoneDansRegion(region, z), cle, LIBELLES_ZONES[cle], cle === zoneActive)
+          cadre(z, cle, LIBELLES_ZONES[cle], cle === zoneActive)
         )}
 
       {enCours && (
@@ -653,9 +679,9 @@ export default function LecteurDirect() {
           <div className="card-title-row">
             <h2>Calibrage</h2>
             <span className="card-sub">
-              {modeCalibrage === "regions"
+              {!fenetreEstTable && modeCalibrage === "regions"
                 ? "délimite chaque table dans la fenêtre du client"
-                : "place les zones à lire dans la table sélectionnée"}
+                : "la table sélectionnée, agrandie — trace les zones dessus"}
             </span>
           </div>
 
@@ -771,19 +797,10 @@ export default function LecteurDirect() {
                 setRegions((r) => r.map((x, i) => (i === regionActive ? cadre : x)));
                 return;
               }
-              // Le cadre est tracé sur la fenêtre entière ; on le ramène dans le
-              // repère de la table pour qu'il reste valable si elle se déplace.
-              const reg = regionCourante;
-              if (!reg || reg.l <= 0 || reg.h <= 0) return;
-              setZones((p) => ({
-                ...p,
-                [zoneActive]: {
-                  x: (cadre.x - reg.x) / reg.l,
-                  y: (cadre.y - reg.y) / reg.h,
-                  l: cadre.l / reg.l,
-                  h: cadre.h / reg.h,
-                },
-              }));
+              // En mode zones, l'image affichée est déjà celle de la table
+              // seule : le cadre tracé est donc directement dans son repère,
+              // sans conversion — et il reste valable si la table se déplace.
+              setZones((p) => ({ ...p, [zoneActive]: cadre }));
             }}
           />
 
