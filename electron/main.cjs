@@ -3,6 +3,7 @@ const path = require("path");
 const http = require("http");
 const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
+const { listTables, captureTable } = require("./capture.cjs");
 
 const isDev = !app.isPackaged;
 
@@ -97,6 +98,11 @@ ipcMain.handle("open-external", async (_event, rawUrl) => {
   }
   await shell.openExternal(url.toString());
 });
+
+// Lecture des tables de jeu. Le rendu ne reçoit qu'une image déjà encodée : il
+// n'obtient aucun accès direct à l'écran ni au système.
+ipcMain.handle("tables:lister", async () => listTables());
+ipcMain.handle("tables:capturer", async (_event, sourceId) => captureTable(String(sourceId)));
 
 function createWindow(startUrl) {
   const win = new BrowserWindow({
