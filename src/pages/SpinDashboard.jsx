@@ -10,42 +10,47 @@ import { EmptyState, PageHeader } from "../components/ui";
 import { aggregateSpin, buildSpinChart, buildMultiplierBreakdown } from "../lib/spinStats";
 import { addSpinTournament } from "../lib/supabaseData";
 
-const MULTIS_COURANTS = [2, 3, 5, 10, 25, 100, 1000];
+// Multiplicateurs proposés en raccourci. Le ×2 domine largement : c'est lui qui
+// finance à la fois la marge de la salle et les rares gros tirages.
+const MULTIS_COURANTS = [2, 3, 4, 5, 10, 25, 100];
 
 // Saisie éclair : Betclic ne permet qu'un téléchargement d'historique par jour,
-// ce qui rend impossible tout retour immédiat sur ses courbes. Un résultat de
-// spin tenant en trois valeurs, les saisir prend deux secondes — et l'import
-// du lendemain viendra greffer le détail des mains par-dessus.
+// ce qui rend impossible tout retour immédiat sur ses courbes. Un spin tient en
+// deux informations lisibles à l'écran — la dotation et le fait d'avoir gagné —
+// donc la saisie prend deux secondes, et l'import du lendemain viendra greffer
+// le détail des mains par-dessus.
 function SaisieEclair({ derniersBuyIns, onAjout }) {
   const { user } = useAuth();
   const [buyIn, setBuyIn] = useState(derniersBuyIns[0] ?? 20);
+  const [dotation, setDotation] = useState("");
   const [gagne, setGagne] = useState(null); // null | true | false
-  const [gain, setGain] = useState("");
-  const [multi, setMulti] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const pretAEnvoyer = gagne === false || (gagne === true && parseFloat(gain) > 0);
+  const buyInNum = parseFloat(buyIn) || 0;
+  const dotationNum = parseFloat(dotation) || 0;
+  const multiplicateur = buyInNum > 0 && dotationNum > 0 ? dotationNum / buyInNum : null;
+
+  const pretAEnvoyer = buyInNum > 0 && dotationNum > 0 && gagne !== null;
 
   async function enregistrer() {
     setBusy(true);
     setError(null);
     try {
-      const montant = gagne ? parseFloat(gain) : 0;
       await addSpinTournament(user.uid, {
         // Aucun identifiant officiel avant l'import : on en fabrique un daté,
         // que le rapprochement du lendemain remplacera par le vrai.
         id: `manuel-${Date.now()}`,
         ts: Date.now(),
-        buyIn: parseFloat(buyIn),
-        payout: montant,
+        buyIn: buyInNum,
+        prizePool: dotationNum,
+        // Structure classique : le vainqueur emporte la dotation.
+        payout: gagne ? dotationNum : 0,
         finish: gagne ? 1 : null,
-        multiplier: multi === "" ? null : parseFloat(multi),
         data: { source: "saisie" },
       });
+      setDotation("");
       setGagne(null);
-      setGain("");
-      setMulti("");
       onAjout?.();
     } catch (err) {
       setError(err.message || "Enregistrement impossible.");
@@ -66,11 +71,7 @@ function SaisieEclair({ derniersBuyIns, onAjout }) {
           <label className="field-label">Buy-in</label>
           <div className="saisie-presets">
             {derniersBuyIns.map((b) => (
-              <button
-                key={b}
-                className={Number(buyIn) === b ? "active" : ""}
-                onClick={() => setBuyIn(b)}
-              >
+              <button key={b} className={buyInNum === b ? "active" : ""} onClick={() => setBuyIn(b)}>
                 {b} €
               </button>
             ))}
@@ -89,6 +90,43 @@ function SaisieEclair({ derniersBuyIns, onAjout }) {
 
       <div className="saisie-ligne">
         <div>
+          <label className="field-label">Dotation affichée</label>
+          <div className="saisie-presets">
+            {MULTIS_COURANTS.map((m) => {
+              const montant = Math.round(buyInNum * m * 100) / 100;
+              return (
+                <button
+                  key={m}
+                  className={dotationNum === montant ? "active" : ""}
+                  onClick={() => setDotation(String(montant))}
+                  title={`×${m}`}
+                >
+                  {montant} €
+                </button>
+              );
+            })}
+            <input
+              className="input saisie-input-court"
+              type="number"
+              min="0"
+              step="0.01"
+              value={dotation}
+              onChange={(e) => setDotation(e.target.value)}
+              placeholder="Autre"
+              aria-label="Dotation personnalisée"
+            />
+          </div>
+          <p className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+            Le grand nombre en haut de la table.
+            {multiplicateur && (
+              <> Soit <strong style={{ color: "var(--gold)" }}>×{multiplicateur.toFixed(2).replace(/\.00$/, "")}</strong>.</>
+            )}
+          </p>
+        </div>
+      </div>
+
+      <div className="saisie-ligne">
+        <div>
           <label className="field-label">Résultat</label>
           <div className="saisie-presets">
             <button className={gagne === true ? "active" : ""} onClick={() => setGagne(true)}>
@@ -99,52 +137,9 @@ function SaisieEclair({ derniersBuyIns, onAjout }) {
             </button>
           </div>
         </div>
-
-        {gagne === true && (
-          <div>
-            <label className="field-label">Gain encaissé</label>
-            <input
-              className="input saisie-input-court"
-              type="number"
-              min="0"
-              step="0.01"
-              value={gain}
-              onChange={(e) => setGain(e.target.value)}
-              placeholder="60"
-              autoFocus
-            />
-          </div>
-        )}
       </div>
 
-      {gagne !== null && (
-        <div className="saisie-ligne">
-          <div>
-            <label className="field-label">Multiplicateur (facultatif)</label>
-            <div className="saisie-presets">
-              {MULTIS_COURANTS.map((m) => (
-                <button key={m} className={Number(multi) === m ? "active" : ""} onClick={() => setMulti(m)}>
-                  ×{m}
-                </button>
-              ))}
-              <input
-                className="input saisie-input-court"
-                type="number"
-                min="0"
-                step="0.1"
-                value={multi}
-                onChange={(e) => setMulti(e.target.value)}
-                aria-label="Multiplicateur personnalisé"
-              />
-            </div>
-            <p className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
-              Sert uniquement à isoler la part de chance dans tes résultats — le ROI se calcule sans lui.
-            </p>
-          </div>
-        </div>
-      )}
-
-      <button className="btn-primary" onClick={enregistrer} disabled={!pretAEnvoyer || busy} style={{ marginTop: 6 }}>
+      <button className="btn-primary" onClick={enregistrer} disabled={!pretAEnvoyer || busy}>
         {busy ? <><Loader2 size={14} className="spin" /> Enregistrement…</> : <><Plus size={14} /> Ajouter ce spin</>}
       </button>
 

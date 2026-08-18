@@ -241,16 +241,27 @@ export async function getAllSpinTournaments(uid) {
   }));
 }
 
+// Le multiplicateur n'est jamais affiché tel quel par Betclic : c'est la
+// dotation qui apparaît à l'écran. On le déduit donc du rapport entre la
+// dotation et le buy-in — un buy-in de 20 € pour 60 € de dotation vaut ×3.
+export function deduireMultiplicateur(buyIn, prizePool) {
+  if (!buyIn || !prizePool) return null;
+  return Math.round((prizePool / buyIn) * 100) / 100;
+}
+
 export async function addSpinTournament(uid, t) {
-  const payout = Number(t.payout) || 0;
   const buyIn = Number(t.buyIn) || 0;
+  const prizePool = t.prizePool == null ? null : Number(t.prizePool);
+  const payout = Number(t.payout) || 0;
+  const multiplier = t.multiplier ?? deduireMultiplicateur(buyIn, prizePool);
+
   const { error } = await supabase.from("spin_tournaments").insert({
     user_id: uid,
     tourney_id: t.id,
     ts: new Date(t.ts).toISOString(),
     buy_in: buyIn,
-    multiplier: t.multiplier ?? null,
-    prize_pool: t.prizePool ?? null,
+    multiplier,
+    prize_pool: prizePool,
     finish: t.finish ?? null,
     payout,
     net: Math.round((payout - buyIn) * 100) / 100,
