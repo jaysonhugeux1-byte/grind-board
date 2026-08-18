@@ -59,14 +59,15 @@ console.log("=== part de Hero ===");
 console.log("");
 console.log("=== issue du tournoi ===");
 const issues = [
-  ["Hero a tout -> gagne", { part: 1 }, "gagne"],
-  ["Hero a la quasi-totalite -> gagne", { part: 0.96 }, "gagne"],
-  ["Hero n'a plus rien -> perdu", { part: 0 }, "perdu"],
-  ["Hero a des miettes -> perdu", { part: 0.02 }, "perdu"],
-  ["partie serree -> indecis", { part: 0.55 }, null],
-  ["Hero domine sans finir -> indecis", { part: 0.85 }, null],
-  ["Hero au bord du gouffre -> indecis", { part: 0.09 }, null],
-  ["jamais mesure -> indecis", { part: null }, null],
+  ["Hero a tout -> gagne", { partReglee: 1 }, "gagne"],
+  ["Hero a la quasi-totalite -> gagne", { partReglee: 0.96 }, "gagne"],
+  ["Hero n'a plus rien -> perdu", { partReglee: 0 }, "perdu"],
+  ["Hero a des miettes -> perdu", { partReglee: 0.02 }, "perdu"],
+  ["partie serree -> indecis", { partReglee: 0.55 }, null],
+  ["Hero domine sans finir -> indecis", { partReglee: 0.85 }, null],
+  ["Hero au bord du gouffre -> indecis", { partReglee: 0.09 }, null],
+  ["jamais mesure -> indecis", { partReglee: null }, null],
+  ["mesure pot NON vide -> indecis", { part: 0, partReglee: null }, null],
 ];
 for (const [nom, suivi, attendu] of issues) {
   T(nom, deduireResultat(suivi) === attendu, `obtenu ${deduireResultat(suivi)}`);
@@ -86,7 +87,7 @@ console.log("=== suivi d'une partie complete ===");
   for (const e of etapes) { t += 500; ({ suivi: s } = integrerLecture(s, e, t)); }
   T("dotation retenue", s.dotation === 60, String(s.dotation));
   T("tapis max suivi", s.tapisMax === 18.7, String(s.tapisMax));
-  T("part finale complete", s.part === 1, String(s.part));
+  T("part finale complete", s.partReglee === 1, String(s.partReglee));
   const fiche = cloturer(s, t);
   T("multiplicateur deduit", fiche.multiplicateur === 3, String(fiche.multiplicateur));
   T("issue : gagne", fiche.resultat === "gagne", String(fiche.resultat));
@@ -98,10 +99,10 @@ console.log("=== une lecture partielle n'efface pas la precedente ===");
 {
   let s = nouveauSuivi({ id: "w9", titre: "Spin & Rush - 20 EUR", buyIn: 20 }, 1000);
   ({ suivi: s } = integrerLecture(s, { dotation: 40, tapisHero: 20, adversaire1: 0, adversaire2: 0, pot: 0 }, 2000));
-  T("part mesuree", s.part === 1, String(s.part));
+  T("part mesuree", s.partReglee === 1, String(s.partReglee));
   // Juste avant la fermeture, un adversaire devient illisible.
   ({ suivi: s } = integrerLecture(s, { dotation: 40, tapisHero: 20, adversaire1: null, adversaire2: 0, pot: 0 }, 2500));
-  T("la part propre est conservee", s.part === 1, String(s.part));
+  T("la part propre est conservee", s.partReglee === 1, String(s.partReglee));
   T("l'issue reste deductible", deduireResultat(s) === "gagne");
 }
 
@@ -117,7 +118,7 @@ console.log("=== nouvelle partie dans la meme fenetre ===");
   T("  et son issue", r.tournoiTermine?.resultat === "perdu", String(r.tournoiTermine?.resultat));
   T("le suivi repart sur la nouvelle", r.suivi.dotation === 100 && r.suivi.tapisHero === 8.3);
   T("  avec les extremes remis a zero", r.suivi.tapisMax === 8.3 && r.suivi.tapisMin === 8.3);
-  T("  et la part recalculee", Math.abs(r.suivi.part - 8.3 / 25) < 1e-9, String(r.suivi.part));
+  T("  et la part recalculee", Math.abs(r.suivi.partReglee - 8.3 / 25) < 1e-9, String(r.suivi.partReglee));
 }
 
 console.log("");
@@ -173,6 +174,31 @@ console.log("=== une dotation aberrante est ignoree ===");
   T("  et l'echec est comptabilise", s.echecs === 1, String(s.echecs));
   ({ suivi: s } = integrerLecture(s, { dotation: 60, tapisHero: 12, adversaire1: 7, adversaire2: 6, pot: 0 }, 6000));
   T("  la lecture correcte passe toujours", s.dotation === 60 && s.tapisHero === 12);
+}
+
+console.log("");
+
+console.log("");
+console.log("=== un tapis en cours ne conclut rien ===");
+{
+  // Le piege que souleve l'idee de deduire l'issue des tapis : pendant un tapis
+  // les jetons sont AU MILIEU, pas dans les tapis. Hero affiche zero alors qu'il
+  // peut encore tout rafler. Conclure la-dessus inscrirait une defaite sur une
+  // main gagnee.
+  let s = nouveauSuivi({ id: "t", titre: "T", buyIn: 1 }, 1000);
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 12, adversaire1: 13, adversaire2: 0, pot: 0 }, 2000));
+  T("part reglee mesuree pot vide", Math.abs(s.partReglee - 12/25) < 1e-9, String(s.partReglee));
+
+  // Hero met tapis : son tapis tombe a 0, mais 24 BB sont dans le pot.
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 0, adversaire1: 1, adversaire2: 0, pot: 24 }, 2500));
+  T("la part instantanee tombe a zero", s.part === 0, String(s.part));
+  T("  mais la part REGLEE ne bouge pas", Math.abs(s.partReglee - 12/25) < 1e-9, String(s.partReglee));
+  T("  donc aucune issue n'est deduite", deduireResultat(s) === null, String(deduireResultat(s)));
+
+  // Il remporte le coup : pot vide, tout chez lui.
+  ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 25, adversaire1: 0, adversaire2: 0, pot: 0 }, 3000));
+  T("apres le coup, la part reglee suit", s.partReglee === 1, String(s.partReglee));
+  T("  et l'issue devient gagne", deduireResultat(s) === "gagne");
 }
 
 console.log("");

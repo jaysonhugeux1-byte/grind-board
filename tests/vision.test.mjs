@@ -7,6 +7,7 @@ import {
 
 // Police 5x7 en art ASCII.
 const POLICE = {
+  " ": [".....", ".....", ".....", ".....", ".....", ".....", "....."],
   "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
   "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
   "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
@@ -224,6 +225,43 @@ console.log("=== 11. Siege vide contre siege illisible ===");
   const luIllisible = lireZone(vide.data, vide.largeur, vide.hauteur, []);
   T("une zone avec encre non reconnue n'est PAS vide",
     luIllisible.vide === false && luIllisible.fiable === false, `vide=${luIllisible.vide}`);
+}
+
+console.log("");
+
+console.log("");
+console.log("=== tolerance au suffixe d'unite ===");
+{
+  // Betclic ecrit « 23,5 BB ». Le « B » gras a la silhouette d'un « 5 » : plutot
+  // que de bricoler un cadre excluant le suffixe (largeur variable, texte
+  // centre), on lit tout et on accepte que la FIN soit illisible.
+  const img = (t) => { const i = rendre(t, { echelle: 3 }); return [i.data, i.largeur, i.hauteur]; };
+
+  // Gabarits de chiffres uniquement : le « B » restera inconnu, comme en vrai.
+  const base = rendre("1234567890,", { echelle: 3 });
+  const chiffres = apprendreZone(base.data, base.largeur, base.hauteur, "1234567890,").gabarits;
+
+  const lu = (t, opts) => lireZone(...img(t), chiffres, opts);
+
+  T("sans tolerance, « 23,5 » suivi d'inconnus est refuse",
+    !lu("23,5 ××", {}).fiable);
+  T("avec tolerance, le nombre est lu",
+    lu("23,5 ××", { suffixeTolere: true }).texte === "23,5" && lu("23,5 ××", { suffixeTolere: true }).fiable,
+    lu("23,5 ××", { suffixeTolere: true }).texte);
+
+  // Le piege : un chiffre inconnu AU MILIEU ne doit jamais etre tronque.
+  // Sans ce garde-fou, « 37,8 » se lirait « 3 » et « 17 » se lirait « 175 ».
+  const partiels = apprendreZone(...(() => { const i = rendre("1235,", { echelle: 3 }); return [i.data, i.largeur, i.hauteur, "1235,"]; })()).gabarits;
+  const luP = (t) => lireZone(...img(t), partiels, { suffixeTolere: true });
+  T("« 3789 » avec 7,8,9 inconnus -> refuse, jamais tronque en « 3 »",
+    !luP("3789").fiable, luP("3789").texte);
+  T("« 12,4 » avec 4 inconnu -> refuse",
+    !luP("12,4").fiable, luP("12,4").texte);
+  T("« 123 » entierement connu -> lu",
+    luP("123").fiable && luP("123").texte === "123", luP("123").texte);
+  T("un separateur coupe proprement",
+    luP("12 ×").fiable && luP("12 ×").texte === "12", luP("12 ×").texte);
+  T("sans aucun chiffre lisible -> refuse", !luP("××××").fiable);
 }
 
 console.log("");

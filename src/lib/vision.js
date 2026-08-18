@@ -465,6 +465,17 @@ export function apparier(empreinte, ratio, gabarits, seuilRejet = 0.32, margeMax
  *          illisible ne permet aucune conclusion. Les confondre ferait passer
  *          une lecture ratée pour une victoire.
  */
+/**
+ * @param options.suffixeTolere  accepte des signes illisibles À LA FIN.
+ *
+ * Betclic écrit ses tapis « 23,5 BB ». Le « B » gras a exactement la silhouette
+ * d'un « 5 » une fois ramené à la grille de comparaison, et les confondre
+ * transformerait 23,5 en 23555. Plutôt que de bricoler un cadre qui exclurait
+ * le suffixe — sa largeur varie avec le nombre de chiffres, il est centré —
+ * on lit tout et on accepte que la fin soit illisible, à condition que le
+ * début, lui, soit lu sans le moindre trou. Une unité qu'on ne sait pas lire
+ * n'enlève rien à un montant qu'on sait lire.
+ */
 export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
   const binaire = binariser(carteEncre(data, largeur, hauteur), options.seuil);
   let boites = decouperSignes(binaire, options);
@@ -493,8 +504,14 @@ export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
   // caler sur la largeur des signes trahit dès qu'ils sont étroits : dans
   // « 1,5 », un « 1 » et une virgule sont si fins que l'espacement normal
   // passerait pour une séparation de mots.
+  //
+  // Sur un nombre d'écarts pair on prend le PLUS PETIT des deux du milieu, et
+  // non le plus grand : un blanc de séparation gonfle toujours le haut de la
+  // distribution, et le prendre pour référence le rendrait indétectable. Sur
+  // « 12 B », les deux écarts sont l'espacement normal et la séparation ; la
+  // médiane haute retiendrait la séparation elle-même.
   const ecarts = boites.slice(1).map((b) => b.espaceAvant).sort((a, b) => a - b);
-  const ecartTypique = ecarts.length ? ecarts[ecarts.length >> 1] : 0;
+  const ecartTypique = ecarts.length ? ecarts[Math.floor((ecarts.length - 1) / 2)] : 0;
   const hauteurs = boites.map((b) => b.hauteur).sort((a, b) => a - b);
   const hauteurTypique = hauteurs.length ? hauteurs[hauteurs.length >> 1] : 0;
   const seuilEspace = Math.max(ecartTypique * 2.5 + 1, hauteurTypique * 0.35);
@@ -512,7 +529,43 @@ export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
     signes.push({ boite, ...resultat });
   }
 
-  return { texte, signes, fiable, vide: boites.length === 0, binaire };
+  // Tolérance au suffixe : on retire les signes illisibles de la FIN, et la
+  // lecture redevient fiable si tout ce qui précède a été lu proprement. C'est
+  // le cas du « BB » derrière un tapis — une unité qu'on ne sait pas lire
+  // n'enlève rien au montant. En revanche un trou AU MILIEU reste
+  // rédhibitoire : « 2?5 » ne doit jamais devenir « 2 ».
+  let texteUtile = texte;
+  if (!fiable && options.suffixeTolere) {
+    // Où s'arrête le nombre ? À la PREMIÈRE de ces deux frontières :
+    //
+    //   — un blanc de séparation (« 23,5 BB ») ;
+    //   — un signe reconnu qui n'est ni un chiffre ni une virgule (le « B »).
+    //
+    // Et surtout PAS à un signe illisible : celui-là peut parfaitement être un
+    // chiffre. Tolérer un « ? » avant toute frontière reviendrait à lire « 3 »
+    // dans « 37,8 » ou « 175 » dans « 17 BB » — un montant tronqué inscrit
+    // comme s'il était complet, exactement ce qu'il ne faut jamais faire.
+    let coupe = signes.length;
+    for (let i = 0; i < signes.length; i++) {
+      const s = signes[i];
+      const separe = i > 0 && s.boite.espaceAvant > seuilEspace;
+      const estNombre = s.signe && /[\d.,]/.test(s.signe);
+      if (separe || (s.signe && !estNombre)) {
+        coupe = i;
+        break;
+      }
+    }
+
+    const debut = signes.slice(0, coupe);
+    const complet = debut.length > 0 && debut.every((s) => s.signe && s.sur);
+    const auMoinsUnChiffre = debut.some((s) => /\d/.test(s.signe || ""));
+    if (complet && auMoinsUnChiffre) {
+      fiable = true;
+      texteUtile = debut.map((s) => s.signe).join("");
+    }
+  }
+
+  return { texte: texteUtile, texteBrut: texte, signes, fiable, vide: boites.length === 0, binaire };
 }
 
 /**

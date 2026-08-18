@@ -194,7 +194,11 @@ export function lireTable(image, zones, gabarits) {
       valeurs[cle] = null;
       continue;
     }
-    const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits);
+    // Les zones numériques portent une unité derrière le nombre (« 23,5 BB »).
+    // On tolère donc que la fin reste illisible, jamais le milieu.
+    const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits, {
+      suffixeTolere: !ZONES_TEXTE.includes(cle),
+    });
     lectures[cle] = { texte: lu.texte, fiable: lu.fiable, vide: lu.vide, signes: lu.signes };
     if (ZONES_TEXTE.includes(cle)) {
       // Un pseudo n'est pas un nombre : on garde le texte tel qu'il a été lu,
@@ -273,6 +277,10 @@ export function nouveauSuivi(table, maintenant = Date.now()) {
     // bout à l'autre du tournoi.
     part: null,
     partVueLe: null,
+    // Part mesurée POT VIDE, la seule sur laquelle on puisse conclure. Pendant
+    // un tapis les jetons sont au milieu et non dans les tapis : la part y
+    // tombe à zéro pour un joueur qui va peut-être tout rafler.
+    partReglee: null,
     lectures: 0,
     echecs: 0,
     // Betclic n'ouvre pas une fenetre par table : le signal « la fenetre s'est
@@ -390,6 +398,7 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
       s.tapisMin = null;
       s.part = null;
       s.partVueLe = null;
+      s.partReglee = null;
     } else {
       s.dotation = lecture.dotation;
     }
@@ -407,6 +416,11 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
   if (part != null) {
     s.part = part;
     s.partVueLe = maintenant;
+    // Le pot doit être vide pour que la part signifie quelque chose. Un joueur
+    // à tapis a ses jetons AU MILIEU : son tapis affiche zéro alors qu'il peut
+    // encore tout gagner. Conclure là-dessus inscrirait une défaite sur une
+    // main qu'il remporte.
+    if (lecture.pot === 0 || lecture.pot == null) s.partReglee = part;
   }
 
   // Pseudos croisés. On ne retient qu'une occurrence par nom : c'est la
@@ -462,7 +476,8 @@ export function deduireResultat(suivi) {
   // Il prime donc sur tout raisonnement à partir des tapis.
   if (suivi.resultatEcrit) return suivi.resultatEcrit;
 
-  const { part } = suivi;
+  // On ne raisonne que sur une part mesurée pot vide : voir plus haut.
+  const part = suivi.partReglee;
   if (part == null) return null;
   if (part >= 0.93) return "gagne";
   if (part <= 0.04) return "perdu";
@@ -491,7 +506,7 @@ export function cloturer(suivi, maintenant = Date.now()) {
     multiplicateur,
     resultat,
     tapisFinal: suivi.tapisHero,
-    part: suivi.part,
+    part: suivi.partReglee ?? suivi.part,
     observations: suivi.observations ?? [],
     adversaires: suivi.adversaires ?? [],
     debut: suivi.debut,
