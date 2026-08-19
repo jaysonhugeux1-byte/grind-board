@@ -13,7 +13,7 @@ import {
 import {
   aggregateSpin, buildBankrollChart, buildChipsChart, calculerCev, calculerRake,
   rakeObserve, buildMultiplierBreakdown, buildPositionBreakdown, buildDepthBreakdown,
-  RAKE_PAR_DEFAUT,
+  tournoisIncomplets, ecartTypeChance, RAKE_PAR_DEFAUT,
 } from "../lib/spinStats";
 import { addSpinTournament } from "../lib/supabaseData";
 
