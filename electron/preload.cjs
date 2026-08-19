@@ -5,6 +5,15 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("grandLivre", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
 
+  // Connexion Google : l'ecran s'ouvre dans le navigateur du systeme, et le code
+  // d'autorisation revient par le serveur local de l'application.
+  ouvrirConnexion: (url) => ipcRenderer.invoke("open-auth-url", url),
+  surRetourConnexion: (rappel) => {
+    const ecouteur = (_e, charge) => rappel(charge);
+    ipcRenderer.on("auth:retour", ecouteur);
+    return () => ipcRenderer.removeListener("auth:retour", ecouteur);
+  },
+
   // Renvoie la liste des fenêtres de table ouvertes.
   listerTables: () => ipcRenderer.invoke("tables:lister"),
 

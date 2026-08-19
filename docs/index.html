@@ -742,6 +742,19 @@
 
   const $$ = (sel) => document.querySelector(sel);
 
+  // Mémoire de la formule choisie, le temps de l'aller-retour par Google.
+  // sessionStorage plutôt que localStorage : elle ne doit pas survivre à la
+  // fermeture de l'onglet, sinon un retour sur le site des jours plus tard
+  // rouvrirait une facture sans que personne l'ait demandé.
+  const CLE_PLAN = "gl_plan_en_attente";
+  const memoriserPlan = (p) => { try { sessionStorage.setItem(CLE_PLAN, p); } catch {} };
+  const oublierPlan = () => { try { sessionStorage.removeItem(CLE_PLAN); } catch {} };
+  const reprendrePlan = () => {
+    let p = null;
+    try { p = sessionStorage.getItem(CLE_PLAN); } catch {}
+    return p || params.get("plan");
+  };
+
   function majTarifs() {
     for (const d of Object.keys(MOIS)) {
       const prix = TARIFS[produit][d];
@@ -790,6 +803,11 @@
       // s'était arrêté.
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
+        // La formule ne peut pas voyager uniquement dans l'URL : Supabase ramène
+        // la session dans le FRAGMENT et ne garantit pas de conserver la chaîne
+        // de requête. On la met à l'abri dans sessionStorage, qui survit à la
+        // redirection et ne concerne que cet onglet.
+        memoriserPlan(planId);
         const retour = new URL(location.href);
         retour.searchParams.set("plan", planId);
         await supabase.auth.signInWithOAuth({
@@ -817,16 +835,32 @@
   );
 
   // Reprise automatique après le détour par Google.
-  const planEnAttente = params.get("plan");
+  // Reprise de l'achat après le détour par Google.
+  //
+  // Deux pièges ici, et tous deux se traduisent à l'écran par « je clique et
+  // rien ne change, je reviens sur la même page » :
+  //
+  //   1. la formule disparaissait de l'URL au retour (voir memoriserPlan) ;
+  //   2. la session n'existe pas encore au moment du chargement. Supabase lit le
+  //      fragment de manière ASYNCHRONE : appeler getSession() tout de suite
+  //      renvoie null, et le code abandonnait alors sans rien dire. On attend
+  //      donc l'événement de connexion plutôt que d'interroger une fois.
+  const planEnAttente = reprendrePlan();
   if (planEnAttente) {
-    // Le retour de Google ramène la formule complète : on rétablit d'abord le
-    // produit affiché, pour que la page montre bien ce qui va être acheté.
     const [prod, duree] = planEnAttente.split("_");
     if (TARIFS[prod]) { produit = prod; majTarifs(); }
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) return;
+
+    let repris = false;
+    const reprendre = (session) => {
+      if (repris || !session) return;
+      repris = true;
+      // Oublié AVANT de relancer l'achat : sans cela, un rechargement de la
+      // page rouvrirait une facture à chaque fois.
+      oublierPlan();
       buy(planEnAttente, planButtons.find((b) => b.dataset.duree === duree) || null);
-    });
+    };
+    supabase.auth.getSession().then(({ data }) => reprendre(data.session));
+    supabase.auth.onAuthStateChange((_e, session) => reprendre(session));
   }
 </script>
 

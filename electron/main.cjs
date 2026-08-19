@@ -32,10 +32,61 @@ const MIME_TYPES = {
 // le premier — les trois sont déclarés côté Supabase.
 const LOCAL_PORTS = [51789, 51790, 51791];
 
+// Fenetre principale, pour lui transmettre le code de connexion recu par le
+// serveur local. Une seule fenetre existe a la fois.
+let fenetrePrincipale = null;
+
+// Page affichee dans le navigateur du systeme apres la connexion Google. Elle ne
+// contient aucun jeton : le code d'autorisation a deja ete transmis a
+// l'application, et il ne sert qu'une fois.
+const pageRetour = (erreur) => `<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<title>Grand Livre</title><style>
+ body{margin:0;height:100vh;display:grid;place-items:center;background:#12191b;
+      color:#ede9dc;font-family:system-ui,sans-serif;text-align:center;padding:24px}
+ h1{font-size:20px;margin:0 0 8px} p{color:#8b948f;margin:0;font-size:14px;max-width:36em}
+ .ko{color:#c15c4d}
+</style></head><body><div>${
+  erreur
+    ? `<h1 class="ko">Connexion refusee</h1><p>${String(erreur).replace(/[<>&]/g, "")}</p>
+       <p>Ferme cet onglet et reessaie depuis Grand Livre.</p>`
+    : `<h1>Connexion reussie</h1>
+       <p>Tu peux fermer cet onglet et revenir a Grand Livre.</p>`
+}</div></body></html>`;
+
 function startStaticServer(rootDir) {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
-      const reqPath = decodeURIComponent(req.url.split("?")[0]);
+      const [chemin, requete] = req.url.split("?");
+
+      // Retour de la connexion Google.
+      //
+      // Le formulaire Google ne s'ouvre PLUS dans une fenetre de l'application :
+      // depuis 2021 Google refuse d'afficher son ecran de connexion dans un
+      // navigateur embarque et repond « Impossible de vous connecter — ce
+      // navigateur ou cette application ne sont peut-etre pas securises ». Il
+      // s'ouvre donc dans le navigateur du systeme, qui redirige ici : ce
+      // serveur local est le seul point de contact entre les deux.
+      //
+      // Le flux PKCE fait voyager un CODE dans la chaine de requete, pas un
+      // jeton dans le fragment. C'est ce qui rend cette interception possible :
+      // un fragment ne serait jamais envoye au serveur.
+      if (requete) {
+        const params = new URLSearchParams(requete);
+        const code = params.get("code");
+        const erreur = params.get("error_description") || params.get("error");
+        if (code || erreur) {
+          if (fenetrePrincipale && !fenetrePrincipale.isDestroyed()) {
+            fenetrePrincipale.webContents.send("auth:retour", { code, erreur });
+            if (fenetrePrincipale.isMinimized()) fenetrePrincipale.restore();
+            fenetrePrincipale.focus();
+          }
+          res.writeHead(erreur ? 400 : 200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(pageRetour(erreur));
+          return;
+        }
+      }
+
+      const reqPath = decodeURIComponent(chemin);
       let filePath = path.join(rootDir, reqPath === "/" ? "index.html" : reqPath);
       if (!filePath.startsWith(rootDir)) filePath = path.join(rootDir, "index.html");
       fs.readFile(filePath, (err, data) => {
@@ -87,6 +138,27 @@ const ALLOWED_EXTERNAL_HOSTS = [
   "www.nowpayments.io",
 ];
 
+// Ouverture de l'ecran de connexion Google dans le navigateur du systeme.
+//
+// Elle ne peut pas passer par « open-external », qui n'autorise que les domaines
+// de paiement. On lui ouvre une porte distincte, et tout aussi etroite : le
+// point d'autorisation d'un projet Supabase, rien d'autre. Sans cette
+// verification, le rendu pourrait faire ouvrir n'importe quelle adresse par le
+// systeme.
+ipcMain.handle("open-auth-url", async (_event, rawUrl) => {
+  let url;
+  try {
+    url = new URL(String(rawUrl));
+  } catch {
+    throw new Error("URL invalide.");
+  }
+  const estSupabase = url.hostname === "supabase.co" || url.hostname.endsWith(".supabase.co");
+  if (url.protocol !== "https:" || !estSupabase || !url.pathname.startsWith("/auth/v1/authorize")) {
+    throw new Error(`Ouverture refusee pour ${url.hostname}.`);
+  }
+  await shell.openExternal(url.toString());
+});
+
 ipcMain.handle("open-external", async (_event, rawUrl) => {
   let url;
   try {
@@ -127,28 +199,14 @@ function createWindow(startUrl) {
     },
   });
 
-  // Les popups (connexion Google) doivent s'ouvrir dans une vraie fenêtre, pas être bloqués.
-  win.webContents.setWindowOpenHandler(({ url }) => ({
-    action: "allow",
-    overrideBrowserWindowOptions: {
-      webPreferences: { contextIsolation: true, nodeIntegration: false },
-    },
-  }));
+  fenetrePrincipale = win;
+  win.on("closed", () => { if (fenetrePrincipale === win) fenetrePrincipale = null; });
 
-  // Diagnostic : si la popup de connexion se ferme trop vite pour lire un message,
-  // ceci journalise la vraie raison (échec réseau, page bloquée, etc.) avant fermeture.
-  win.webContents.on("did-create-window", (childWindow, { url }) => {
-    console.log("Popup ouverte:", url);
-    childWindow.webContents.on("did-fail-load", (_e, errorCode, errorDescription, validatedURL) => {
-      console.error("Popup - échec de chargement:", errorCode, errorDescription, validatedURL);
-    });
-    childWindow.webContents.on("did-navigate", (_e, navUrl) => {
-      console.log("Popup - navigation:", navUrl);
-    });
-    childWindow.on("closed", () => {
-      console.log("Popup fermée.");
-    });
-  });
+  // Aucune fenetre fille : ce qui doit sortir de l'application sort par le
+  // navigateur du systeme, jamais dans un cadre embarque. C'est ce que Google
+  // exige pour sa connexion, et c'est aussi ce qui evite qu'une page tierce
+  // s'affiche avec l'apparence de l'application.
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
   win.loadURL(startUrl);
   if (isDev) win.webContents.openDevTools({ mode: "detach" });

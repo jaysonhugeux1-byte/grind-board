@@ -20,6 +20,10 @@ function toAppUser(sessionUser) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Un échec d'échange arrive APRÈS le clic, quand l'utilisateur revient du
+  // navigateur : il n'y a plus de « catch » autour pour l'attraper. On le garde
+  // donc ici, sans quoi la connexion échouerait en silence.
+  const [erreurConnexion, setErreurConnexion] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -42,16 +46,54 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const signInWithGoogle = () =>
-    supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: window.location.origin },
+  // Retour de connexion depuis le navigateur du système.
+  //
+  // Le vérificateur PKCE a été enregistré ici au moment du clic : l'échange doit
+  // donc se faire dans cette même fenêtre, et nulle part ailleurs.
+  useEffect(() => {
+    if (!window.grandLivre?.surRetourConnexion) return undefined;
+    return window.grandLivre.surRetourConnexion(async ({ code, erreur }) => {
+      if (erreur) { setErreurConnexion(erreur); return; }
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) setErreurConnexion(error.message || "La connexion n'a pas abouti.");
     });
+  }, []);
+
+  // Connexion Google.
+  //
+  // Dans l'application de bureau, l'écran de Google NE PEUT PAS s'afficher dans
+  // une fenêtre de l'application : depuis 2021 Google refuse son formulaire aux
+  // navigateurs embarqués et répond « Impossible de vous connecter — ce
+  // navigateur ou cette application ne sont peut-être pas sécurisés ». Le
+  // symptôme est trompeur, car un compte déjà connecté continue de fonctionner :
+  // seule une PREMIÈRE connexion échoue, donc l'auteur ne le voit jamais.
+  //
+  // On demande donc l'URL sans la suivre, on la fait ouvrir par le navigateur du
+  // système, et le code d'autorisation revient par le serveur local d'Electron.
+  const signInWithGoogle = async () => {
+    const redirectTo = window.location.origin;
+    if (!window.grandLivre?.ouvrirConnexion) {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
+      });
+      if (error) throw error;
+      return;
+    }
+    setErreurConnexion(null);
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo, skipBrowserRedirect: true },
+    });
+    if (error) throw error;
+    if (!data?.url) throw new Error("Adresse de connexion introuvable.");
+    await window.grandLivre.ouvrirConnexion(data.url);
+  };
 
   const signOutUser = () => supabase.auth.signOut();
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOutUser }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOutUser, erreurConnexion }}>
       {children}
     </AuthContext.Provider>
   );

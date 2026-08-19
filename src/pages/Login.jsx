@@ -3,7 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function Login() {
-  const { user, loading, signInWithGoogle } = useAuth();
+  const { user, loading, signInWithGoogle, erreurConnexion } = useAuth();
   const [error, setError] = useState(null);
 
   if (!loading && user) return <Navigate to="/" replace />;
@@ -27,7 +27,7 @@ export default function Login() {
           <GoogleIcon />
           Continuer avec Google
         </button>
-        {error && <p className="login-error">{error}</p>}
+        {(error || erreurConnexion) && <p className="login-error">{error || erreurConnexion}</p>}
       </div>
     </div>
   );
