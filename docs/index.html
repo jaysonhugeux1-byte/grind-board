@@ -194,6 +194,16 @@
   .plan-price { font-family: var(--font-display); font-size: 30px; font-weight: 700; margin: 6px 0 2px; }
   .plan-unit { font-size: 12px; color: var(--text-muted); }
   .plan-btn { width: 100%; margin-top: 16px; }
+  .produits {
+    display: inline-flex; gap: 4px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 10px;
+  }
+  .produit {
+    background: none; border: 0; color: var(--text-muted); font: inherit;
+    font-size: 13.5px; padding: 7px 16px; border-radius: 7px; cursor: pointer;
+  }
+  .produit.actif { background: var(--gold); color: #16110a; font-weight: 600; }
+  .produit-note { font-size: 13px; color: var(--text-muted); margin: 0 0 18px; }
   .plan-btn[disabled] { opacity: 0.55; cursor: default; }
   .price-note { font-size: 13px; color: var(--text-muted); margin-top: 22px; max-width: 66ch; }
   .pay-error {
@@ -476,25 +486,32 @@
 
     <div id="access-card" class="access-card" hidden></div>
 
+    <div class="produits">
+      <button class="produit actif" data-produit="spin">Spin &amp; Go</button>
+      <button class="produit" data-produit="cash">Cash game</button>
+      <button class="produit" data-produit="duo">Les deux</button>
+    </div>
+    <p class="produit-note" id="produit-note"></p>
+
     <div class="plans">
       <div class="plan">
         <p class="plan-duration">1 mois</p>
-        <p class="plan-price">9,90 €</p>
-        <p class="plan-unit">9,90 € par mois</p>
-        <button class="btn btn-ghost plan-btn" data-plan="m1">Choisir</button>
+        <p class="plan-price" data-prix="m1"></p>
+        <p class="plan-unit" data-unite="m1"></p>
+        <button class="btn btn-ghost plan-btn" data-duree="m1">Choisir</button>
       </div>
       <div class="plan featured">
         <span class="plan-flag">Le plus choisi</span>
         <p class="plan-duration">3 mois</p>
-        <p class="plan-price">26,90 €</p>
-        <p class="plan-unit">≈ 8,97 € par mois</p>
-        <button class="btn btn-primary plan-btn" data-plan="m3">Choisir</button>
+        <p class="plan-price" data-prix="m3"></p>
+        <p class="plan-unit" data-unite="m3"></p>
+        <button class="btn btn-primary plan-btn" data-duree="m3">Choisir</button>
       </div>
       <div class="plan">
         <p class="plan-duration">12 mois</p>
-        <p class="plan-price">94,90 €</p>
-        <p class="plan-unit">≈ 7,91 € par mois</p>
-        <button class="btn btn-ghost plan-btn" data-plan="m12">Choisir</button>
+        <p class="plan-price" data-prix="m12"></p>
+        <p class="plan-unit" data-unite="m12"></p>
+        <button class="btn btn-ghost plan-btn" data-duree="m12">Choisir</button>
       </div>
     </div>
 
@@ -702,6 +719,45 @@
   // --- achat --------------------------------------------------------------
   const planButtons = [...document.querySelectorAll(".plan-btn")];
 
+  // Les identifiants de formule doivent correspondre EXACTEMENT à ceux que
+  // connaît create-crypto-payment : produit puis durée. C'est la divergence qui
+  // a rendu l'achat impossible pendant toute la migration multi-produits — la
+  // page envoyait « m3 », la fonction n'acceptait que « spin_m3 », et répondait
+  // « Formule inconnue » sans que rien ne s'ouvre.
+  const TARIFS = {
+    spin: { m1: 9.9, m3: 26.9, m12: 94.9 },
+    cash: { m1: 9.9, m3: 26.9, m12: 94.9 },
+    duo:  { m1: 15.9, m3: 42.9, m12: 151.9 },
+  };
+  const MOIS = { m1: 1, m3: 3, m12: 12 };
+  const NOTES = {
+    spin: "Suivi des tournois, EV main par main, lecteur en direct, base d'adversaires et carte mentale.",
+    cash: "Sessions, ranges, EV par position, recherche de mains et coach IA.",
+    duo:  "Tout le cash game et tout le spin, sur le même compte.",
+  };
+  let produit = "spin";
+
+  const euro = (v) =>
+    v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+
+  const $$ = (sel) => document.querySelector(sel);
+
+  function majTarifs() {
+    for (const d of Object.keys(MOIS)) {
+      const prix = TARIFS[produit][d];
+      $$(`[data-prix="${d}"]`).textContent = euro(prix);
+      $$(`[data-unite="${d}"]`).textContent =
+        (MOIS[d] > 1 ? "≈ " : "") + euro(prix / MOIS[d]) + " par mois";
+    }
+    $$("#produit-note").textContent = NOTES[produit];
+    document.querySelectorAll(".produit").forEach((b) =>
+      b.classList.toggle("actif", b.dataset.produit === produit));
+  }
+
+  document.querySelectorAll(".produit").forEach((b) =>
+    b.addEventListener("click", () => { produit = b.dataset.produit; majTarifs(); }));
+  majTarifs();
+
   function setBusy(busy, activeBtn) {
     planButtons.forEach((b) => {
       b.disabled = busy;
@@ -742,16 +798,19 @@
   }
 
   planButtons.forEach((btn) =>
-    btn.addEventListener("click", () => buy(btn.dataset.plan, btn)),
+    btn.addEventListener("click", () => buy(`${produit}_${btn.dataset.duree}`, btn)),
   );
 
   // Reprise automatique après le détour par Google.
   const planEnAttente = params.get("plan");
   if (planEnAttente) {
+    // Le retour de Google ramène la formule complète : on rétablit d'abord le
+    // produit affiché, pour que la page montre bien ce qui va être acheté.
+    const [prod, duree] = planEnAttente.split("_");
+    if (TARIFS[prod]) { produit = prod; majTarifs(); }
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) return;
-      const btn = planButtons.find((b) => b.dataset.plan === planEnAttente);
-      if (btn) buy(planEnAttente, btn);
+      buy(planEnAttente, planButtons.find((b) => b.dataset.duree === duree) || null);
     });
   }
 </script>
