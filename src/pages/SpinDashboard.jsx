@@ -270,9 +270,28 @@ export default function SpinDashboard() {
 
   const profitTotal = Math.round((agg.net + rakeback) * 100) / 100;
 
+  // Les mains d'avant la correction n'ont pas le champ heroShowdown : leur
+  // partage abattage / sans abattage reste faux tant qu'elles ne sont pas
+  // reparsees, et le taire serait afficher un chiffre qu'on sait errone.
+  const aRereimporter = hands.some((h) => h.heroShowdown === undefined);
+
   return (
     <div className="section">
       <PageHeader title="Spin" subtitle="ROI, multiplicateurs, et ce que ton jeu vaut réellement" />
+
+      {aRereimporter && (
+        <div className="carte-avertissement">
+          <Info size={15} />
+          <p>
+            Le partage <strong>abattage / sans abattage</strong> était faussé pour les mains importées
+            avant cette version : une main où tu te couchais pendant que les deux autres s'abattaient
+            était comptée comme jouée à l'abattage. Le total, l'EV et le ROI n'ont jamais été touchés —
+            seules les deux courbes bleue et rouge le sont. <strong>Réimporte tes historiques</strong>
+            {" "}pour les corriger : l'import écrase les mains existantes, tu peux redéposer les mêmes
+            fichiers sans rien dupliquer.
+          </p>
+        </div>
+      )}
 
       <div className="kpi-bar">
         <Kpi

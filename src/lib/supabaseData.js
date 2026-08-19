@@ -344,6 +344,7 @@ export async function importSpinData(uid, tournaments, hands, { onProgress } = {
       equity: h.equity,
       allInStreet: h.allInStreet,
       sawShowdown: h.sawShowdown,
+      heroShowdown: h.heroShowdown,
       finish: h.finish,
       payout: h.payout,
       // Adversaires rencontres : c'est ce qui alimente leur fiche. On garde le

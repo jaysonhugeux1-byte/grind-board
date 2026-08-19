@@ -223,7 +223,19 @@ function parseBlock(block) {
     }
   }
 
+  // Deux notions distinctes, et les confondre fausse tout le partage
+  // « gagné à l'abattage / sans abattage ».
+  //
+  // sawShowdown dit que LA MAIN s'est terminée par un abattage — ce dont on a
+  // besoin pour savoir si un adversaire a montré ses cartes.
+  //
+  // heroShowdown dit que HERO y était. En spin à trois, il se couche souvent
+  // pendant que les deux autres s'abattent : ces mains-là ne sont pas des mains
+  // gagnées ou perdues à l'abattage pour lui, ce sont des mains abandonnées. Les
+  // compter du mauvais côté déplaçait ici 6,6 % des mains, et inversait le
+  // rapport entre les deux courbes.
   const sawShowdown = /\*\*\* SHOWDOWN \*\*\*/.test(block);
+  const heroShowdown = sawShowdown && !hero.folded;
   const netChips = hero.collected - hero.effective;
 
   // Un joueur qui n'a pas payé de blinde et se couche préflop n'a rien engagé :
@@ -260,6 +272,7 @@ function parseBlock(block) {
     collected: hero.collected,
     netChips,
     sawShowdown,
+    heroShowdown,
     heroLastStreet,
     streetsWithAction: [...streetsWithAction],
     finish,

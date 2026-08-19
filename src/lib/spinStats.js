@@ -140,7 +140,12 @@ export function buildChipsChart(hands) {
   return hands.map((h, i) => {
     const net = h.netChips || 0;
     chips += net;
-    if (h.sawShowdown) sd += net;
+    // heroShowdown, jamais sawShowdown : la question est « Hero est-il allé à
+    // l'abattage », pas « la main s'est-elle terminée par un abattage ». Les
+    // mains importées avant la correction n'ont pas le champ ; on retombe alors
+    // sur l'ancienne valeur, qui reste fausse — d'où l'invitation à réimporter
+    // affichée sur le tableau de bord.
+    if (h.heroShowdown ?? h.sawShowdown) sd += net;
     else nsd += net;
     ev += Number.isFinite(h.evChips) ? h.evChips : net;
     return {
