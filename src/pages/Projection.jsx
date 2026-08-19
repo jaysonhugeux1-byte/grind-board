@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { Loader2, TrendingUp, AlertTriangle, Info, Shuffle } from "lucide-react";
+import React, { useMemo, useState, useCallback } from "react";
+import { Loader2, TrendingUp, AlertTriangle, Info, Shuffle, Play } from "lucide-react";
 import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState } from "../components/ui";
 import { CourbeSpin, SERIES_PROJECTION } from "../components/SpinCharts";
@@ -15,6 +15,13 @@ import { RAKE_PAR_DEFAUT } from "../lib/spinStats";
 // demande ni ROI ni écart-type. On tire au sort dans les tournois réellement
 // joués, ce qui reproduit la vraie distribution des multiplicateurs — gros
 // tirages rares compris, que jamais une loi normale ne sortirait.
+//
+// LA PROJECTION NE SE RELANCE PAS TOUTE SEULE. Une simulation, c'est plusieurs
+// milliers de parcours de plusieurs milliers de tournois : la relancer à chaque
+// frappe dans le champ « bankroll » fige l'écran, et les résultats affichés ne
+// correspondent alors ni aux anciens réglages ni aux nouveaux. Les réglages sont
+// donc un BROUILLON tant qu'on ne les a pas validés, et l'écran indique quand ce
+// qu'on lit ne correspond plus à ce qu'on a saisi.
 
 const CLE_RAKE = "gl_spin_rake";
 const CLE_RAKEBACK = "gl_spin_rakeback";
@@ -29,13 +36,16 @@ const euros = (v, dec = 0) =>
 const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)} %`);
 
 const HORIZONS = [200, 500, 1000, 2000, 5000];
+const REGLAGES_INITIAUX = { horizon: 1000, bankroll: 1000, base: "observe" };
 
 export default function Projection() {
   const { hands, tournois: tousTournois, loading } = useData();
   const [filtres, setFiltres] = useState(FILTRES_DEFAUT);
-  const [horizon, setHorizon] = useState(1000);
-  const [bankroll, setBankroll] = useState(1000);
-  const [base, setBase] = useState("observe");
+  const [reglages, setReglages] = useState(REGLAGES_INITIAUX);
+  // Instantané validé : c'est LUI que la simulation lit, jamais les réglages en
+  // cours d'édition.
+  const [lance, setLance] = useState(null);
+  const [calcul, setCalcul] = useState(false);
 
   const tauxRake = lireReglage(CLE_RAKE, RAKE_PAR_DEFAUT);
   const tauxRakeback = lireReglage(CLE_RAKEBACK, 0);
@@ -55,56 +65,83 @@ export default function Projection() {
     return avec.length ? avec.reduce((s, t) => s + t.buyIn, 0) / avec.length : 0;
   }, [vue.tournois]);
 
-  // Deux lectures de l'avenir, et il faut les distinguer.
-  //
-  // « Résultats observés » prolonge ce qui s'est passé, chance comprise. « CEV
-  // mesuré » prolonge le NIVEAU de jeu, la chance des tapis retirée. Quand les
-  // deux divergent, c'est que la chance a pesé lourd — et l'écart entre les deux
-  // projections mesure exactement ce poids.
-  const espere = useMemo(() => {
-    if (base === "observe" || !resultats.length) return null;
+  // Deux lectures de l'avenir, et il faut les distinguer. « Résultats observés »
+  // prolonge ce qui s'est passé, chance comprise. « CEV mesuré » prolonge le
+  // NIVEAU de jeu, la chance des tapis retirée. L'écart entre les deux
+  // projections mesure exactement ce que la chance a pesé jusqu'ici.
+  const espereCev = useMemo(() => {
+    if (!vue.mains.length) return null;
     const tapis = tapisDepart(vue.mains);
     const seuil = seuilCevRentable({ tapis, tauxRake, tauxRakeback });
     const v = verdictCev(buildCevChart(vue.mains, { seuil }), seuil);
     return profitParTournoi({ cev: v.cev, tapis, buyIn, tauxRake, tauxRakeback });
-  }, [base, resultats.length, vue.mains, buyIn, tauxRake, tauxRakeback]);
+  }, [vue.mains, buyIn, tauxRake, tauxRakeback]);
+
+  const lancer = useCallback(() => {
+    setCalcul(true);
+    // On rend la main au navigateur avant de calculer, sinon le bouton ne
+    // s'affiche jamais comme « en cours » et l'écran semble figé sans raison.
+    setTimeout(() => {
+      setLance({
+        ...reglages,
+        resultats,
+        buyIn,
+        espere: reglages.base === "cev" ? espereCev : null,
+        signature: `${vue.tournois.length}|${resultats.length}`,
+      });
+      setCalcul(false);
+    }, 30);
+  }, [reglages, resultats, buyIn, espereCev, vue.tournois.length]);
+
+  // Ce qu'on lit correspond-il encore à ce qu'on a saisi ?
+  const perime = useMemo(() => {
+    if (!lance) return false;
+    return lance.horizon !== reglages.horizon
+      || lance.bankroll !== reglages.bankroll
+      || lance.base !== reglages.base
+      || lance.signature !== `${vue.tournois.length}|${resultats.length}`;
+  }, [lance, reglages, vue.tournois.length, resultats.length]);
 
   const sim = useMemo(
-    () => simuler({
-      resultats, nTournois: horizon, bankroll, buyIn,
-      profitEspere: espere, nSimulations: 3000,
-    }),
-    [resultats, horizon, bankroll, buyIn, espere],
+    () => (lance ? simuler({
+      resultats: lance.resultats, nTournois: lance.horizon, bankroll: lance.bankroll,
+      buyIn: lance.buyIn, profitEspere: lance.espere, nSimulations: 3000,
+    }) : null),
+    [lance],
   );
 
   const requises = useMemo(() => {
-    if (!sim.suffisant) return [];
+    if (!sim?.suffisant) return [];
     return [0.05, 0.01].map((cible) => ({
       cible,
-      ...(bankrollRequise({ resultats, nTournois: horizon, buyIn, risqueCible: cible,
-                            profitEspere: espere, nSimulations: 900 }) || {}),
+      ...(bankrollRequise({
+        resultats: lance.resultats, nTournois: lance.horizon, buyIn: lance.buyIn,
+        risqueCible: cible, profitEspere: lance.espere, nSimulations: 900,
+      }) || {}),
     }));
-  }, [sim.suffisant, resultats, horizon, buyIn, espere]);
+  }, [sim, lance]);
 
   const limites = useMemo(() => {
-    if (!sim.suffisant || !buyIn) return [];
-    const paliers = [...new Set([buyIn / 2, buyIn, buyIn * 2.5, buyIn * 5].map((v) => Math.round(v * 100) / 100))];
+    if (!sim?.suffisant || !lance.buyIn) return [];
+    const paliers = [...new Set([lance.buyIn / 2, lance.buyIn, lance.buyIn * 2.5, lance.buyIn * 5]
+      .map((v) => Math.round(v * 100) / 100))];
     return comparerLimites({
-      resultats, buyInActuel: buyIn, limites: paliers,
-      nTournois: horizon, bankroll, profitEspere: espere, nSimulations: 900,
+      resultats: lance.resultats, buyInActuel: lance.buyIn, limites: paliers,
+      nTournois: lance.horizon, bankroll: lance.bankroll, profitEspere: lance.espere, nSimulations: 900,
     });
-  }, [sim.suffisant, resultats, buyIn, horizon, bankroll, espere]);
+  }, [sim, lance]);
+
+  const maj = (bout) => setReglages((r) => ({ ...r, ...bout }));
 
   if (loading) {
     return <div className="page"><div className="loading-block"><Loader2 className="spin" size={22} /> Chargement…</div></div>;
   }
 
+  const assez = resultats.length >= MINIMUM_TOURNOIS;
+
   return (
     <div className="page">
-      <PageHeader
-        title="Projection"
-        subtitle="Où mène ton jeu, et ce qui peut mal tourner en chemin"
-      />
+      <PageHeader title="Projection" subtitle="Où mène ton jeu, et ce qui peut mal tourner en chemin" />
 
       <BarreFiltres
         tournois={tousTournois}
@@ -126,36 +163,57 @@ export default function Projection() {
       <div className="reglages-proj">
         <label>
           Horizon
-          <select value={horizon} onChange={(e) => setHorizon(+e.target.value)}>
+          <select value={reglages.horizon} onChange={(e) => maj({ horizon: +e.target.value })}>
             {HORIZONS.map((h) => <option key={h} value={h}>{h.toLocaleString("fr-FR")} tournois</option>)}
           </select>
         </label>
         <label>
           Bankroll de départ
-          <input type="number" min="0" step="50" value={bankroll}
-                 onChange={(e) => setBankroll(Math.max(0, +e.target.value || 0))} />
+          <input type="number" min="0" step="50" value={reglages.bankroll}
+                 onChange={(e) => maj({ bankroll: Math.max(0, +e.target.value || 0) })} />
           <span className="card-sub">€ — mise à 0 pour ignorer la ruine</span>
         </label>
         <label>
           Espérance
-          <select value={base} onChange={(e) => setBase(e.target.value)}>
+          <select value={reglages.base} onChange={(e) => maj({ base: e.target.value })}>
             <option value="observe">Mes résultats observés</option>
-            <option value="cev">Mon CEV mesuré (chance retirée)</option>
+            <option value="cev" disabled={espereCev == null}>Mon CEV mesuré (chance retirée)</option>
           </select>
         </label>
+
+        <button className="btn-lancer" onClick={lancer} disabled={!assez || calcul}>
+          {calcul ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
+          {lance ? "Relancer" : "Lancer la projection"}
+        </button>
       </div>
 
-      {!sim.suffisant ? (
-        <EmptyState text={`Il faut au moins ${MINIMUM_TOURNOIS} tournois pour simuler quoi que ce soit. Tu en as ${sim.tournoisFournis ?? 0}.`} />
-      ) : (
-        <>
+      {!assez && (
+        <EmptyState text={`Il faut au moins ${MINIMUM_TOURNOIS} tournois pour simuler quoi que ce soit. Le filtre en retient ${resultats.length}.`} />
+      )}
+
+      {assez && !lance && (
+        <EmptyState text="Règle l'horizon et ta bankroll, puis lance la projection. Elle ne se relance pas toute seule : quelques milliers de parcours à chaque changement figeraient l'écran pour rien." />
+      )}
+
+      {perime && (
+        <div className="carte-avertissement perime">
+          <AlertTriangle size={15} />
+          <p>
+            Les réglages ont changé depuis le dernier calcul. <strong>Ce que tu lis ci-dessous
+            correspond encore aux anciens</strong> — relance la projection pour la mettre à jour.
+          </p>
+        </div>
+      )}
+
+      {sim?.suffisant && (
+        <div className={perime ? "perime-contenu" : undefined}>
           <div className="carte-synthese">
             <div className="carte-kpi">
               <span className="carte-kpi-label">Résultat médian</span>
               <span className={`carte-kpi-valeur mono ${sim.final.median < 0 ? "neg" : ""}`}>
                 {euros(sim.final.median)}
               </span>
-              <span className="card-sub">après {horizon.toLocaleString("fr-FR")} tournois</span>
+              <span className="card-sub">après {lance.horizon.toLocaleString("fr-FR")} tournois</span>
             </div>
             <div className="carte-kpi">
               <span className="carte-kpi-label">Risque de finir perdant</span>
@@ -202,8 +260,8 @@ export default function Projection() {
             <section className="card">
               <div className="card-title-row"><h3><TrendingUp size={16} /> Ce qu'il faudrait en caisse</h3></div>
               <p className="card-sub">
-                Bankroll minimale pour tenir {horizon.toLocaleString("fr-FR")} tournois sans être
-                obligé de s'arrêter.
+                Bankroll minimale pour tenir {lance.horizon.toLocaleString("fr-FR")} tournois sans
+                être obligé de s'arrêter.
               </p>
               <table className="table-compacte">
                 <thead><tr><th>Risque de ruine accepté</th><th>Bankroll</th><th>En caves</th></tr></thead>
@@ -228,17 +286,17 @@ export default function Projection() {
             <section className="card">
               <div className="card-title-row"><h3><Info size={16} /> Et à une autre limite ?</h3></div>
               <p className="card-sub">
-                Avec la même bankroll de {euros(bankroll)} et <strong>en supposant que ton niveau de
-                jeu tienne</strong> — hypothèse forte, et rarement vraie en montant.
+                Avec la même bankroll de {euros(lance.bankroll)} et <strong>en supposant que ton
+                niveau de jeu tienne</strong> — hypothèse forte, et rarement vraie en montant.
               </p>
               <table className="table-compacte">
                 <thead><tr><th>Buy-in</th><th>Ruine</th><th>Médiane</th><th>Bankroll conseillée</th></tr></thead>
                 <tbody>
                   {limites.map((l) => (
-                    <tr key={l.buyIn} className={Math.abs(l.buyIn - buyIn) < 0.01 ? "cliquable" : ""}>
+                    <tr key={l.buyIn}>
                       <td className="mono">
                         {euros(l.buyIn, 2)}
-                        {Math.abs(l.buyIn - buyIn) < 0.01 && <span className="carte-n">actuel</span>}
+                        {Math.abs(l.buyIn - lance.buyIn) < 0.01 && <span className="carte-n">actuel</span>}
                       </td>
                       <td className={`mono ${l.risqueRuine > 0.05 ? "neg" : "pos"}`}>{pct(l.risqueRuine)}</td>
                       <td className={`mono ${l.median < 0 ? "neg" : "pos"}`}>{euros(l.median)}</td>
@@ -254,15 +312,15 @@ export default function Projection() {
             <Info size={15} />
             <p>
               La simulation prolonge{" "}
-              {base === "observe"
+              {lance.base === "observe"
                 ? <>tes <strong>résultats observés</strong>, chance comprise : {euros(sim.moyenneObservee, 2)} par tournoi.</>
                 : <>ton <strong>niveau de jeu</strong> mesuré par le CEV, chance des tapis retirée : {euros(sim.espere, 2)} par tournoi, contre {euros(sim.moyenneObservee, 2)} réellement obtenus.</>}
-              {" "}Bascule d'une base à l'autre : l'écart entre les deux projections mesure
+              {" "}Bascule d'une base à l'autre et relance : l'écart entre les deux projections mesure
               exactement ce que la chance a pesé jusqu'ici. Et rappelle-toi qu'un taux de gain estimé
               sur quelques centaines de tournois reste incertain — la page Confiance dit de combien.
             </p>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

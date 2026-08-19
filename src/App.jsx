@@ -22,6 +22,7 @@ import LecteurDirect from "./pages/LecteurDirect";
 import Adversaires from "./pages/Adversaires";
 import CarteMentale from "./pages/CarteMentale";
 import Projection from "./pages/Projection";
+import GestionBankroll from "./pages/GestionBankroll";
 import { useMode } from "./contexts/ModeContext";
 
 // Le tableau de bord n'a rien de commun entre les deux formats : en cash game
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/adversaires" element={<Adversaires />} />
         <Route path="/carte-mentale" element={<CarteMentale />} />
         <Route path="/projection" element={<Projection />} />
+        <Route path="/gestion-bankroll" element={<GestionBankroll />} />
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/ranges" element={<Ranges />} />
         <Route path="/ev" element={<EvByPosition />} />

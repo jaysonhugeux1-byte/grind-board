@@ -957,3 +957,37 @@ body {
   letter-spacing: 0; min-width: 170px;
 }
 .reglages-proj .card-sub { margin: 0; text-transform: none; letter-spacing: 0; }
+
+/* ------------------------------------------------- Validation avant calcul
+   Une simulation coûte plusieurs secondes : rien ne se déclenche à la frappe,
+   et l'écran dit quand ce qu'on lit ne correspond plus à ce qu'on a saisi. */
+
+.btn-lancer {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--gold); color: #16110a; border: 0; border-radius: 8px;
+  padding: 9px 18px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  margin-left: auto; align-self: flex-end;
+}
+.btn-lancer:hover:not(:disabled) { background: var(--gold-soft); }
+.btn-lancer:disabled { opacity: .45; cursor: default; }
+
+.carte-avertissement.perime {
+  background: rgba(193, 92, 77, .08);
+  border-color: rgba(193, 92, 77, .35);
+}
+.carte-avertissement.perime svg { color: var(--loss); }
+/* Le contenu périmé reste lisible mais visiblement en retrait : le masquer
+   ferait disparaître des chiffres qu'on était peut-être en train de lire. */
+.perime-contenu { opacity: .45; transition: opacity .15s; }
+
+.lien-discret {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--gold-soft); font: inherit; font-size: 11px;
+  text-transform: none; letter-spacing: 0; text-align: left; text-decoration: underline;
+}
+
+.jauge {
+  height: 6px; border-radius: 3px; background: var(--surface);
+  overflow: hidden; margin: 10px 0 6px;
+}
+.jauge-remplissage { height: 100%; background: var(--gold); border-radius: 3px; }

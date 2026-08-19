@@ -9,7 +9,7 @@ import {
 import { useAuth } from "./AuthContext";
 import { useMode } from "./ModeContext";
 
-const DataContext = createContext(null);
+export const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
   const { user } = useAuth();

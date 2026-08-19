@@ -165,6 +165,59 @@ export function simuler({
 }
 
 /**
+ * Atteindre un objectif AVANT de faire faillite.
+ *
+ * C'est la question que pose vraiment un plan de bankroll — « est-ce que
+ * j'arrive à 5 000 € ? » — et elle n'a rien à voir avec l'espérance. Un jeu
+ * gagnant peut échouer parce que la ruine survient d'abord ; c'est une course
+ * entre deux frontières, pas une moyenne.
+ *
+ * Chaque parcours s'arrête à la première atteinte : l'objectif ou la ruine.
+ * Ceux qui n'atteignent ni l'un ni l'autre dans l'horizon comptent comme
+ * inaboutis — les compter comme des échecs noircirait le tableau, les compter
+ * comme des réussites le blanchirait.
+ */
+export function simulerObjectif({
+  resultats = [], bankroll = 0, cible = 0, buyIn = 0,
+  nMax = 5000, profitEspere = null, nSimulations = 3000, graine = 20260819,
+} = {}) {
+  if (resultats.length < MINIMUM_TOURNOIS || !(cible > bankroll)) {
+    return { suffisant: false };
+  }
+
+  const moyenne = resultats.reduce((s, v) => s + v, 0) / resultats.length;
+  const espere = profitEspere ?? moyenne;
+  const ecarts = resultats.map((v) => v - moyenne);
+  const rnd = alea(graine);
+
+  let atteints = 0;
+  let ruines = 0;
+  const delais = [];
+
+  for (let s = 0; s < nSimulations; s++) {
+    let solde = bankroll;
+    for (let k = 1; k <= nMax; k++) {
+      solde += espere + ecarts[(rnd() * ecarts.length) | 0];
+      if (solde >= cible) { atteints++; delais.push(k); break; }
+      if (buyIn > 0 && solde < buyIn) { ruines++; break; }
+    }
+  }
+
+  delais.sort((a, b) => a - b);
+  return {
+    suffisant: true,
+    probabilite: atteints / nSimulations,
+    probabiliteRuine: ruines / nSimulations,
+    // Ni atteint ni ruine dans l'horizon : la course n'est pas tranchee.
+    probabiliteInabouti: (nSimulations - atteints - ruines) / nSimulations,
+    tournoisMedian: centile(delais, 50),
+    tournoisRapide: centile(delais, 10),
+    tournoisLent: centile(delais, 90),
+    espere: Math.round(espere * 100) / 100,
+  };
+}
+
+/**
  * Bankroll minimale pour tenir un risque de ruine donné.
  *
  * Recherche par dichotomie : la ruine décroît quand le capital augmente, donc la
