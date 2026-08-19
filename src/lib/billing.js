@@ -48,11 +48,25 @@ export function openExternalUrl(url) {
 }
 
 // Demande une facture et renvoie l'URL de paiement hébergée par NOWPayments.
+// supabase-js n'expose qu'un message générique quand une Edge Function répond
+// autre chose que 2xx : « Edge Function returned a non-2xx status code ». Le
+// motif réel est dans le corps de la réponse, porté par error.context. Sans
+// cette lecture, une formule inconnue, une session expirée et une panne du
+// prestataire donnent le même message à l'écran, et le diagnostic devient
+// impossible depuis la machine de l'utilisateur.
+async function motifReel(error) {
+  try {
+    const corps = await error?.context?.json();
+    if (corps?.error) return corps.error;
+  } catch { /* la réponse n'était pas du JSON : on garde le message d'origine */ }
+  return error?.message || "Le paiement n'a pas pu être créé.";
+}
+
 export async function createCryptoPayment(planId) {
   const { data, error } = await supabase.functions.invoke("create-crypto-payment", {
     body: { planId },
   });
-  if (error) throw new Error(error.message || "Le paiement n'a pas pu être créé.");
+  if (error) throw new Error(await motifReel(error));
   if (!data?.url) throw new Error("Le service de paiement n'a pas renvoyé de lien.");
   return data.url;
 }
