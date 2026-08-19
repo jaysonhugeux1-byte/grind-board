@@ -102,5 +102,50 @@ T("les deux courbes redonnent le total", fin.chipsSd + fin.chipsNsd === fin.chip
 const ancienne = buildChipsChart([{ netChips: 300, sawShowdown: true }]);
 T("main ancienne : repli sur sawShowdown", ancienne[0].chipsSd === 300);
 
-console.log(`\n${ok} succes, ${ko} echecs`);
+
+// ---------------------------------------------------------------------------
+// Tournois tronques et bande de chance
+// ---------------------------------------------------------------------------
+
+const { tournoisIncomplets, ecartTypeChance } = await import("../src/lib/spinStats.js");
+
+// Un tournoi complet finit a zero jeton (elimine) ou avec tous les jetons.
+const complet = [
+  { id: "T-1", tourneyId: "T", stack: 500, netChips: 200, chipsInPlay: 1500 },
+  { id: "T-2", tourneyId: "T", stack: 700, netChips: -700, chipsInPlay: 1500 },
+];
+T("tournoi termine par elimination : complet", tournoisIncomplets(complet).size === 0);
+
+const vainqueur = [
+  { id: "V-1", tourneyId: "V", stack: 500, netChips: 500, chipsInPlay: 1500 },
+  { id: "V-2", tourneyId: "V", stack: 1000, netChips: 500, chipsInPlay: 1500 },
+];
+T("tournoi gagne : complet", tournoisIncomplets(vainqueur).size === 0);
+
+// Celui-ci s'arrete avec 140 jetons en tapis : la main d'elimination manque.
+const tronque = [
+  { id: "X-1", tourneyId: "X", stack: 500, netChips: -360, chipsInPlay: 1500 },
+];
+T("tournoi coupe avant la fin detecte", tournoisIncomplets(tronque).has("X"));
+T("un seul tournoi signale", tournoisIncomplets([...complet, ...tronque]).size === 1);
+
+// L'ordre des mains ne doit pas changer le verdict : c'est le numero de main
+// qui fait foi, pas l'ordre de lecture du fichier.
+T("ordre des mains indifferent",
+  tournoisIncomplets([complet[1], complet[0]]).size === 0);
+
+// L'ecart type de la chance ne se mesure que sur les mains a tapis, et pas du
+// tout en dessous de vingt : annoncer une bande sur cinq mains serait pire que
+// de n'en annoncer aucune.
+T("pas d'ecart type sur trop peu de mains", ecartTypeChance(complet) === null);
+const tapis = Array.from({ length: 60 }, (_, i) => ({
+  allInStreet: "Preflop", evChips: 0, netChips: i % 2 ? 400 : -400,
+}));
+T("ecart type mesure sur les mains a tapis",
+  Math.abs(ecartTypeChance(tapis) - 403) < 10, String(ecartTypeChance(tapis)));
+T("mains sans tapis ignorees",
+  ecartTypeChance([...tapis, { evChips: 0, netChips: 99999 }]) === ecartTypeChance(tapis));
+
+console.log(`
+${ok} succes, ${ko} echecs`);
 process.exit(ko ? 1 : 0);

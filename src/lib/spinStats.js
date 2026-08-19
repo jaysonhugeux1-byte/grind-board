@@ -131,7 +131,52 @@ export function buildBankrollChart(tournois, { tauxRake = RAKE_PAR_DEFAUT, tauxR
 // Courbe de jetons, main par main. Le partage abattage / sans abattage est le
 // diagnostic le plus parlant en spin : gagner ses jetons sans abattage veut dire
 // qu'on fait coucher, les gagner à l'abattage qu'on est payé.
-export function buildChipsChart(hands, { seuilParTournoi = null } = {}) {
+/**
+ * Tournois dont l'export s'arrete avant la fin.
+ *
+ * Un tournoi complet se termine forcement sur un tapis a zero — on est elimine —
+ * ou sur la totalite des jetons en jeu : on a tout gagne. Toute autre valeur
+ * signifie que les dernieres mains manquent dans le fichier.
+ *
+ * Ce n'est pas un cas d'ecole. Winamax ecrit l'historique au fil de l'eau : qui
+ * exporte pendant qu'il joue, ou juste apres, obtient un dernier tournoi coupe.
+ * Ses jetons et son EV sont alors faux, et sur un petit echantillon un seul
+ * tournoi tronque suffit a rendre les deux courbes incomprehensibles.
+ */
+export function tournoisIncomplets(hands = []) {
+  const parTournoi = new Map();
+  for (const h of hands) {
+    if (!h.tourneyId || !(h.chipsInPlay > 0)) continue;
+    const c = parTournoi.get(h.tourneyId);
+    const rang = h.id ? Number(String(h.id).split("-").pop()) : h.ts;
+    if (!c || rang > c.rang) parTournoi.set(h.tourneyId, { rang, h });
+  }
+
+  const incomplets = new Set();
+  for (const [id, { h }] of parTournoi) {
+    const final = h.stack + h.netChips;
+    if (final !== 0 && final !== h.chipsInPlay) incomplets.add(id);
+  }
+  return incomplets;
+}
+
+// Ecart type de la chance sur une main a tapis, mesure sur l'echantillon lui
+// meme. Il sert a dire quel ecart entre resultat et EV est NORMAL : sans ce
+// repere, un joueur qui voit -906 d'EV pour -184 de resultat croit a une panne
+// alors qu'il lui suffit de trois tapis pour en arriver la.
+export function ecartTypeChance(hands = []) {
+  const ecarts = [];
+  for (const h of hands) {
+    if (!h.allInStreet || !Number.isFinite(h.evChips)) continue;
+    ecarts.push((h.netChips || 0) - h.evChips);
+  }
+  if (ecarts.length < 20) return null;
+  const moy = ecarts.reduce((a, b) => a + b, 0) / ecarts.length;
+  const v = ecarts.reduce((a, b) => a + (b - moy) ** 2, 0) / (ecarts.length - 1);
+  return Math.sqrt(v);
+}
+
+export function buildChipsChart(hands, { seuilParTournoi = null, ecartChance = null } = {}) {
   let chips = 0;
   let sd = 0;
   let nsd = 0;
@@ -141,6 +186,10 @@ export function buildChipsChart(hands, { seuilParTournoi = null } = {}) {
   // le nombre de tournois entamés pour tracer, sur le même axe que la courbe
   // d'EV, la ligne au-dessus de laquelle le jeu couvre le rake.
   const tournoisVus = new Set();
+  // Nombre de mains a tapis rencontrees : la bande de chance s'ouvre en racine
+  // de ce nombre, pas du nombre de mains jouees. Une main couchee preflop
+  // n'ajoute aucune incertitude.
+  let tapis = 0;
 
   return hands.map((h, i) => {
     if (h.tourneyId) tournoisVus.add(h.tourneyId);
@@ -154,6 +203,7 @@ export function buildChipsChart(hands, { seuilParTournoi = null } = {}) {
     if (h.heroShowdown ?? h.sawShowdown) sd += net;
     else nsd += net;
     ev += Number.isFinite(h.evChips) ? h.evChips : net;
+    if (h.allInStreet) tapis++;
     return {
       index: i + 1,
       ts: h.ts,
@@ -163,6 +213,11 @@ export function buildChipsChart(hands, { seuilParTournoi = null } = {}) {
       evChips: Math.round(ev),
       ecart: Math.round(ev - chips),
       seuilEv: seuilParTournoi == null ? null : Math.round(seuilParTournoi * tournoisVus.size),
+      // Autour de l'EV, l'intervalle dans lequel un resultat reel tombe 95 fois
+      // sur 100. La courbe de jetons doit y rester : c'est quand elle en sort
+      // qu'il y a lieu de s'etonner.
+      evBas: ecartChance == null ? null : Math.round(ev - 1.96 * ecartChance * Math.sqrt(tapis)),
+      evHaut: ecartChance == null ? null : Math.round(ev + 1.96 * ecartChance * Math.sqrt(tapis)),
     };
   });
 }

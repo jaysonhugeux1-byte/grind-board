@@ -17,6 +17,11 @@ export const SERIES_JETONS = [
   // absolu du graphique : les autres courbes ne disent que « plus ou moins que
   // la fois d'avant ».
   { cle: "seuilEv", label: "EV minimale gagnante", couleur: "#8b948f", defaut: true, pointille: true },
+  // Bornes de l'ecart normal entre EV et resultat. Tant que la courbe de jetons
+  // reste entre les deux, l'ecart n'a rien d'anormal — c'est la variance des
+  // tapis, pas une erreur de calcul.
+  { cle: "evHaut", label: "Chance normale (haut)", couleur: "#4a6b52", defaut: false, pointille: true },
+  { cle: "evBas", label: "Chance normale (bas)", couleur: "#7a4038", defaut: false, pointille: true },
 ];
 
 export const SERIES_CEV = [

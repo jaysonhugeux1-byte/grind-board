@@ -295,10 +295,15 @@ export default function SpinDashboard() {
     () => seuilCevRentable({ tapis, tauxRake, tauxRakeback }),
     [tapis, tauxRake, tauxRakeback]
   );
+  const ecartChance = useMemo(() => ecartTypeChance(mainsVues), [mainsVues]);
   const courbeJetons = useMemo(
-    () => buildChipsChart(mainsVues, { seuilParTournoi: seuilCev }),
-    [mainsVues, seuilCev]
+    () => buildChipsChart(mainsVues, { seuilParTournoi: seuilCev, ecartChance }),
+    [mainsVues, seuilCev, ecartChance]
   );
+  // Un export pris pendant qu'on joue coupe le dernier tournoi en deux : ses
+  // jetons et son EV sont alors faux, et sur peu de tournois cela suffit a
+  // rendre les deux courbes incoherentes.
+  const incomplets = useMemo(() => tournoisIncomplets(mainsVues), [mainsVues]);
   const courbeCev = useMemo(
     () => buildCevChart(mainsVues, { seuil: seuilCev }),
     [mainsVues, seuilCev]
@@ -358,6 +363,19 @@ export default function SpinDashboard() {
   return (
     <div className="section">
       <PageHeader title="Spin" subtitle="ROI, multiplicateurs, et ce que ton jeu vaut réellement" />
+
+      {incomplets.size > 0 && (
+        <div className="carte-avertissement">
+          <Info size={15} />
+          <p>
+            <strong>{incomplets.size} tournoi{incomplets.size > 1 ? "s" : ""} incomplet
+            {incomplets.size > 1 ? "s" : ""}</strong> : l'export s'arrête avant la dernière main, donc
+            avant l'élimination. Leurs jetons et leur EV sont faussés — c'est ce qui arrive quand on
+            exporte son historique pendant qu'on joue. Rejoue l'export une fois la session terminée,
+            puis réimporte : les mêmes fichiers seront simplement complétés.
+          </p>
+        </div>
+      )}
 
       {aRereimporter && (
         <div className="carte-avertissement">
