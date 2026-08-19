@@ -857,3 +857,86 @@ body {
 .table-compacte tr.cliquable:hover { background: var(--surface-2); }
 .table-compacte .pos { color: var(--win); }
 .table-compacte .neg { color: var(--loss); }
+
+/* --------------------------------------------------------------- Filtres spin
+   Le nombre de tournois et de mains retenus reste visible en permanence : sans
+   lui, on lit un ROI sans savoir sur quoi il porte. */
+
+.filtres {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  margin-bottom: 14px;
+}
+.filtres-tete {
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap; padding: 9px 12px;
+}
+.btn-filtres {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer;
+  position: relative;
+}
+.btn-filtres.actif { border-color: var(--gold); color: var(--gold-soft); }
+.filtres-pastille {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold); display: inline-block;
+}
+.filtres-compte { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+
+.filtres-corps {
+  border-top: 1px solid var(--border);
+  padding: 14px 12px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px;
+}
+.filtres-groupe { display: flex; flex-direction: column; gap: 7px; }
+.filtres-titre {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+}
+.filtres-puces { display: flex; gap: 6px; flex-wrap: wrap; }
+.puce {
+  background: var(--surface-2); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 4px 12px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.puce:hover { color: var(--text); }
+.puce.active { background: var(--gold); border-color: var(--gold); color: #16110a; font-weight: 600; }
+
+.filtres-dates { display: flex; gap: 10px; flex-wrap: wrap; }
+.filtres-dates label {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted);
+}
+.filtres-dates input {
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 7px; font: inherit; font-size: 12px;
+  color-scheme: dark;
+}
+.filtres-corps .card-sub { grid-column: 1 / -1; margin: 0; }
+
+/* ------------------------------------------------------------------ Verdict
+   Trois états, trois couleurs. « Indéterminé » n'est pas une esquive : sur un
+   échantillon trop court, c'est la seule réponse honnête. */
+
+.verdict {
+  border: 1px solid var(--border); border-left-width: 3px;
+  border-radius: 10px; background: var(--surface-2);
+  padding: 13px 16px; margin-bottom: 16px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.verdict-gagnant { border-left-color: var(--win); }
+.verdict-perdant { border-left-color: var(--loss); }
+.verdict-indetermine, .verdict-inconnu { border-left-color: var(--gold); }
+.verdict-ligne { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.verdict-etiquette {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-muted); min-width: 150px;
+}
+.verdict-ligne .mono { font-size: 15px; font-weight: 600; }
+.verdict-phrase { margin: 6px 0 0; font-size: 13px; line-height: 1.5; }
+.verdict-gagnant .verdict-phrase { color: var(--win); }
+.verdict-perdant .verdict-phrase { color: var(--loss); }
+.verdict-indetermine .verdict-phrase { color: var(--gold-soft); }
+.verdict .card-sub { margin: 2px 0 0; }

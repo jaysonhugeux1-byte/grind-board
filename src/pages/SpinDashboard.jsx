@@ -3,7 +3,13 @@ import { Loader2, Plus, Zap, Trophy, X, Info } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { EmptyState, PageHeader } from "../components/ui";
-import { CourbeSpin, SERIES_JETONS, SERIES_BANKROLL } from "../components/SpinCharts";
+import { CourbeSpin, SERIES_JETONS, SERIES_BANKROLL, SERIES_CEV } from "../components/SpinCharts";
+import BarreFiltres from "../components/BarreFiltres";
+import { FILTRES_DEFAUT, appliquerFiltres } from "../lib/spinFiltres";
+import {
+  tapisDepart, seuilCevRentable, buildCevChart, verdictCev,
+  projeterBankroll, profitParTournoi,
+} from "../lib/spinRentabilite";
 import {
   aggregateSpin, buildBankrollChart, buildChipsChart, calculerCev, calculerRake,
   rakeObserve, buildMultiplierBreakdown, buildPositionBreakdown, buildDepthBreakdown,
@@ -14,6 +20,11 @@ import { addSpinTournament } from "../lib/supabaseData";
 // Multiplicateurs proposés en raccourci. Le ×2 domine largement : c'est lui qui
 // finance à la fois la marge de la salle et les rares gros tirages.
 const MULTIS_COURANTS = [2, 3, 4, 5, 10, 25, 100];
+
+// Buy-in moyen de la population filtrée : c'est lui qui convertit un CEV en
+// jetons vers un profit en euros.
+const buyInMoyenBrut = (tournois) =>
+  tournois.length ? tournois.reduce((a, t) => a + (t.buyIn || 0), 0) / tournois.length : null;
 
 const CLE_RAKE = "gl_spin_rake";
 const CLE_RAKEBACK = "gl_spin_rakeback";
@@ -200,10 +211,48 @@ function Tableau({ colonnes, lignes }) {
   );
 }
 
+// Ce que l'echantillon permet — ou non — d'affirmer.
+function VerdictConfiance({ verdict, seuil, tapis }) {
+  const { statut, tournois, cev, marge, requis } = verdict;
+  const jetons = (v) => (v == null ? "—" : nombre(v, 1));
+
+  const phrases = {
+    gagnant: "Ton avantage est établi : même la borne basse de l'intervalle passe au-dessus du seuil.",
+    perdant: "L'échantillon conclut à un jeu perdant : même la borne haute reste sous le seuil.",
+    indetermine: "L'échantillon ne permet pas de trancher : l'intervalle chevauche le seuil.",
+    inconnu: "Pas encore assez de tournois pour mesurer quoi que ce soit.",
+  };
+
+  return (
+    <div className={`verdict verdict-${statut}`}>
+      <div className="verdict-ligne">
+        <span className="verdict-etiquette">CEV mesuré</span>
+        <span className="mono">{jetons(cev)} jetons {marge != null && <>± {jetons(marge)}</>}</span>
+      </div>
+      <div className="verdict-ligne">
+        <span className="verdict-etiquette">Seuil de rentabilité</span>
+        <span className="mono">{jetons(seuil)} jetons</span>
+        <span className="card-sub">tapis de {jetons(tapis)}, rake et rakeback compris</span>
+      </div>
+      <p className="verdict-phrase">
+        {phrases[statut]}
+        {requis != null && (
+          <> Au rythme actuel, il faudrait environ <strong>{nombre(requis, 0)} tournois</strong> pour
+          que l'intervalle se resserre assez.</>
+        )}
+      </p>
+      <p className="card-sub">
+        Sur {nombre(tournois, 0)} tournois. L'intervalle est à 95 % : il se resserre en 1/√n, donc
+        quatre fois plus de tournois pour deux fois moins d'incertitude.
+      </p>
+    </div>
+  );
+}
+
 export default function SpinDashboard() {
   const { tournois, hands, loading, refresh } = useData();
   const [onglet, setOnglet] = useState("jetons");
-  const [buyInFiltre, setBuyInFiltre] = useState(null);
+  const [filtres, setFiltres] = useState(FILTRES_DEFAUT);
   const [tauxRake, setTauxRake] = useState(() => lireReglage(CLE_RAKE, RAKE_PAR_DEFAUT));
   const [tauxRakeback, setTauxRakeback] = useState(() => lireReglage(CLE_RAKEBACK, 0));
 
@@ -223,15 +272,12 @@ export default function SpinDashboard() {
   }, [niveaux]);
 
   // Mélanger deux limites fausse toute lecture en euros : cent euros gagnés en
-  // 20 € et cent euros gagnés en 2 € ne disent pas du tout la même chose.
-  const tournoisVus = useMemo(
-    () => (buyInFiltre == null ? tournois : tournois.filter((t) => t.buyIn === buyInFiltre)),
-    [tournois, buyInFiltre]
-  );
-  const mainsVues = useMemo(
-    () => (buyInFiltre == null ? hands : hands.filter((h) => h.buyIn === buyInFiltre)),
-    [hands, buyInFiltre]
-  );
+  // 20 € et cent euros gagnés en 2 € ne disent pas du tout la même chose. Le
+  // filtrage passe par un module dédié, qui garantit que les tournois et les
+  // mains portent toujours sur la même population.
+  const vue = useMemo(() => appliquerFiltres(tournois, hands, filtres), [tournois, hands, filtres]);
+  const tournoisVus = vue.tournois;
+  const mainsVues = vue.mains;
 
   const agg = useMemo(() => aggregateSpin(tournoisVus), [tournoisVus]);
   const rake = useMemo(() => calculerRake(tournoisVus, tauxRake), [tournoisVus, tauxRake]);
@@ -242,7 +288,41 @@ export default function SpinDashboard() {
     () => buildBankrollChart(tournoisVus, { tauxRake, tauxRakeback }),
     [tournoisVus, tauxRake, tauxRakeback]
   );
-  const courbeJetons = useMemo(() => buildChipsChart(mainsVues), [mainsVues]);
+  // Seuil de rentabilité : le tapis vient des données, le rake et le rakeback
+  // des réglages en bas de page.
+  const tapis = useMemo(() => tapisDepart(mainsVues), [mainsVues]);
+  const seuilCev = useMemo(
+    () => seuilCevRentable({ tapis, tauxRake, tauxRakeback }),
+    [tapis, tauxRake, tauxRakeback]
+  );
+  const courbeJetons = useMemo(
+    () => buildChipsChart(mainsVues, { seuilParTournoi: seuilCev }),
+    [mainsVues, seuilCev]
+  );
+  const courbeCev = useMemo(
+    () => buildCevChart(mainsVues, { seuil: seuilCev }),
+    [mainsVues, seuilCev]
+  );
+  const verdict = useMemo(() => verdictCev(courbeCev, seuilCev), [courbeCev, seuilCev]);
+
+  // Projection : la ligne centrale suit l'espérance déduite du CEV, la bande la
+  // dispersion réelle des multiplicateurs touchés.
+  const courbeBankrollProjetee = useMemo(() => {
+    if (!courbeBankroll.length) return courbeBankroll;
+    const dernier = courbeBankroll[courbeBankroll.length - 1];
+    const espere = profitParTournoi({
+      cev: verdict.cev, tapis, buyIn: buyInMoyenBrut(tournoisVus), tauxRake, tauxRakeback,
+    });
+    const proj = projeterBankroll(tournoisVus, {
+      nFuturs: Math.max(200, Math.min(2000, tournoisVus.length)),
+      depart: dernier.profitRakeback,
+      indexDepart: dernier.index,
+      profitEspere: espere,
+      tauxRake, tauxRakeback,
+    });
+    if (!proj.suffisant) return courbeBankroll;
+    return [...courbeBankroll, ...proj.points];
+  }, [courbeBankroll, tournoisVus, verdict.cev, tapis, tauxRake, tauxRakeback]);
   const parMulti = useMemo(() => buildMultiplierBreakdown(tournoisVus), [tournoisVus]);
   const parPosition = useMemo(() => buildPositionBreakdown(mainsVues), [mainsVues]);
   const parProfondeur = useMemo(() => buildDepthBreakdown(mainsVues), [mainsVues]);
@@ -326,29 +406,21 @@ export default function SpinDashboard() {
           <button className={onglet === "bankroll" ? "active" : ""} onClick={() => setOnglet("bankroll")}>
             Bankroll
           </button>
+          <button className={onglet === "confiance" ? "active" : ""} onClick={() => setOnglet("confiance")}>
+            Confiance
+          </button>
           <button className={onglet === "stats" ? "active" : ""} onClick={() => setOnglet("stats")}>
             Stats
           </button>
         </div>
-
-        {niveaux.length > 1 && (
-          <div className="segmented">
-            <button className={buyInFiltre == null ? "active" : ""} onClick={() => setBuyInFiltre(null)}>
-              Tous
-            </button>
-            {niveaux.map(([b, n]) => (
-              <button
-                key={b}
-                className={buyInFiltre === b ? "active" : ""}
-                onClick={() => setBuyInFiltre(b)}
-                title={`${n} tournois`}
-              >
-                {b} €
-              </button>
-            ))}
-          </div>
-        )}
       </div>
+
+      <BarreFiltres
+        tournois={tournois}
+        filtres={filtres}
+        onChange={setFiltres}
+        retenus={{ tournois: tournoisVus.length, mains: mainsVues.length }}
+      />
 
       <div className="card">
         {onglet === "jetons" &&
@@ -367,7 +439,7 @@ export default function SpinDashboard() {
 
         {onglet === "bankroll" && (
           <CourbeSpin
-            points={courbeBankroll}
+            points={courbeBankrollProjetee}
             series={SERIES_BANKROLL}
             cleReference="profit"
             unite="euros"
@@ -375,6 +447,24 @@ export default function SpinDashboard() {
             titreX="Tournois joués"
             buyInMoyen={buyInMoyen}
           />
+        )}
+
+        {onglet === "confiance" && (
+          courbeCev.length > 1 ? (
+            <>
+              <VerdictConfiance verdict={verdict} seuil={seuilCev} tapis={tapis} />
+              <CourbeSpin
+                points={courbeCev}
+                series={SERIES_CEV}
+                cleReference="cev"
+                unite="jetons"
+                legendeX="tournois joués"
+                titreX="Tournois joués"
+              />
+            </>
+          ) : (
+            <EmptyState text="Il faut au moins deux tournois avec leurs mains pour mesurer un intervalle de confiance." />
+          )
         )}
 
         {onglet === "stats" && (

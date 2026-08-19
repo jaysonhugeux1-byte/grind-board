@@ -13,6 +13,17 @@ export const SERIES_JETONS = [
   { cle: "chipsSd", label: "Jetons à l'abattage", couleur: "#4a90d9", defaut: true },
   { cle: "chipsNsd", label: "Jetons sans abattage", couleur: "#c15c4d", defaut: true },
   { cle: "ecart", label: "Écart de chance", couleur: "#4fc3c7", defaut: false },
+  // Au-dessus de cette ligne, le jeu couvre le rake. C'est le seul repère
+  // absolu du graphique : les autres courbes ne disent que « plus ou moins que
+  // la fois d'avant ».
+  { cle: "seuilEv", label: "EV minimale gagnante", couleur: "#8b948f", defaut: true, pointille: true },
+];
+
+export const SERIES_CEV = [
+  { cle: "cev", label: "CEV mesuré", couleur: "#e0c25f", defaut: true, epais: true },
+  { cle: "cevHaut", label: "Borne haute (95 %)", couleur: "#5f7f6a", defaut: true, pointille: true },
+  { cle: "cevBas", label: "Borne basse (95 %)", couleur: "#5f7f6a", defaut: true, pointille: true },
+  { cle: "seuil", label: "Seuil de rentabilité", couleur: "#c15c4d", defaut: true },
 ];
 
 export const SERIES_BANKROLL = [
@@ -21,6 +32,11 @@ export const SERIES_BANKROLL = [
   { cle: "profitRakeback", label: "Profit + rakeback", couleur: "#9b7fd4", defaut: true },
   { cle: "evProfitRakeback", label: "Profit EV + rakeback", couleur: "#d99a4a", defaut: false },
   { cle: "rakeback", label: "Rakeback", couleur: "#5fae79", defaut: false },
+  // Projection : ligne centrale déduite du CEV, bande tirée de la dispersion
+  // réellement observée des multiplicateurs.
+  { cle: "projection", label: "Projection (CEV)", couleur: "#e0c25f", defaut: true, pointille: true },
+  { cle: "haut", label: "Projection — 10 % des cas au-dessus", couleur: "#4a6b52", defaut: true, pointille: true },
+  { cle: "bas", label: "Projection — 10 % des cas en dessous", couleur: "#7a4038", defaut: true, pointille: true },
 ];
 
 // Le signe moins typographique (−) et non le trait d'union : à cette taille de
@@ -160,7 +176,9 @@ export function CourbeSpin({
                 dataKey={s.cle}
                 stroke={s.couleur}
                 strokeWidth={s.epais ? 2 : 1.4}
+                strokeDasharray={s.pointille ? "5 4" : undefined}
                 dot={false}
+                connectNulls={false}
                 activeDot={{ r: 3 }}
                 isAnimationActive={false}
               />

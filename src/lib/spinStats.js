@@ -131,13 +131,19 @@ export function buildBankrollChart(tournois, { tauxRake = RAKE_PAR_DEFAUT, tauxR
 // Courbe de jetons, main par main. Le partage abattage / sans abattage est le
 // diagnostic le plus parlant en spin : gagner ses jetons sans abattage veut dire
 // qu'on fait coucher, les gagner à l'abattage qu'on est payé.
-export function buildChipsChart(hands) {
+export function buildChipsChart(hands, { seuilParTournoi = null } = {}) {
   let chips = 0;
   let sd = 0;
   let nsd = 0;
   let ev = 0;
 
+  // Le seuil de rentabilité se compte par TOURNOI, pas par main : on suit donc
+  // le nombre de tournois entamés pour tracer, sur le même axe que la courbe
+  // d'EV, la ligne au-dessus de laquelle le jeu couvre le rake.
+  const tournoisVus = new Set();
+
   return hands.map((h, i) => {
+    if (h.tourneyId) tournoisVus.add(h.tourneyId);
     const net = h.netChips || 0;
     chips += net;
     // heroShowdown, jamais sawShowdown : la question est « Hero est-il allé à
@@ -156,6 +162,7 @@ export function buildChipsChart(hands) {
       chipsNsd: Math.round(nsd),
       evChips: Math.round(ev),
       ecart: Math.round(ev - chips),
+      seuilEv: seuilParTournoi == null ? null : Math.round(seuilParTournoi * tournoisVus.size),
     };
   });
 }
