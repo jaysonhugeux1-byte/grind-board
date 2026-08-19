@@ -17,9 +17,9 @@ const AVANTAGES = {
   ],
   spin: [
     "Suivi des tournois : ROI, ITM, multiplicateur moyen",
-    "Saisie éclair pour une courbe à jour en direct",
-    "Ranges de push/fold selon ta profondeur de tapis",
-    "Coach IA adapté au format hyper-turbo",
+    "EV main par main et coût réel de la variance",
+    "Lecteur en direct et base d'adversaires",
+    "Carte mentale : ta stratégie confrontée à tes mains",
   ],
   duo: [
     "Tout le cash game et tout le spin",
