@@ -34,6 +34,19 @@ const config = {
     releaseType: "release",
   },
   files: ["dist/**/*", "electron/**/*"],
+  // Nom de fichier sans espace, et ce n'est pas cosmétique.
+  //
+  // electron-builder écrit dans latest.yml le nom NORMALISÉ de l'installateur,
+  // espaces remplacés par des tirets. Si le fichier réellement publié garde ses
+  // espaces, GitHub les remplace par des points au dépôt — et la mise à jour
+  // automatique va chercher « Grand-Livre-Setup-3.5.0.exe » là où dort un
+  // « Grand.Livre.Setup.3.5.0.exe ». Elle reçoit un 404 et se tait, sans que
+  // personne ne remarque que plus aucune version ne se propage.
+  //
+  // En produisant directement un nom sans espace, le fichier bâti, le manifeste
+  // et l'objet publié portent tous le même, quelle que soit la façon dont on
+  // publie.
+  artifactName: "Grand-Livre-Setup-${version}.${ext}",
   win: { target: ["nsis"] },
   nsis: { oneClick: false, allowToChangeInstallationDirectory: true },
 };
