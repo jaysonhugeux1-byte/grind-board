@@ -22,7 +22,7 @@ const BOARD_LEN = { Preflop: 0, Flop: 3, Turn: 4, River: 5 };
 
 const RANK_ORDER = "23456789TJQKA";
 
-function cardsToNotation(cards) {
+export function cardsToNotation(cards) {
   if (!cards || cards.length !== 2) return null;
   const [c1, c2] = cards;
   const r1 = c1[0].toUpperCase();

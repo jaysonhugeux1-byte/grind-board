@@ -5,6 +5,9 @@ import { useData } from "../contexts/DataContext";
 import { PageHeader, fmtDate } from "../components/ui";
 import { lireZip } from "../lib/zip";
 import {
+  parseWinamaxExpresso, parseResumeExpresso, associerResumes, looksLikeWinamaxExpresso,
+} from "../lib/winamaxExpresso";
+import {
   parseBetclicSpin, groupTournaments, computeSpinHandEV, looksLikeBetclicSpin,
 } from "../lib/betclicSpin";
 import { importSpinData, deleteSpinTournaments } from "../lib/supabaseData";
@@ -37,6 +40,7 @@ export default function SpinImport() {
   const [apercu, setApercu] = useState(null);
   const [bilan, setBilan] = useState(null);
   const [erreur, setErreur] = useState(null);
+  const [avertissement, setAvertissement] = useState(null);
   const [nettoyage, setNettoyage] = useState(false);
 
   const idsTournois = useMemo(() => new Set(tournois.map((t) => t.id)), [tournois]);
@@ -71,17 +75,43 @@ export default function SpinImport() {
         }
       }
 
-      const texte = textes.join("\n");
-      if (!looksLikeBetclicSpin(texte)) {
+      // Chaque fichier part vers son lecteur. On ne les concatene surtout pas :
+      // Winamax livre DEUX fichiers par tournoi, le deroule des mains d'un cote
+      // et le recapitulatif de l'autre, et c'est ce dernier qui porte la dotation
+      // donc le multiplicateur. Fondus en un seul texte, ils deviendraient
+      // impossibles a rapprocher.
+      const mains = [];
+      const resumes = [];
+      for (const t of textes) {
+        if (/Tournament summary/i.test(t)) {
+          const r = parseResumeExpresso(t);
+          if (r) resumes.push(r);
+        } else if (looksLikeWinamaxExpresso(t)) {
+          mains.push(...parseWinamaxExpresso(t));
+        } else if (looksLikeBetclicSpin(t)) {
+          mains.push(...parseBetclicSpin(t));
+        }
+      }
+      associerResumes(mains, resumes);
+
+      // Une main Winamax sans son recapitulatif garde son deroule mais perd son
+      // enjeu : le taire reviendrait a afficher un ROI calcule sur une partie
+      // seulement des tournois.
+      const orphelines = mains.filter((h) => h.salle === "winamax" && h.multiplier == null).length;
+      setAvertissement(orphelines
+        ? orphelines + " mains Winamax sans recapitulatif : leur multiplicateur et leur gain "
+          + "resteront inconnus. Reimporte en incluant les fichiers _summary du meme dossier."
+        : null);
+      if (!mains.length) {
         setErreur(
-          "Aucun historique de spin reconnu. Attendu : l'archive téléchargée depuis Betclic " +
-          "(Mon compte → Historique des mains), ou les fichiers .txt qu'elle contient."
+          "Aucun historique de spin reconnu. Attendu : l'archive Betclic (Mon compte, "
+          + "Historique des mains), ou le dossier history de Winamax. Dans ce cas prends "
+          + "aussi les fichiers _summary, sans lesquels le multiplicateur reste inconnu."
         );
         setEtape(null);
         return;
       }
 
-      const mains = parseBetclicSpin(texte);
       if (!mains.length) {
         setErreur("Fichier lisible mais aucune main n'a pu en être extraite.");
         setEtape(null);
@@ -246,6 +276,12 @@ export default function SpinImport() {
           </div>
         )}
 
+        {avertissement && (
+          <p className="carte-avertissement" style={{ marginTop: 14 }}>
+            <AlertTriangle size={14} style={{ verticalAlign: -2, marginRight: 6 }} />
+            {avertissement}
+          </p>
+        )}
         {erreur && (
           <p className="alert-error" style={{ marginTop: 14 }}>
             <AlertTriangle size={14} style={{ verticalAlign: -2, marginRight: 6 }} />

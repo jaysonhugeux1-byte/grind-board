@@ -13,10 +13,20 @@
  * aberrant, et une moyenne s'en trouverait déplacée alors qu'une médiane non.
  */
 export function tapisDepart(mains = []) {
-  const tapis = [];
+  // Le tapis cherché est celui du DÉBUT du tournoi, pas le tapis moyen d'une
+  // main quelconque. La nuance n'est pas cosmétique : quand il ne reste que deux
+  // joueurs sur 1 500 jetons, la moyenne par joueur vaut 750 au lieu de 500, et
+  // le seuil de rentabilité s'en trouve gonflé de moitié. On ne retient donc
+  // qu'une main par tournoi, celle où le plus de joueurs sont assis — critère
+  // qui reste juste même si les mains arrivent dans le désordre.
+  const premieres = new Map();
   for (const h of mains) {
-    if (h.chipsInPlay > 0 && h.tableSize > 0) tapis.push(h.chipsInPlay / h.tableSize);
+    if (!(h.chipsInPlay > 0) || !(h.tableSize > 0)) continue;
+    const id = h.tourneyId ?? "";
+    const vue = premieres.get(id);
+    if (!vue || h.tableSize > vue.tableSize) premieres.set(id, h);
   }
+  const tapis = [...premieres.values()].map((h) => h.chipsInPlay / h.tableSize);
   if (!tapis.length) return null;
   tapis.sort((a, b) => a - b);
   return tapis[Math.floor(tapis.length / 2)];

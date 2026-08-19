@@ -16,8 +16,29 @@ const proche = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 // ---------------------------------------------------------------------------
 
 T("tapis de depart mesure sur les donnees",
-  tapisDepart([{ chipsInPlay: 1500, tableSize: 3 }, { chipsInPlay: 1500, tableSize: 3 }]) === 500);
+  tapisDepart([{ tourneyId: "A", chipsInPlay: 1500, tableSize: 3 },
+               { tourneyId: "A", chipsInPlay: 1500, tableSize: 3 }]) === 500);
 T("tapis inconnu sans donnees", tapisDepart([]) === null);
+
+// Les mains de fin de tournoi ne comptent que deux joueurs sur les memes 1 500
+// jetons : les compter donnerait un tapis de 750 et un seuil gonfle de moitie.
+T("les mains a deux joueurs ne faussent pas le tapis",
+  tapisDepart([
+    { tourneyId: "A", chipsInPlay: 1500, tableSize: 3 },
+    { tourneyId: "A", chipsInPlay: 1500, tableSize: 2 },
+    { tourneyId: "A", chipsInPlay: 1500, tableSize: 2 },
+    { tourneyId: "A", chipsInPlay: 1500, tableSize: 2 },
+  ]) === 500,
+  String(tapisDepart([
+    { tourneyId: "A", chipsInPlay: 1500, tableSize: 3 },
+    { tourneyId: "A", chipsInPlay: 1500, tableSize: 2 },
+  ])));
+T("un tapis par tournoi, pas par main",
+  tapisDepart([
+    { tourneyId: "A", chipsInPlay: 1500, tableSize: 3 },
+    { tourneyId: "B", chipsInPlay: 1500, tableSize: 3 },
+    { tourneyId: "B", chipsInPlay: 1500, tableSize: 2 },
+  ]) === 500);
 
 // Sans rake, il n'y a rien a rattraper : gagner sa part suffit.
 T("rake nul -> seuil nul", seuilCevRentable({ tapis: 500, tauxRake: 0 }) === 0);
