@@ -5,7 +5,7 @@ import { PageHeader, EmptyState } from "../components/ui";
 import BarreFiltres from "../components/BarreFiltres";
 import { FILTRES_DEFAUT, appliquerFiltres } from "../lib/spinFiltres";
 import { resultatsEuros, MINIMUM_TOURNOIS } from "../lib/projection";
-import { echelle, situation, evaluerObjectif, paliersAutour } from "../lib/brm";
+import { echelle, situation, evaluerObjectif, paliersAutour, comparerProfils, PROFILS, profil } from "../lib/brm";
 import { tapisDepart, buildCevChart, verdictCev, seuilCevRentable, profitParTournoi } from "../lib/spinRentabilite";
 import { RAKE_PAR_DEFAUT } from "../lib/spinStats";
 
@@ -23,6 +23,7 @@ const CLE_RAKE = "gl_spin_rake";
 const CLE_RAKEBACK = "gl_spin_rakeback";
 const CLE_BANKROLL = "gl_brm_bankroll";
 const CLE_CIBLE = "gl_brm_cible";
+const CLE_PROFIL = "gl_brm_profil";
 
 const lire = (cle, defaut) => {
   const v = parseFloat(localStorage.getItem(cle));
@@ -36,6 +37,7 @@ const pct = (v) => (v == null ? "—" : `${Math.round(v * 100)} %`);
 
 const TONS = {
   monter: { icone: ArrowUp, classe: "verdict-gagnant", titre: "Tu peux monter de limite" },
+  tir: { icone: Target, classe: "verdict-indetermine", titre: "Un tir est possible" },
   descendre: { icone: ArrowDown, classe: "verdict-perdant", titre: "Redescends d'un palier" },
   rester: { icone: Check, classe: "verdict-indetermine", titre: "Reste où tu es" },
   commencer: { icone: Shield, classe: "verdict-indetermine", titre: "Limite conseillée" },
@@ -57,6 +59,7 @@ export default function GestionBankroll() {
   const [bankroll, setBankroll] = useState(() => lire(CLE_BANKROLL, 0));
   const [cible, setCible] = useState(() => lire(CLE_CIBLE, 0));
   const [base, setBase] = useState("observe");
+  const [idProfil, setIdProfil] = useState(() => localStorage.getItem(CLE_PROFIL) || "equilibre");
   const [lance, setLance] = useState(null);
   const [calcul, setCalcul] = useState(false);
 
@@ -98,29 +101,36 @@ export default function GestionBankroll() {
     setCalcul(true);
     localStorage.setItem(CLE_BANKROLL, String(bankroll));
     localStorage.setItem(CLE_CIBLE, String(cible));
+    localStorage.setItem(CLE_PROFIL, idProfil);
     setTimeout(() => {
       const espere = base === "cev" ? espereCev : null;
+      const p = profil(idProfil);
       const paliers = echelle({
         resultats, buyInActuel: buyIn, limites: paliersAutour(buyIn),
-        nTournois: 1000, risqueCible: 0.05, profitEspere: espere, nSimulations: 700,
+        nTournois: p.horizon, risqueCible: p.risqueCible, margeDescente: p.margeDescente,
+        profitEspere: espere, nSimulations: 700,
       });
       setLance({
-        bankroll, cible, base, buyIn, espere, paliers,
-        etat: situation({ bankroll, echelle: paliers, buyInActuel: buyIn }),
+        bankroll, cible, base, buyIn, espere, paliers, profil: p,
+        comparaison: comparerProfils({ resultats, buyInActuel: buyIn, nSimulations: 400 }),
+        etat: situation({
+          bankroll, echelle: paliers, buyInActuel: buyIn,
+          seuilTir: p.seuilTir, stopLossTir: p.stopLossTir,
+        }),
         objectif: cible > 0
           ? evaluerObjectif({ resultats, bankroll, cible, buyIn, nMax: 8000, profitEspere: espere, nSimulations: 2000 })
           : null,
-        signature: `${resultats.length}|${buyIn}`,
+        signature: `${resultats.length}|${buyIn}|${idProfil}`,
       });
       setCalcul(false);
     }, 30);
-  }, [bankroll, cible, base, resultats, buyIn, espereCev]);
+  }, [bankroll, cible, base, idProfil, resultats, buyIn, espereCev]);
 
   const perime = useMemo(() => {
     if (!lance) return false;
     return lance.bankroll !== bankroll || lance.cible !== cible || lance.base !== base
-      || lance.signature !== `${resultats.length}|${buyIn}`;
-  }, [lance, bankroll, cible, base, resultats.length, buyIn]);
+      || lance.signature !== `${resultats.length}|${buyIn}|${idProfil}`;
+  }, [lance, bankroll, cible, base, idProfil, resultats.length, buyIn]);
 
   if (loading) {
     return <div className="page"><div className="loading-block"><Loader2 className="spin" size={22} /> Chargement…</div></div>;
@@ -152,6 +162,24 @@ export default function GestionBankroll() {
           nécessaire aussi.
         </p>
       </div>
+
+      <div className="profils">
+        {PROFILS.map((p) => (
+          <button
+            key={p.id}
+            className={`profil${idProfil === p.id ? " actif" : ""}`}
+            onClick={() => setIdProfil(p.id)}
+          >
+            <span className="profil-nom">{p.nom}</span>
+            <span className="profil-resume">{p.resume}</span>
+            <span className="profil-chiffres mono">
+              {pct(p.risqueCible)} de ruine · {p.horizon.toLocaleString("fr-FR")} tournois
+              {p.seuilTir ? ` · tirs a ${pct(p.seuilTir)}` : ""}
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="card-sub profil-detail">{profil(idProfil).detail}</p>
 
       <div className="reglages-proj">
         <label>
@@ -208,6 +236,14 @@ export default function GestionBankroll() {
               <strong style={{ fontSize: 16 }}>{Ton.titre}</strong>
             </div>
             <p className="verdict-phrase">{lance.etat.motif}</p>
+            {lance.etat.action === "tir" && lance.etat.perteMaxTir != null && (
+              <p className="card-sub">
+                Condition de sortie, a decider maintenant : tu redescends des que tu as perdu{" "}
+                <strong>{euros(lance.etat.perteMaxTir)}</strong> a la limite superieure. Sans cette
+                regle fixee d'avance, un tir n'est pas une montee anticipee, c'est une bankroll
+                cassee.
+              </p>
+            )}
             {lance.etat.avancement != null && lance.etat.prochain && (
               <>
                 <div className="jauge">
@@ -258,6 +294,40 @@ export default function GestionBankroll() {
                   taux de gain. Ce n'est plus une question de bankroll.
                 </p>
               )}
+            </section>
+
+            <section className="card">
+              <div className="card-title-row"><h3><Shield size={16} /> Ce que coute chaque profil</h3></div>
+              <p className="card-sub">
+                Pour la limite que tu joues et pour la suivante. C'est ici que le choix se fait :
+                « agressif » ne veut rien dire tant qu'on n'a pas vu combien de caves il demande.
+              </p>
+              <table className="table-compacte">
+                <thead>
+                  <tr><th>Profil</th><th>Ta limite</th><th>Caves</th><th>Limite suivante</th></tr>
+                </thead>
+                <tbody>
+                  {(lance.comparaison || []).map((p) => (
+                    <tr key={p.id} className={p.id === lance.profil.id ? "cliquable" : ""}>
+                      <td>
+                        <strong>{p.nom}</strong>
+                        {p.id === lance.profil.id && <span className="carte-n">choisi</span>}
+                        <span className="carte-regle-detail">{pct(p.risqueCible)} de ruine</span>
+                      </td>
+                      <td className={`mono ${lance.bankroll >= (p.requis ?? Infinity) ? "pos" : "neg"}`}>
+                        {euros(p.requis)}
+                      </td>
+                      <td className="mono">{p.caves ?? "—"}</td>
+                      <td className="mono">
+                        {euros(p.requisSuivant)}
+                        {p.tirSuivant && (
+                          <span className="carte-regle-detail">tir des {euros(p.tirSuivant)}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </section>
 
             <section className="card">

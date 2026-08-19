@@ -991,3 +991,20 @@ body {
   overflow: hidden; margin: 10px 0 6px;
 }
 .jauge-remplissage { height: 100%; background: var(--gold); border-radius: 3px; }
+
+/* ---------------------------------------------------------- Profils de bankroll
+   Trois cartes plutôt qu'une liste déroulante : le choix n'a de sens
+   qu'accompagné de ce qu'il implique, et un menu déroulant cache justement ça. */
+
+.profils { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.profil {
+  display: flex; flex-direction: column; gap: 4px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; cursor: pointer; font: inherit; color: var(--text);
+}
+.profil:hover { border-color: var(--text-muted); }
+.profil.actif { border-color: var(--gold); background: rgba(201, 162, 39, .07); }
+.profil-nom { font-family: var(--font-display); font-size: 15px; font-weight: 600; }
+.profil-resume { font-size: 12.5px; color: var(--text-muted); }
+.profil-chiffres { font-size: 11px; color: var(--gold-soft); margin-top: 3px; }
+.profil-detail { margin: 0 0 16px; max-width: 70ch; }

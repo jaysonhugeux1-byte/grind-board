@@ -22,6 +22,79 @@ import { bankrollRequise, simulerObjectif, MINIMUM_TOURNOIS } from "./projection
 export const MARGE_DESCENTE = 0.8;
 
 /**
+ * Trois façons de gérer sa bankroll, et aucune n'est « la bonne ».
+ *
+ * Ce ne sont pas trois niveaux de compétence mais trois tolérances au risque,
+ * et elles se distinguent par des NOMBRES, pas par des adjectifs :
+ *
+ *   le risque de ruine accepté — la probabilité de ne plus pouvoir s'inscrire ;
+ *   l'horizon sur lequel on le mesure — jouer plus longtemps expose davantage ;
+ *   la marge avant de redescendre — combien de creux on encaisse sans bouger ;
+ *   le tir, ou non — tenter la limite au-dessus avant d'en avoir les moyens.
+ *
+ * Le seuil en caves qui en découle n'est pas écrit ici : il est CALCULÉ sur les
+ * tournois joués. Deux joueurs qui choisissent « équilibré » n'obtiendront pas
+ * le même nombre si leur variance diffère, et c'est exactement le but.
+ *
+ * Sur un échantillon de spin ordinaire, l'ordre de grandeur obtenu — deux cents
+ * caves pour le profil prudent, un peu plus de cent cinquante pour l'équilibré —
+ * retombe sur les recommandations habituelles du format. C'est rassurant : le
+ * calcul ne réinvente pas la roue, il la mesure au lieu de la réciter.
+ */
+export const PROFILS = [
+  {
+    id: "prudent",
+    nom: "Prudent",
+    resume: "Ne jamais risquer sa bankroll",
+    risqueCible: 0.01,
+    horizon: 2000,
+    margeDescente: 0.9,
+    // Aucun tir : on ne joue une limite que lorsqu'on en a intégralement les
+    // moyens.
+    seuilTir: null,
+    stopLossTir: null,
+    detail: "Un pour cent de risque de ruine sur deux mille tournois, et on "
+      + "redescend dès dix pour cent sous le seuil. Tu monteras lentement, et tu "
+      + "ne rejoueras jamais une limite que tu ne peux pas te payer.",
+  },
+  {
+    id: "equilibre",
+    nom: "Équilibré",
+    resume: "Le compromis usuel",
+    risqueCible: 0.05,
+    horizon: 1000,
+    margeDescente: MARGE_DESCENTE,
+    seuilTir: null,
+    stopLossTir: null,
+    detail: "Cinq pour cent de risque de ruine sur mille tournois. C'est le "
+      + "réglage qui retombe sur les recommandations classiques du format, et "
+      + "celui à prendre si tu n'as pas de raison d'en choisir un autre.",
+  },
+  {
+    id: "agressif",
+    nom: "Agressif",
+    resume: "Monter vite, quitte à redescendre",
+    risqueCible: 0.15,
+    horizon: 500,
+    // On encaisse des creux plus profonds avant de bouger : redescendre trop tôt
+    // ferait perdre tout le bénéfice d'être monté vite.
+    margeDescente: 0.65,
+    // Le tir : jouer la limite au-dessus avec seulement 60 % du capital
+    // nécessaire, à la condition stricte de redescendre après avoir perdu le
+    // nombre de caves indiqué. Sans cette condition ce n'est plus un tir, c'est
+    // une montée déguisée — et c'est ainsi qu'on casse une bankroll.
+    seuilTir: 0.6,
+    stopLossTir: 10,
+    detail: "Quinze pour cent de risque de ruine sur cinq cents tournois, plus "
+      + "des tirs autorisés à 60 % du capital requis. Tu monteras nettement plus "
+      + "vite, et tu redescendras plus souvent. À ne prendre que si tu peux "
+      + "recharger sans que cela change quoi que ce soit à ta vie.",
+  },
+];
+
+export const profil = (id) => PROFILS.find((p) => p.id === id) ?? PROFILS[1];
+
+/**
  * Le capital nécessaire à chaque limite, mesuré et non décrété.
  *
  * Les résultats sont convertis en CAVES avant d'être remis à l'échelle de la
@@ -31,7 +104,8 @@ export const MARGE_DESCENTE = 0.8;
  */
 export function echelle({
   resultats = [], buyInActuel = 0, limites = [],
-  nTournois = 1000, risqueCible = 0.05, profitEspere = null, nSimulations = 800,
+  nTournois = 1000, risqueCible = 0.05, margeDescente = MARGE_DESCENTE,
+  profitEspere = null, nSimulations = 800,
 } = {}) {
   if (resultats.length < MINIMUM_TOURNOIS || !(buyInActuel > 0)) return [];
 
@@ -50,7 +124,7 @@ export function echelle({
       requis: r?.bankroll ?? null,
       caves: r?.caves ?? null,
       // En dessous de ce montant on redescend : voir l'hystérésis plus haut.
-      plancher: r?.bankroll == null ? null : Math.round(r.bankroll * MARGE_DESCENTE * 100) / 100,
+      plancher: r?.bankroll == null ? null : Math.round(r.bankroll * margeDescente * 100) / 100,
       tenable: r != null,
     };
   });
@@ -64,7 +138,10 @@ export function echelle({
  * permettrait : monter se paie en niveau d'adversaires, pas seulement en
  * capital, et une marche à la fois laisse le temps de vérifier que le jeu suit.
  */
-export function situation({ bankroll = 0, echelle: paliers = [], buyInActuel = 0 } = {}) {
+export function situation({
+  bankroll = 0, echelle: paliers = [], buyInActuel = 0,
+  seuilTir = null, stopLossTir = null,
+} = {}) {
   const tenables = paliers.filter((p) => p.tenable);
   if (!tenables.length) {
     return { action: "inconnu", motif: "Pas assez de tournois pour calculer un seuil." };
@@ -98,6 +175,15 @@ export function situation({ bankroll = 0, echelle: paliers = [], buyInActuel = 0
   } else if (prochain && bankroll >= prochain.requis) {
     action = "monter";
     motif = `Ta bankroll couvre les ${prochain.caves} caves nécessaires au ${fmt(prochain.buyIn)}.`;
+  } else if (prochain && seuilTir && bankroll >= prochain.requis * seuilTir) {
+    // Le tir n'est pas une montée au rabais : il n'a de sens qu'assorti d'une
+    // condition de sortie décidée AVANT de s'asseoir. Sans elle, on ne remonte
+    // pas d'un cran, on descend de plusieurs.
+    action = "tir";
+    motif = `Tu n'as pas les ${fmt(prochain.requis)} nécessaires au ${fmt(prochain.buyIn)}, `
+      + `mais tu couvres ${Math.round((bankroll / prochain.requis) * 100)} % du seuil. `
+      + `Un tir est possible — à la condition de redescendre après ${stopLossTir} caves perdues, `
+      + `soit ${fmt(stopLossTir * prochain.buyIn)}.`;
   } else if (prochain) {
     motif = `Il manque ${fmt(prochain.requis - bankroll)} pour passer au ${fmt(prochain.buyIn)}.`;
   } else {
@@ -111,6 +197,10 @@ export function situation({ bankroll = 0, echelle: paliers = [], buyInActuel = 0
     recommande,
     prochain,
     manque: prochain ? Math.max(0, Math.round((prochain.requis - bankroll) * 100) / 100) : null,
+    // Montant à partir duquel un tir devient possible, et somme au-delà de
+    // laquelle il faut redescendre. Nuls quand le profil ne les autorise pas.
+    seuilTir: prochain && seuilTir ? Math.round(prochain.requis * seuilTir * 100) / 100 : null,
+    perteMaxTir: prochain && stopLossTir ? Math.round(stopLossTir * prochain.buyIn * 100) / 100 : null,
     // Part du chemin parcouru vers le palier suivant, bornée : au-delà de 100 %
     // la barre n'apprend plus rien, elle dit juste « c'est fait ».
     avancement: prochain && actuel && prochain.requis > actuel.requis
@@ -121,6 +211,42 @@ export function situation({ bankroll = 0, echelle: paliers = [], buyInActuel = 0
 
 const fmt = (v) =>
   v == null ? "—" : `${Math.round(v).toLocaleString("fr-FR")} €`;
+
+/**
+ * Ce que coûte chaque profil, pour la limite jouée et pour la suivante.
+ *
+ * Sert à choisir sur des nombres plutôt que sur des adjectifs : « agressif » ne
+ * veut rien dire tant qu'on n'a pas vu qu'il demande soixante caves là où
+ * « prudent » en demande deux cents.
+ */
+export function comparerProfils({
+  resultats = [], buyInActuel = 0, profils = PROFILS, nSimulations = 500,
+} = {}) {
+  if (resultats.length < MINIMUM_TOURNOIS || !(buyInActuel > 0)) return [];
+  const limites = paliersAutour(buyInActuel, 0, 1);
+
+  return profils.map((p) => {
+    const paliers = echelle({
+      resultats, buyInActuel, limites,
+      nTournois: p.horizon, risqueCible: p.risqueCible,
+      margeDescente: p.margeDescente, nSimulations,
+    });
+    const ici = paliers.find((x) => Math.abs(x.buyIn - buyInActuel) < 0.01) ?? null;
+    const suivant = paliers.find((x) => x.buyIn > buyInActuel) ?? null;
+    return {
+      ...p,
+      requis: ici?.requis ?? null,
+      caves: ici?.caves ?? null,
+      plancher: ici?.plancher ?? null,
+      requisSuivant: suivant?.requis ?? null,
+      // Avec un tir, on peut s'asseoir plus tôt : c'est tout l'intérêt du
+      // profil, et tout son danger.
+      tirSuivant: suivant?.requis != null && p.seuilTir
+        ? Math.round(suivant.requis * p.seuilTir * 100) / 100
+        : null,
+    };
+  });
+}
 
 /**
  * Un objectif, et ce qu'il faut pour l'atteindre.

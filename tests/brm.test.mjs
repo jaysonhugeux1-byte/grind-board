@@ -116,5 +116,84 @@ T("simulation reproductible",
   JSON.stringify(simulerObjectif({ resultats: gagnant, bankroll: 100, cible: 150, buyIn: 1, nSimulations: 300 }))
   === JSON.stringify(simulerObjectif({ resultats: gagnant, bankroll: 100, cible: 150, buyIn: 1, nSimulations: 300 })));
 
-console.log(`\n${ok} succes, ${ko} echecs`);
+
+
+// ---------------------------------------------------------------------------
+// Profils preenregistres
+//
+// Ce ne sont pas trois niveaux de competence mais trois tolerances au risque.
+// Ce qui les distingue doit rester des NOMBRES : sans quoi « agressif » ne veut
+// rien dire.
+// ---------------------------------------------------------------------------
+
+const { PROFILS, profil, comparerProfils } = await import("../src/lib/brm.js");
+
+T("trois profils proposes", PROFILS.length === 3);
+T("identifiants attendus", PROFILS.map((p) => p.id).join() === "prudent,equilibre,agressif");
+
+// Le risque accepte doit croitre du prudent vers l'agressif, et l'horizon
+// decroitre : jouer plus longtemps expose davantage.
+T("risque croissant",
+  PROFILS[0].risqueCible < PROFILS[1].risqueCible && PROFILS[1].risqueCible < PROFILS[2].risqueCible);
+T("horizon decroissant",
+  PROFILS[0].horizon > PROFILS[1].horizon && PROFILS[1].horizon > PROFILS[2].horizon);
+T("marge de descente decroissante",
+  PROFILS[0].margeDescente > PROFILS[1].margeDescente && PROFILS[1].margeDescente > PROFILS[2].margeDescente);
+
+// Seul l'agressif autorise le tir, et jamais sans condition de sortie : sans
+// elle ce n'est plus un tir mais une montee deguisee.
+T("le prudent n'autorise aucun tir", PROFILS[0].seuilTir === null);
+T("l'equilibre non plus", PROFILS[1].seuilTir === null);
+T("l'agressif autorise le tir", PROFILS[2].seuilTir > 0 && PROFILS[2].seuilTir < 1);
+T("tout tir a une condition de sortie",
+  PROFILS.every((p) => (p.seuilTir == null) === (p.stopLossTir == null)));
+
+T("profil retrouve par identifiant", profil("agressif").id === "agressif");
+T("identifiant inconnu : repli sur l'equilibre", profil("nimportequoi").id === "equilibre");
+
+// ---------------------------------------------------------------------------
+// Ce que chaque profil coute reellement
+// ---------------------------------------------------------------------------
+
+const comp = comparerProfils({ resultats: gagnant, buyInActuel: 1, nSimulations: 200 });
+T("une ligne par profil", comp.length === 3);
+T("le prudent exige le plus de capital",
+  comp[0].requis > comp[2].requis, `${comp[0].requis} vs ${comp[2].requis}`);
+T("l'agressif exige le moins",
+  comp[2].requis === Math.min(...comp.map((p) => p.requis)));
+T("chaque profil chiffre la limite suivante", comp.every((p) => p.requisSuivant > 0));
+T("seul l'agressif propose un tir",
+  comp[0].tirSuivant === null && comp[2].tirSuivant > 0);
+T("le tir s'ouvre avant le seuil plein",
+  comp[2].tirSuivant < comp[2].requisSuivant);
+
+// ---------------------------------------------------------------------------
+// La marge de descente doit se propager jusqu'au plancher
+// ---------------------------------------------------------------------------
+
+const strict = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1], nTournois: 400, margeDescente: 0.9, nSimulations: 200 });
+const souple = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1], nTournois: 400, margeDescente: 0.65, nSimulations: 200 });
+T("un profil strict redescend plus tot",
+  strict[0].plancher > souple[0].plancher, `${strict[0].plancher} vs ${souple[0].plancher}`);
+
+// ---------------------------------------------------------------------------
+// Le tir dans la situation
+// ---------------------------------------------------------------------------
+
+const pourTir = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1, 2], nTournois: 500, nSimulations: 200 });
+const seuilSuivant = pourTir[1].requis;
+
+const enTir = situation({
+  bankroll: seuilSuivant * 0.7, echelle: pourTir, buyInActuel: 1,
+  seuilTir: 0.6, stopLossTir: 10,
+});
+T("entre le seuil de tir et le seuil plein : tir", enTir.action === "tir", enTir.action);
+T("le tir annonce sa condition de sortie", /redescendre/.test(enTir.motif));
+T("perte maximale du tir chiffree", enTir.perteMaxTir === 20);
+
+const sansTir = situation({ bankroll: seuilSuivant * 0.7, echelle: pourTir, buyInActuel: 1 });
+T("sans profil de tir, on reste", sansTir.action === "rester", sansTir.action);
+
+console.log(`
+${ok} succes, ${ko} echecs`);
 process.exit(ko ? 1 : 0);
