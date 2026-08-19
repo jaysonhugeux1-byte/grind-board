@@ -24,6 +24,17 @@ export const SERIES_JETONS = [
   { cle: "evBas", label: "Chance normale (bas)", couleur: "#7a4038", defaut: false, pointille: true },
 ];
 
+// Simulateur de variance. Cinq courbes, du centile 1 au centile 99 : c'est la
+// LARGEUR entre elles qui porte l'information, pas la mediane.
+export const SERIES_PROJECTION = [
+  { cle: "median", label: "Parcours median", couleur: "#e0c25f", defaut: true, epais: true },
+  { cle: "projection", label: "Esperance", couleur: "#8b948f", defaut: true, pointille: true },
+  { cle: "haut", label: "1 fois sur 10 au-dessus", couleur: "#4a6b52", defaut: true, pointille: true },
+  { cle: "bas", label: "1 fois sur 10 en dessous", couleur: "#7a4038", defaut: true, pointille: true },
+  { cle: "p99", label: "1 fois sur 100 au-dessus", couleur: "#2f4536", defaut: false, pointille: true },
+  { cle: "p01", label: "1 fois sur 100 en dessous", couleur: "#5c2b24", defaut: false, pointille: true },
+];
+
 export const SERIES_CEV = [
   { cle: "cev", label: "CEV mesuré", couleur: "#e0c25f", defaut: true, epais: true },
   { cle: "cevHaut", label: "Borne haute (95 %)", couleur: "#5f7f6a", defaut: true, pointille: true },

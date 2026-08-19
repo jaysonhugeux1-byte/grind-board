@@ -940,3 +940,20 @@ body {
 .verdict-perdant .verdict-phrase { color: var(--loss); }
 .verdict-indetermine .verdict-phrase { color: var(--gold-soft); }
 .verdict .card-sub { margin: 2px 0 0; }
+
+/* ------------------------------------------------------- Réglages du simulateur */
+.reglages-proj {
+  display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
+}
+.reglages-proj label {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+}
+.reglages-proj select, .reglages-proj input {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; text-transform: none;
+  letter-spacing: 0; min-width: 170px;
+}
+.reglages-proj .card-sub { margin: 0; text-transform: none; letter-spacing: 0; }
