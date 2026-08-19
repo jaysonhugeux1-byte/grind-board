@@ -8,3 +8,4 @@ functions/node_modules/
 supabase/.env
 supabase/.env.*
 .supabase/
+.tmp/

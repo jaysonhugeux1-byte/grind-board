@@ -723,3 +723,137 @@ body {
 .adv-live { flex: 1; min-width: 240px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
 .adv-live-tete { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; margin-bottom: 5px; }
 .adv-live-stats { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; color: var(--text-muted); }
+
+/* ------------------------------------------------------------------ Carte mentale
+   Les couleurs reprennent celles de la carte dessinée à la main : vert pour la
+   value, rouge pour la mise et le bluff, magenta pour le call, jaune pour le
+   check et les avertissements. Elles ne servent pas qu'à décorer — sur un arbre
+   de soixante cases, la couleur est ce qui permet de repérer une famille
+   d'actions sans avoir à lire. */
+
+.carte-synthese {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.carte-kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.carte-kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+.carte-kpi-valeur { font-size: 24px; font-weight: 600; }
+.carte-kpi-valeur.neg { color: var(--loss); }
+
+.carte-avertissement {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: rgba(201, 162, 39, .07);
+  border: 1px solid rgba(201, 162, 39, .28);
+  border-radius: 10px; padding: 11px 14px; margin-bottom: 16px;
+}
+.carte-avertissement svg { color: var(--gold); flex-shrink: 0; margin-top: 2px; }
+.carte-avertissement p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
+.carte-avertissement strong { color: var(--text); }
+
+.carte-barre { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.carte-barre-titre { display: flex; align-items: center; gap: 7px; font-family: var(--font-display); font-size: 15px; }
+.carte-legende { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.carte-pastille { font-size: 10.5px; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .04em; }
+.carte-seuil { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.carte-seuil select {
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 7px; font-size: 12px;
+}
+
+/* ----- le canevas */
+.carte-cadre {
+  position: relative; overflow: hidden;
+  height: 660px; border: 1px solid var(--border); border-radius: 12px;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,.045) 1px, transparent 0) 0 0 / 26px 26px,
+    #0d1214;
+  cursor: grab; user-select: none; margin-bottom: 18px;
+}
+.carte-cadre:active { cursor: grabbing; }
+.carte-scene { position: absolute; transform-origin: 0 0; }
+.carte-liens { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.carte-lien { fill: none; stroke: rgba(255,255,255,.34); stroke-width: 1.6; stroke-dasharray: 5 5; }
+
+.carte-outils {
+  position: absolute; top: 10px; right: 10px; z-index: 5;
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(13,18,20,.9); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 6px;
+}
+.carte-zoom { font-size: 11px; color: var(--text-muted); min-width: 38px; text-align: right; }
+
+/* ----- les cases */
+.carte-noeud {
+  position: absolute; box-sizing: border-box;
+  padding: 7px 11px; border-radius: 8px; cursor: pointer;
+  font-size: 12px; line-height: 1.3;
+  transition: box-shadow .12s, transform .12s;
+}
+.carte-noeud:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.5); }
+.carte-noeud.selectionne { outline: 2px solid var(--gold); outline-offset: 2px; }
+.carte-titre { font-weight: 600; }
+.carte-detail { font-size: 11px; opacity: .82; margin-top: 3px; }
+.carte-stats { display: flex; gap: 8px; font-size: 10.5px; margin-top: 5px; opacity: .9; }
+.carte-stats .pos { color: #b7f5c8; }
+.carte-stats .neg { color: #ffc9c0; }
+.carte-stats .faible { opacity: .5; }
+.carte-plier {
+  position: absolute; right: -9px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; z-index: 2;
+}
+
+.carte-noeud.t-racine { background: #1a2325; border: 1px solid var(--gold); color: var(--gold-soft); font-family: var(--font-display); }
+.carte-noeud.t-section {
+  background: #29349b; color: #fff; font-family: var(--font-display);
+  font-style: italic; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+}
+.carte-noeud.t-branche {
+  background: #f4f4f2; color: #10171a; font-weight: 700;
+  font-style: italic; text-transform: uppercase; letter-spacing: .02em;
+}
+.carte-noeud.t-branche .carte-stats { color: #3b474b; }
+.carte-noeud.t-branche .carte-stats .pos { color: #1c7a3c; }
+.carte-noeud.t-branche .carte-stats .neg { color: #a3352a; }
+
+.carte-noeud.c-value, .carte-pastille.c-value { background: #1f9c3c; color: #fff; }
+.carte-noeud.c-mise,  .carte-pastille.c-mise  { background: #d92b2b; color: #fff; }
+.carte-noeud.c-bluff, .carte-pastille.c-bluff { background: #e04a1f; color: #fff; }
+.carte-noeud.c-call,  .carte-pastille.c-call  { background: #a83368; color: #fff; }
+.carte-noeud.c-check, .carte-pastille.c-check { background: #e8ab1f; color: #16110a; }
+.carte-noeud.c-fold,  .carte-pastille.c-fold  { background: #48555a; color: #dfe6e4; }
+.carte-noeud.c-note   { background: #e8ab1f; color: #16110a; font-style: italic; }
+.carte-noeud.c-check .carte-stats .pos, .carte-noeud.c-note .carte-stats .pos { color: #0d5c22; }
+.carte-noeud.c-check .carte-stats .neg, .carte-noeud.c-note .carte-stats .neg { color: #8c1d10; }
+
+/* ----- panneaux */
+.carte-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); gap: 16px; }
+.carte-detail-panneau { margin-bottom: 18px; }
+.carte-sous-titre { font-size: 13px; margin: 18px 0 8px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.carte-chemin { display: block; font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.carte-regle-detail { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.carte-n { display: inline-block; font-size: 10px; color: var(--text-muted); margin-left: 6px; }
+.carte-badge { background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-size: 11px; }
+.carte-vide { color: var(--text-muted); font-size: 12.5px; }
+
+.table-compacte { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.table-compacte th {
+  text-align: left; font-weight: 500; font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--border);
+}
+.table-compacte td { padding: 8px; border-bottom: 1px solid rgba(42,53,56,.5); vertical-align: top; }
+.table-compacte tr.cliquable { cursor: pointer; }
+.table-compacte tr.cliquable:hover { background: var(--surface-2); }
+.table-compacte .pos { color: var(--win); }
+.table-compacte .neg { color: var(--loss); }

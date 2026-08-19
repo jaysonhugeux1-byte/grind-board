@@ -23,7 +23,8 @@ export function intToCard(card) {
 }
 
 // Hauteur d'une quinte présente dans un masque de rangs, ou -1.
-function straightHigh(mask) {
+// Exporté : forceMain.js s'en sert pour distinguer une quinte faite d'un tirage.
+export function straightHigh(mask) {
   const m = mask & (mask << 1) & (mask << 2) & (mask << 3) & (mask << 4);
   if (m) return 31 - Math.clz32(m);
   // La roue A-2-3-4-5 : l'As y compte comme un 1, ce que le décalage ne voit pas.

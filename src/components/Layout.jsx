@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor } from "lucide-react";
+import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor, Waypoints } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useMode } from "../contexts/ModeContext";
 import { useSubscription } from "../contexts/SubscriptionContext";
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"] },
   { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"] },
   { to: "/adversaires", label: "Adversaires", icon: Users, modes: ["spin"] },
+  { to: "/carte-mentale", label: "Carte mentale", icon: Waypoints, modes: ["spin"] },
   { to: "/sessions", label: "Sessions", icon: ListOrdered, modes: ["cash"] },
   { to: "/ranges", label: "Ranges", icon: Grid3x3, modes: ["cash"] },
   { to: "/ev", label: "EV par position", icon: BarChart3, modes: ["cash"] },
