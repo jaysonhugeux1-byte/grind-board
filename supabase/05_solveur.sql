@@ -69,3 +69,25 @@ alter table public.crypto_orders
     array_length(products, 1) >= 1
     and products <@ array['cash', 'spin', 'solveur']
   );
+
+-- ------------------------------------------------------------------------
+-- OPTIONNEL : offrir le solveur aux abonnés déjà en cours
+-- ------------------------------------------------------------------------
+--
+-- Sans cette requête, quelqu'un qui a payé un abonnement hier perd l'accès au
+-- solveur aujourd'hui — il ne l'a jamais acheté, mais il en disposait. C'est
+-- une décision commerciale, pas technique : la retirer d'un coup à des clients
+-- en cours d'abonnement est le genre de chose qui se remarque.
+--
+-- La requête ci-dessous leur crédite le solveur jusqu'à la fin de leur
+-- abonnement en cours. Décommente-la si tu veux la jouer.
+--
+-- insert into public.access (user_id, product, access_until, provider, updated_at)
+-- select user_id, 'solveur', max(access_until), 'offert', now()
+--   from public.access
+--  where product in ('cash', 'spin')
+--    and access_until > now()
+--  group by user_id
+--     on conflict (user_id, product) do update
+--        set access_until = greatest(public.access.access_until, excluded.access_until),
+--            updated_at   = now();
