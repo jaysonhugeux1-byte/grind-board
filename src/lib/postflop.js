@@ -46,9 +46,22 @@ const INDEX = (() => {
 
 export const indexCombo = (a, b) => INDEX[a * 52 + b];
 
+/**
+ * Accepte indifféremment « Ah » ou l'entier 49.
+ *
+ * Les rues à venir ajoutent des cartes déjà sous forme d'entiers, tandis que la
+ * saisie arrive en texte. Tolérer les deux ici évite de convertir dans les deux
+ * sens à chaque tirage — et une conversion oubliée ne se serait vue qu'au
+ * moment où un tableau de turn devient un tableau de river.
+ */
 export function lireCartes(cartes) {
   const out = [];
   for (const c of cartes) {
+    if (typeof c === "number") {
+      if (!Number.isInteger(c) || c < 0 || c > 51) return null;
+      out.push(c);
+      continue;
+    }
     const n = cardToInt(c);
     if (n < 0) return null;
     out.push(n);

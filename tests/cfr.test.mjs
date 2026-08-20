@@ -1,8 +1,8 @@
 import {
   NB_COMBOS, COMBOS, forcesSurBoard, parserRange, filtrerSurBoard, indicesActifs,
-  preparerAbattage, valeursAbattage, poidsDisponible, indexCombo,
+  preparerAbattage, valeursAbattage, poidsDisponible, indexCombo, lireCartes,
 } from "../src/lib/postflop.js";
-import { resoudre, construireArbre, strategieMoyenne, OOP, IP } from "../src/lib/cfr.js";
+import { resoudre, construireArbre, strategieMoyenne, valeurParMain, OOP, IP } from "../src/lib/cfr.js";
 
 let ok = 0, ko = 0;
 const T = (n, c, d = "") => {
@@ -229,10 +229,90 @@ T("clairvoyance : le bluffcatcher suit une fois sur deux",
 // Robustesse
 // ---------------------------------------------------------------------------
 
-T("tableau incomplet refuse", resoudre({ board: ["Ah", "Kd", "7c"], rangeOOP: rOOP, rangeIP: rIP })?.erreur != null);
-T("tableau illisible refuse", resoudre({ board: ["Zz", "Kd", "7c", "2s", "9h"], rangeOOP: rOOP, rangeIP: rIP }) === null);
+T("tableau trop court refuse",
+  resoudre({ board: ["Ah", "Kd"], rangeOOP: rOOP, rangeIP: rIP })?.erreur != null);
+T("tableau trop long refuse",
+  resoudre({ board: ["Ah", "Kd", "7c", "2s", "9h", "3d"], rangeOOP: rOOP, rangeIP: rIP })?.erreur != null);
+T("tableau illisible refuse",
+  resoudre({ board: ["Zz", "Kd", "7c", "2s", "9h"], rangeOOP: rOOP, rangeIP: rIP })?.erreur != null);
 T("range vide signalee",
   resoudre({ board: BOARD, rangeOOP: parserRange(""), rangeIP: rIP })?.erreur != null);
+
+// ---------------------------------------------------------------------------
+// Rues a venir
+//
+// Un tableau de quatre cartes fait apparaitre des noeuds de HASARD : la rue se
+// ferme, une carte tombe, et chaque carte ouvre son propre sous-jeu. Un tableau
+// de trois en fait apparaitre deux niveaux, et c'est la que le cout explose —
+// d'ou l'echantillonnage des tableaux et les lignes a tapis traitees en tirage.
+// ---------------------------------------------------------------------------
+
+const turn = resoudre({
+  board: ["Ah", "Kd", "7c", "2s"], rangeOOP: rOOP, rangeIP: rIP,
+  pot: 10, tapis: 20, tailles: [1], taillesRelance: [], maxRelances: 0, iterations: 30,
+});
+T("le turn se resout", !turn.erreur && turn.arbre != null);
+T("le turn ouvre un sous-jeu par carte a venir", turn.sousJeux > 100, String(turn.sousJeux));
+T("une rue reste a venir au turn", turn.ruesRestantes === 1);
+T("le turn n'echantillonne pas les tableaux", turn.echantillonne === false);
+
+// Le flop est refuse, et le message doit dire POURQUOI : un utilisateur a qui
+// l'on repond « non » sans raison croit a une panne.
+const flop = resoudre({ board: ["Ah", "Kd", "7c"], rangeOOP: rOOP, rangeIP: rIP });
+T("le flop est refuse", flop?.erreur != null);
+T("le refus explique sa raison", /deux rues|tableaux/.test(flop.erreur));
+T("le turn reste annonce comme exact", /exact/.test(flop.erreur));
+
+// ---------------------------------------------------------------------------
+// Le noeud de hasard, valide contre un calcul independant
+//
+// LE CONTROLE DECISIF POUR LES RUES A VENIR. Sans mise possible, un turn n'est
+// rien d'autre que la moyenne des quarante-quatre rivers. On calcule donc cette
+// moyenne a la main, hors du solveur, et l'on exige l'egalite exacte.
+//
+// C'est ce controle qui a trouve deux erreurs de normalisation : une main ne
+// figure pas sur les tableaux qui contiennent une de ses cartes, et diviser par
+// le nombre total de tirages lui faisait porter des tableaux ou elle n'existe
+// pas. Le controle de somme constante, lui, ne pouvait pas les voir — avec un
+// tirage, cette somme n'est pas conservee, puisque la carte qui tombe retire des
+// mains adverses.
+// ---------------------------------------------------------------------------
+
+const boardTurn = ["Ah", "Kd", "7c", "2s"];
+const rangeA = parserRange("AA,KK,QQ,AKs");
+const rangeB = parserRange("JJ,TT,AQs,KQs");
+const sansMise = resoudre({
+  board: boardTurn, rangeOOP: rangeA, rangeIP: rangeB,
+  pot: 10, tapis: 0, tailles: [], taillesRelance: [], maxRelances: 0, iterations: 2,
+});
+T("un turn sans mise se resout", !sansMise.erreur);
+
+const valeurs = valeurParMain(sansMise, OOP);
+const cartesTurn = lireCartes(boardTurn);
+const dejaSorties = new Set(cartesTurn);
+const cumul = new Float64Array(NB_COMBOS);
+const combien = new Float64Array(NB_COMBOS);
+for (let c = 0; c < 52; c++) {
+  if (dejaSorties.has(c)) continue;
+  const f = forcesSurBoard([...cartesTurn, c]);
+  const pA = filtrerSurBoard(rangeA, f);
+  const pB = filtrerSurBoard(rangeB, f);
+  const iA = indicesActifs(pA);
+  const iB = indicesActifs(pB);
+  if (!iA.length || !iB.length) continue;
+  const d = valeursAbattage(preparerAbattage(iA, f), preparerAbattage(iB, f), pB);
+  const dispo = poidsDisponible(iA, pB);
+  // Pot de dix, aucune mise : gagner rapporte le pot, egaliser en rapporte la
+  // moitie.
+  for (const h of iA) { cumul[h] += 5 * d[h] + 5 * dispo[h]; combien[h] += 1; }
+}
+let ecartTurn = 0;
+for (const h of sansMise.ctx.indices[OOP]) {
+  const reference = combien[h] > 0 ? cumul[h] / combien[h] : 0;
+  ecartTurn = Math.max(ecartTurn, Math.abs(valeurs[h] - reference));
+}
+T("le turn egale exactement la moyenne des 44 rivers", ecartTurn === 0,
+  `ecart ${ecartTurn.toExponential(2)}`);
 
 console.log(`\n${ok} succes, ${ko} echecs`);
 process.exit(ko ? 1 : 0);
