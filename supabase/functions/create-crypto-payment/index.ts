@@ -61,10 +61,17 @@ const PLANS: Record<string, Plan> = {
   duo_m12: { months: 12, amount: 151.9, label: "Pro — 12 mois", products: ["cash", "spin"] },
 
   // --------------------------------------------------------------- Expert
-  // Tout, solveur compris. Moins cher que Pro + l'option achetée à part
-  // (15,90 + 6,90 = 22,80 le mois) : c'est ce qui en fait une formule et non
-  // une addition.
-  expert_m1: { months: 1, amount: 19.9, label: "Expert — 1 mois", products: ["cash", "spin", "solveur"] },
+  // Tout, solveur compris.
+  //
+  // LE MOIS EST VOLONTAIREMENT CHER — trente euros, quand Pro plus l'option
+  // achetés à part n'en coûtent que 22,80. Ce n'est pas une erreur de grille :
+  // le mois sec sert de repoussoir, et l'économie n'apparaît qu'à partir de
+  // trois mois (53,90 contre 61,80), puis se creuse. Une formule à l'année qui
+  // ne serait pas nettement moins chère ne serait qu'une addition.
+  //
+  // Conséquence assumée : les remises affichées pour Expert deviennent énormes
+  // (−40 %, −44 %, −47 %) puisqu'elles se comparent à ce mois-là.
+  expert_m1: { months: 1, amount: 30, label: "Expert — 1 mois", products: ["cash", "spin", "solveur"] },
   expert_m3: { months: 3, amount: 53.9, label: "Expert — 3 mois", products: ["cash", "spin", "solveur"] },
   expert_m6: { months: 6, amount: 99.9, label: "Expert — 6 mois", products: ["cash", "spin", "solveur"] },
   expert_m12: { months: 12, amount: 189.9, label: "Expert — 12 mois", products: ["cash", "spin", "solveur"] },
