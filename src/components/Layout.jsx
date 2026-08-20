@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor, Waypoints, TrendingUp, Shield, Scale } from "lucide-react";
+import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor, Waypoints, TrendingUp, Shield, Scale, Layers } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useMode } from "../contexts/ModeContext";
 import { useSubscription } from "../contexts/SubscriptionContext";
@@ -13,15 +13,16 @@ const NAV_ITEMS = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true, modes: ["cash", "spin"] },
   { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"] },
   { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"] },
-  { to: "/adversaires", label: "Adversaires", icon: Users, modes: ["spin"] },
-  { to: "/solveur", label: "Solveur", icon: Scale, modes: ["spin"] },
-  { to: "/carte-mentale", label: "Carte mentale", icon: Waypoints, modes: ["spin"] },
-  { to: "/projection", label: "Projection", icon: TrendingUp, modes: ["spin"] },
-  { to: "/gestion-bankroll", label: "Gestion de bankroll", icon: Shield, modes: ["spin"] },
+  { to: "/adversaires", label: "Adversaires", icon: Users, modes: ["cash", "spin"] },
+  { to: "/solveur", label: "Solveur", icon: Scale, modes: ["cash", "spin"], option: "solveur" },
+  { to: "/carte-mentale", label: "Carte mentale", icon: Waypoints, modes: ["cash", "spin"] },
+  { to: "/projection", label: "Projection", icon: TrendingUp, modes: ["cash", "spin"] },
+  { to: "/gestion-bankroll", label: "Gestion de bankroll", icon: Shield, modes: ["cash", "spin"] },
   { to: "/sessions", label: "Sessions", icon: ListOrdered, modes: ["cash"] },
   { to: "/ranges", label: "Ranges", icon: Grid3x3, modes: ["cash"] },
   { to: "/ev", label: "EV par position", icon: BarChart3, modes: ["cash"] },
   { to: "/statistics", label: "Statistiques", icon: LineChart, modes: ["cash"] },
+  { to: "/stats-hero", label: "Mes spots", icon: Layers, modes: ["cash"] },
   { to: "/search", label: "Recherche de mains", icon: Search, modes: ["cash"] },
   { to: "/top-hands", label: "Grosses mains", icon: Flame, modes: ["cash"] },
   { to: "/table-tendencies", label: "Tendances table", icon: Users, modes: ["cash"] },
@@ -76,6 +77,13 @@ export default function Layout() {
             >
               <item.icon size={17} />
               {item.label}
+              {/* Une option non activée reste VISIBLE et cliquable : la masquer
+                  ferait ignorer qu'elle existe, et la page explique elle-même ce
+                  qu'elle contient. Le point signale seulement qu'il y a un pas
+                  de plus à faire. */}
+              {item.option && !aAcces(item.option) && (
+                <span className="mode-lock" title="Option à activer">•</span>
+              )}
             </NavLink>
           ))}
         </nav>

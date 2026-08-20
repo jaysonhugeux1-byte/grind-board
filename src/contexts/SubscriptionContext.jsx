@@ -2,21 +2,27 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../supabase";
 import { useAuth } from "./AuthContext";
 
-const SubscriptionContext = createContext(null);
+// Exporté pour que le banc d'essai puisse monter un écran avec un accès donné,
+// sans session ni paiement. Les écrans lisent toujours par useSubscription.
+export const SubscriptionContext = createContext(null);
 
-export const PRODUITS = ["cash", "spin"];
+// « cash » et « spin » ouvrent l'application ; « solveur » est une OPTION qui
+// s'ajoute à l'un des deux. La distinction est portée par isActive plus bas, et
+// c'est le seul endroit où elle existe.
+export const PRODUITS = ["cash", "spin", "solveur"];
+export const OPTIONS = ["solveur"];
 
 export function SubscriptionProvider({ children }) {
   const { user, loading: authLoading } = useAuth();
   // { cash: Date|null, spin: Date|null }
-  const [acces, setAcces] = useState({ cash: null, spin: null });
+  const [acces, setAcces] = useState({ cash: null, spin: null, solveur: null });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (authLoading) return undefined;
 
     if (!user) {
-      setAcces({ cash: null, spin: null });
+      setAcces({ cash: null, spin: null, solveur: null });
       setLoading(false);
       return undefined;
     }
@@ -33,9 +39,9 @@ export function SubscriptionProvider({ children }) {
       if (cancelled) return;
       if (error) {
         console.error("Lecture des accès impossible :", error);
-        setAcces({ cash: null, spin: null });
+        setAcces({ cash: null, spin: null, solveur: null });
       } else {
-        const suivant = { cash: null, spin: null };
+        const suivant = { cash: null, spin: null, solveur: null };
         for (const ligne of data || []) {
           if (ligne.product in suivant) suivant[ligne.product] = new Date(ligne.access_until);
         }
@@ -73,9 +79,14 @@ export function SubscriptionProvider({ children }) {
   const value = {
     loading: authLoading || loading,
     acces,
-    // Un accès à l'un ou l'autre suffit à entrer dans l'application ; le mode
-    // choisi détermine ensuite ce qui est réellement accessible.
+    // UNE OPTION N'OUVRE PAS L'APPLICATION. Un accès à « cash » ou à « spin »
+    // suffit à entrer ; le mode choisi détermine ensuite ce qui est accessible.
+    // « solveur » n'est délibérément PAS dans cette liste : quelqu'un qui aurait
+    // acheté l'option seule entrerait sinon dans une application dont il n'a
+    // aucune page.
     isActive: actif("cash") || actif("spin"),
+    // L'abonnement de base, celui auquel une option s'ajoute.
+    aUneBase: actif("cash") || actif("spin"),
     aAcces: actif,
     finAcces: (produit) => (actif(produit) ? acces[produit] : null),
   };

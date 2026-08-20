@@ -2,11 +2,26 @@ import React, { useMemo, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { Search, Loader2, Users, Eye, Info, ArrowLeft } from "lucide-react";
 import { useData } from "../contexts/DataContext";
+import { useMode } from "../contexts/ModeContext";
 import { PageHeader, EmptyState, fmtDate } from "../components/ui";
 import {
   listerAdversaires, chercherAdversaires, rangeMontree, styleAdversaire,
   MAINS_MINIMUM_FIABLE,
 } from "../lib/adversaires";
+import {
+  listerAdversairesCash, styleAdversaireCash, MAINS_MINIMUM_CASH,
+} from "../lib/adversairesCash";
+
+// DEUX SOURCES, UNE SEULE FICHE.
+//
+// Les fiches de spin sont bâties sur des champs relevés à l'import — fréquence
+// de tapis, tournois croisés — qui décrivent un hyper-turbo. En cash game on
+// relit le texte des mains et on suit tous les joueurs, ce qui donne des
+// fréquences que le spin ne peut pas produire : sur-relance, continuation au
+// flop, résistance à la continuation.
+//
+// L'écran, lui, ne change pas de forme. Il affiche les colonnes dont il dispose
+// et tait les autres : une case vide vaut mieux qu'une case qui invente.
 
 const nombre = (v, d = 0) =>
   v == null ? "—" : v.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -28,9 +43,10 @@ function Carte({ carte }) {
   );
 }
 
-function Fiche({ stats }) {
-  const style = styleAdversaire(stats);
+function Fiche({ stats, cash }) {
+  const style = cash ? styleAdversaireCash(stats) : styleAdversaire(stats);
   const range = useMemo(() => rangeMontree(stats), [stats]);
+  const seuil = cash ? MAINS_MINIMUM_CASH : MAINS_MINIMUM_FIABLE;
 
   return (
     <div className="card">
@@ -44,8 +60,9 @@ function Fiche({ stats }) {
           <span className="import-summary-stat-label">Mains vues</span>
           <span className="import-summary-stat-value mono">{nombre(stats.mains)}</span>
           <span className="card-sub">
-            sur {nombre(stats.tournois)} tournoi(s)
-            {stats.rencontresDirectes > 0 && ` · ${nombre(stats.rencontresDirectes)} croisé(s) en direct`}
+            {cash
+              ? `à ta table${stats.vuFlop ? ` · ${nombre(stats.vuFlop)} flops vus` : ""}`
+              : `sur ${nombre(stats.tournois)} tournoi(s)${stats.rencontresDirectes > 0 ? ` · ${nombre(stats.rencontresDirectes)} croisé(s) en direct` : ""}`}
           </span>
         </div>
         <div className="import-summary-stat">
@@ -57,11 +74,47 @@ function Fiche({ stats }) {
           <span className="import-summary-stat-label">Relance préflop</span>
           <span className="import-summary-stat-value mono">{taux(stats.tauxRelance)}</span>
         </div>
-        <div className="import-summary-stat">
-          <span className="import-summary-stat-label">Tapis préflop</span>
-          <span className="import-summary-stat-value mono">{taux(stats.tauxTapis)}</span>
-          <span className="card-sub">la stat qui compte en hyper-turbo</span>
-        </div>
+        {cash ? (
+          <>
+            <div className="import-summary-stat">
+              <span className="import-summary-stat-label">Sur-relance</span>
+              <span className="import-summary-stat-value mono">{taux(stats.tauxTroisBet)}</span>
+              {/* Une fréquence sans son dénominateur ne veut rien dire : « il
+                  3-bet 8 % » sur douze occasions est du bruit. */}
+              <span className="card-sub">sur {nombre(stats.troisBetOcc)} occasion(s)</span>
+            </div>
+            <div className="import-summary-stat">
+              <span className="import-summary-stat-label">Se couche au 3-bet</span>
+              <span className="import-summary-stat-value mono">{taux(stats.tauxFoldTrois)}</span>
+              <span className="card-sub">sur {nombre(stats.foldTroisOcc)} occasion(s)</span>
+            </div>
+            <div className="import-summary-stat">
+              <span className="import-summary-stat-label">Continue au flop</span>
+              <span className="import-summary-stat-value mono">{taux(stats.tauxCbet)}</span>
+              <span className="card-sub">après avoir relancé · {nombre(stats.cbetOcc)} occasion(s)</span>
+            </div>
+            <div className="import-summary-stat">
+              <span className="import-summary-stat-label">Cède au flop</span>
+              <span className="import-summary-stat-value mono">{taux(stats.tauxFoldCbet)}</span>
+              <span className="card-sub">face à la continuation · {nombre(stats.foldCbetOcc)} occasion(s)</span>
+            </div>
+            <div className="import-summary-stat">
+              <span className="import-summary-stat-label">Agressivité</span>
+              <span className="import-summary-stat-value mono">
+                {stats.agressivite == null ? "—" : nombre(stats.agressivite, 2)}
+              </span>
+              <span className="card-sub">
+                {nombre(stats.agressions)} mises pour {nombre(stats.suivis)} suivis
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="import-summary-stat">
+            <span className="import-summary-stat-label">Tapis préflop</span>
+            <span className="import-summary-stat-value mono">{taux(stats.tauxTapis)}</span>
+            <span className="card-sub">la stat qui compte en hyper-turbo</span>
+          </div>
+        )}
         <div className="import-summary-stat">
           <span className="import-summary-stat-label">Va à l'abattage</span>
           <span className="import-summary-stat-value mono">{taux(stats.tauxAbattage)}</span>
@@ -70,9 +123,13 @@ function Fiche({ stats }) {
         <div className="import-summary-stat">
           <span className="import-summary-stat-label">Ton résultat</span>
           <span className={`import-summary-stat-value mono ${stats.netContre >= 0 ? "win" : "loss"}`}>
-            {stats.netContre > 0 ? "+" : ""}{nombre(stats.netContre)}
+            {cash
+              ? `${stats.netContreBB > 0 ? "+" : ""}${nombre(stats.netContreBB, 1)}`
+              : `${stats.netContre > 0 ? "+" : ""}${nombre(stats.netContre)}`}
           </span>
-          <span className="card-sub">jetons sur ces mains</span>
+          <span className="card-sub">
+            {cash ? "grosses blindes quand il est à ta table" : "jetons sur ces mains"}
+          </span>
         </div>
       </div>
 
@@ -85,10 +142,17 @@ function Fiche({ stats }) {
         </p>
       )}
 
+      {style?.aide && (
+        <p className="alert-info" style={{ marginTop: 14 }}>
+          <Info size={13} style={{ verticalAlign: -2, marginRight: 5 }} />
+          {style.aide}
+        </p>
+      )}
+
       {stats.mains > 0 && !stats.fiable && (
         <p className="alert-info" style={{ marginTop: 14 }}>
           <Info size={13} style={{ verticalAlign: -2, marginRight: 5 }} />
-          {stats.mains} main(s) seulement. En dessous de {MAINS_MINIMUM_FIABLE}, ces fréquences ne
+          {stats.mains} main(s) seulement. En dessous de {seuil}, ces fréquences ne
           veulent rien dire : un joueur vu six fois qui a joué six mains n'est pas large, il est
           simplement mal échantillonné. Les chiffres s'affineront à mesure que tu le recroiseras.
         </p>
@@ -112,8 +176,9 @@ function Fiche({ stats }) {
             </tbody>
           </table>
           <p className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.6 }}>
-            Au bouton on ouvre, en grosse blinde on défend : un écart marqué entre les deux dit
-            beaucoup plus qu'une fréquence globale.
+            {cash
+              ? "Sous le pistolet on ouvre serré, au bouton on vole : un joueur qui joue autant des deux côtés ne tient aucun compte de sa place, et c'est la fuite la plus exploitable qui soit."
+              : "Au bouton on ouvre, en grosse blinde on défend : un écart marqué entre les deux dit beaucoup plus qu'une fréquence globale."}
           </p>
         </section>
 
@@ -175,6 +240,8 @@ function Fiche({ stats }) {
 
 export default function Adversaires() {
   const { hands, tournois, loading } = useData();
+  const { mode } = useMode();
+  const cash = mode === "cash";
   const [requete, setRequete] = useState("");
   const naviguer = useNavigate();
   // Le pseudo vit dans l'adresse plutot que dans un etat local : le retour du
@@ -183,7 +250,17 @@ export default function Adversaires() {
   const { nom: nomUrl } = useParams();
   const choisi = nomUrl ? decodeURIComponent(nomUrl) : null;
 
-  const fiches = useMemo(() => listerAdversaires(hands, tournois), [hands, tournois]);
+  // En cash game les fiches se reconstruisent en relisant le texte des mains :
+  // rien n'est relevé à l'import, donc rien n'est à réimporter pour en profiter.
+  // Le calcul coûte quelques millisecondes au millier de mains, une fois.
+  const bb = useMemo(
+    () => (hands?.length ? hands[hands.length - 1].bb || 1 : 1),
+    [hands],
+  );
+  const fiches = useMemo(
+    () => (cash ? listerAdversairesCash(hands || [], bb) : listerAdversaires(hands, tournois)),
+    [cash, hands, tournois, bb],
+  );
   const resultats = useMemo(() => chercherAdversaires(fiches, requete), [fiches, requete]);
   const actif = useMemo(
     () => (choisi ? fiches.find((f) => f.nom === choisi) : null),
@@ -211,9 +288,11 @@ export default function Adversaires() {
           <>
             <PageHeader
               title={actif.nom}
-              subtitle={`${nombre(actif.mains)} mains vues sur ${nombre(actif.tournois ?? 0)} tournois`}
+              subtitle={cash
+                ? `${nombre(actif.mains)} mains vues à ta table`
+                : `${nombre(actif.mains)} mains vues sur ${nombre(actif.tournois ?? 0)} tournois`}
             />
-            <Fiche stats={actif} />
+            <Fiche stats={actif} cash={cash} />
           </>
         ) : (
           <>
@@ -231,12 +310,16 @@ export default function Adversaires() {
     <div className="section">
       <PageHeader
         title="Adversaires"
-        subtitle="Ce que tes historiques savent des joueurs que tu recroises"
+        subtitle={cash
+          ? "Ce que tes mains savent des joueurs que tu recroises à table"
+          : "Ce que tes historiques savent des joueurs que tu recroises"}
       />
 
       {!fiches.length ? (
         <div className="card">
-          <EmptyState text="Aucun adversaire connu. Importe un historique Betclic : les fiches se construisent à partir des mains, pas de la saisie éclair." />
+          <EmptyState text={cash
+            ? "Aucun adversaire connu. Importe un historique de cash game : les fiches se construisent en relisant les mains, joueur par joueur."
+            : "Aucun adversaire connu. Importe un historique Betclic : les fiches se construisent à partir des mains, pas de la saisie éclair."} />
         </div>
       ) : (
         <>
@@ -265,7 +348,7 @@ export default function Adversaires() {
 
             <div className="liste-adv">
               {resultats.slice(0, 40).map((f) => {
-                const style = styleAdversaire(f);
+                const style = cash ? styleAdversaireCash(f) : styleAdversaire(f);
                 return (
                   <button
                     key={f.nom}
@@ -275,6 +358,10 @@ export default function Adversaires() {
                     <span className="adv-nom">{f.nom}</span>
                     <span className="adv-mains mono">{nombre(f.mains)} mains</span>
                     <span className="adv-taux mono">{taux(f.tauxVolontaire)}</span>
+                    {/* En cash game, l'écart entre mains jouées et mains
+                        relancées se lit d'un coup d'œil dans la liste : c'est ce
+                        qui sépare un joueur solide d'une station passive. */}
+                    {cash && <span className="adv-taux mono">{taux(f.tauxRelance)} relancées</span>}
                     {style ? (
                       <span className={`etiquette-style ${style.ton}`}>{style.label}</span>
                     ) : (

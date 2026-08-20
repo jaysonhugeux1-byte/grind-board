@@ -5,7 +5,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useSubscription } from "../contexts/SubscriptionContext";
 import { useMode } from "../contexts/ModeContext";
 import {
-  createCryptoPayment, openExternalUrl, PRODUITS, DUREES, tarif, tarifMensuel,
+  createCryptoPayment, openExternalUrl, PRODUITS, OPTIONS, DUREES, tarif, tarifMensuel,
 } from "../lib/billing";
 
 const AVANTAGES = {
@@ -27,6 +27,12 @@ const AVANTAGES = {
     "40 % de remise sur le second produit",
     "Coach IA sur les deux formats",
   ],
+  solveur: [
+    "Turn et river résolus exactement, exploitabilité mesurée",
+    "Le déroulé de ta main saisi : pot et ranges déduits",
+    "Équilibre push/fold et meilleure réponse par adversaire",
+    "Six places de cash game ou trois de spin, au choix",
+  ],
 };
 
 export default function Subscribe() {
@@ -37,6 +43,10 @@ export default function Subscribe() {
   // On propose d'emblée le produit correspondant au mode où l'utilisateur a été
   // arrêté — c'est celui qu'il cherchait à utiliser.
   const [produit, setProduit] = useState(mode === "spin" ? "spin" : "cash");
+  // L'option se choisit à part : elle s'AJOUTE à un abonnement et ne peut pas
+  // prendre sa place dans le même sélecteur sans laisser croire qu'elle le
+  // remplace. Quelqu'un qui l'achèterait seule n'ouvrirait aucune page.
+  const estOption = OPTIONS.some((o) => o.id === produit);
   const [duree, setDuree] = useState("m3");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -75,7 +85,7 @@ export default function Subscribe() {
         </p>
 
         <div className="produit-tabs">
-          {PRODUITS.map((p) => (
+          {[...PRODUITS, ...OPTIONS].map((p) => (
             <button
               key={p.id}
               className={produit === p.id ? "active" : ""}
@@ -84,6 +94,9 @@ export default function Subscribe() {
             >
               {p.label}
               {p.remise && <span className="produit-remise">−40 %</span>}
+              {OPTIONS.some((o) => o.id === p.id) && (
+                <span className="produit-remise option">option</span>
+              )}
               {aAcces(p.id) && <Check size={12} />}
             </button>
           ))}
@@ -109,6 +122,18 @@ export default function Subscribe() {
             <li key={f}><Check size={15} /> {f}</li>
           ))}
         </ul>
+
+        {/* Le dire AVANT le paiement, jamais après : une option achetée sans
+            abonnement n'ouvrirait aucune page, et l'apprendre une fois payé
+            serait la pire façon de l'apprendre. */}
+        {estOption && (
+          <p className="paywall-hint">
+            {aAcces("cash") || aAcces("spin")
+              ? "Cette option s'ajoute à ton abonnement en cours."
+              : "Cette option s'ajoute à un abonnement cash game ou spin — elle n'ouvre pas "
+                + "l'application à elle seule. Prends d'abord l'un des deux."}
+          </p>
+        )}
 
         <button className="btn-primary paywall-cta" onClick={payer} disabled={busy}>
           {busy ? (

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useCallback } from "react";
 import { Loader2, Play, Search, Target, Scale, AlertTriangle, Info } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useData } from "../contexts/DataContext";
+import { useMode } from "../contexts/ModeContext";
 import { PageHeader, EmptyState } from "../components/ui";
 import GrilleRange from "../components/GrilleRange";
 import SolveurPostflop from "../components/SolveurPostflop";
@@ -36,10 +37,18 @@ const bb = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toF
 
 export default function Solveur() {
   const { hands, tournois, loading } = useData();
+  // LE POSTFLOP EST LE MÊME JEU PARTOUT. Deux ranges, un pot, un tapis, un
+  // tableau : le moteur ne sait pas s'il résout un spin ou une table de cash
+  // game, et n'a aucune raison de le savoir. Le PRÉFLOP, lui, est propre au
+  // spin : « tapis ou couché » ne décrit un hyper-turbo que parce que les tapis
+  // y sont courts. À cent grosses blindes cette question n'existe pas, et la
+  // page ne la pose donc pas.
+  const { mode } = useMode();
+  const cash = mode === "cash";
   // Deux moteurs distincts sous un seul ecran : le preflop se resout exactement
   // par jeu fictif, le postflop par minimisation de regret. Les melanger dans une
   // meme page ne les melange pas dans le code.
-  const [mode, setMode] = useState("preflop");
+  const [vue, setVue] = useState("preflop");
   const [tapis, setTapis] = useState(10);
   const [ante, setAnte] = useState(0);
   const [profil, setProfil] = useState("nash");
@@ -109,21 +118,27 @@ export default function Solveur() {
     <div className="page">
       <PageHeader
         title="Solveur"
-        subtitle="L'équilibre push/fold, et ce qu'il faut en changer selon l'adversaire"
+        subtitle={cash
+          ? "Le turn et la river résolus exactement, depuis le déroulé de ta main"
+          : "L'équilibre push/fold, et ce qu'il faut en changer selon l'adversaire"}
       />
 
-      <div className="segmented" style={{ marginBottom: 16 }}>
-        <button className={mode === "preflop" ? "active" : ""} onClick={() => setMode("preflop")}>
-          Préflop — tapis ou couché
-        </button>
-        <button className={mode === "postflop" ? "active" : ""} onClick={() => setMode("postflop")}>
-          Postflop — river
-        </button>
-      </div>
+      {!cash && (
+        <div className="segmented" style={{ marginBottom: 16 }}>
+          <button className={vue === "preflop" ? "active" : ""} onClick={() => setVue("preflop")}>
+            Préflop — tapis ou couché
+          </button>
+          <button className={vue === "postflop" ? "active" : ""} onClick={() => setVue("postflop")}>
+            Postflop — turn et river
+          </button>
+        </div>
+      )}
 
-      {mode === "postflop" && <SolveurPostflop hands={hands} tournois={tournois} />}
+      {(cash || vue === "postflop") && (
+        <SolveurPostflop hands={hands} tournois={tournois} format={cash ? "cash" : "spin"} />
+      )}
 
-      {mode === "preflop" && (<>
+      {!cash && vue === "preflop" && (<>
       <div className="carte-avertissement">
         <Scale size={15} />
         <p>

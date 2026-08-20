@@ -1,5 +1,5 @@
 // Parseur pour les exports de mains texte CoinPoker (cash game, NLH).
-import { computeHandEV } from "./equity";
+import { computeHandEV } from "./equity.js";
 
 const POSITIONS_BY_SEATS = {
   2: ["BB", "SB"],

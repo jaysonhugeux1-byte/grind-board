@@ -42,6 +42,17 @@ const PLANS: Record<string, Plan> = {
   duo_m1: { months: 1, amount: 15.9, label: "Cash + Spin — 1 mois", products: ["cash", "spin"] },
   duo_m3: { months: 3, amount: 42.9, label: "Cash + Spin — 3 mois", products: ["cash", "spin"] },
   duo_m12: { months: 12, amount: 151.9, label: "Cash + Spin — 12 mois", products: ["cash", "spin"] },
+
+  // Le solveur, en option de l'abonnement de base.
+  //
+  // IL NE DONNE PAS ACCÈS À L'APPLICATION, et le serveur n'a rien à faire pour
+  // cela : « solveur » est un produit comme un autre ici, et c'est l'application
+  // qui refuse d'ouvrir sans « cash » ni « spin ». Vendre l'option seule reste
+  // donc possible — à quelqu'un qui compte s'abonner ensuite — sans qu'elle
+  // ouvre quoi que ce soit d'autre.
+  solveur_m1: { months: 1, amount: 6.9, label: "Solveur — 1 mois", products: ["solveur"] },
+  solveur_m3: { months: 3, amount: 18.9, label: "Solveur — 3 mois", products: ["solveur"] },
+  solveur_m12: { months: 12, amount: 64.9, label: "Solveur — 12 mois", products: ["solveur"] },
 };
 
 // L'application de bureau sert son interface sur un port local tiré au hasard

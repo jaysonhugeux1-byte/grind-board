@@ -25,6 +25,19 @@ export default function TableSolveur({
   vilains, onVilain,
   pot, onPot,
   cartesHero, onCartesHero,
+  // Quand le déroulé de la main pilote la table, le pot et les sièges couchés
+  // ne s'éditent plus : ils SONT le résultat des actions saisies. Laisser les
+  // champs actifs donnerait deux sources de vérité, et la mauvaise gagnerait un
+  // jour ou l'autre.
+  verrouille = false,
+  // Un spin a trois sièges et trois positions ; une table de cash game en a six.
+  // Le feutre et le moteur ne changent pas — seule change la liste des places
+  // possibles, et la coder en dur ici interdisait le cash game.
+  positions = ["BTN", "SB", "BB"],
+  // En spin les trois places se déduisent l'une de l'autre : fixer celle de Hero
+  // fixe les deux autres. À six joueurs il n'y a plus rien à déduire — n'importe
+  // qui peut rester dans le coup — et il faut donc pouvoir désigner les places.
+  positionsEditables = false,
 }) {
   const [ouvert, setOuvert] = useState(null); // { type: "board"|"hero", index }
 
@@ -82,9 +95,11 @@ export default function TableSolveur({
           return (
             <div key={s.id} className={`siege ${s.classe}`}>
               <button
-                className={`avatar${v.actif ? " actif" : ""}`}
-                onClick={() => onVilain(i, { ...v, actif: !v.actif })}
-                title={v.actif ? "encore dans le coup — cliquer pour le retirer" : "couché — cliquer pour le remettre"}
+                className={`avatar${v.actif ? " actif" : ""}${verrouille ? " verrouille" : ""}`}
+                onClick={() => { if (!verrouille) onVilain(i, { ...v, actif: !v.actif }); }}
+                title={verrouille
+                  ? "c'est le déroulé de la main qui décide qui est encore là"
+                  : v.actif ? "encore dans le coup — cliquer pour le retirer" : "couché — cliquer pour le remettre"}
               >
                 {v.actif ? <User size={17} /> : <X size={17} />}
               </button>
@@ -98,7 +113,18 @@ export default function TableSolveur({
                 />
                 <span>bb</span>
               </label>
-              <span className="siege-position">{v.position}</span>
+              {positionsEditables ? (
+                <select
+                  className="siege-position-choix"
+                  value={v.position}
+                  onChange={(e) => onVilain(i, { ...v, position: e.target.value })}
+                  title="sa place à la table"
+                >
+                  {positions.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              ) : (
+                <span className="siege-position">{v.position}</span>
+              )}
             </div>
           );
         })}
@@ -106,10 +132,14 @@ export default function TableSolveur({
         <div className="centre">
           <div className="pot">
             <span className="pot-label">Pot</span>
-            <input
-              type="number" min="0" step="0.5" value={pot}
-              onChange={(e) => onPot(Math.max(0, +e.target.value || 0))}
-            />
+            {verrouille ? (
+              <span className="pot-deduit mono" title="déduit des actions saisies">{pot}</span>
+            ) : (
+              <input
+                type="number" min="0" step="0.5" value={pot}
+                onChange={(e) => onPot(Math.max(0, +e.target.value || 0))}
+              />
+            )}
             <span className="pot-unite">bb</span>
           </div>
 
@@ -150,7 +180,7 @@ export default function TableSolveur({
             <span>bb</span>
           </label>
           <div className="segmented positions">
-            {["BTN", "SB", "BB"].map((p) => (
+            {positions.map((p) => (
               <button
                 key={p}
                 className={hero.position === p ? "active" : ""}

@@ -272,6 +272,21 @@ const P = (id, libelle, action, taille, detail, quand) =>
 
 const note = (id, texte) => ({ id, libelle: texte, type: "note", couleur: "note" });
 
+/**
+ * Le vocabulaire, exposé pour qu'une autre carte puisse s'écrire ailleurs.
+ *
+ * Une carte se relit comme on l'a dessinée : « au moins top paire », « face à
+ * plus de la moitié du pot ». Ces briques sont ce qui rend l'arbre lisible sans
+ * relire le moteur, et elles doivent donc être disponibles partout où l'on
+ * dessine — la carte de cash game vit dans son propre fichier et n'a aucune
+ * raison de les redéfinir.
+ */
+export const VOCABULAIRE = {
+  FORCE, rang, auMoins, auPlus, entre, hauteurAuMoins, kickerAuMoins, paireDeNiveau,
+  drawGoBroke, auMoinsGutshot, et, ou, toujours,
+  faceAuPlus, facePlusDe, faceEntre, faceUneBB, estMise, surRue, P, note,
+};
+
 export const CARTE_SPIN = {
   id: "racine",
   libelle: "Postflop Spin & Go",

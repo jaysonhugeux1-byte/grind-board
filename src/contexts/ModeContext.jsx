@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useSubscription } from "./SubscriptionContext";
 
-const ModeContext = createContext(null);
+// Exporté pour que le banc d'essai puisse monter un écran dans un mode donné
+// sans passer par l'abonnement ni la connexion. Rien d'autre ne s'en sert : les
+// écrans lisent le mode par useMode.
+export const ModeContext = createContext(null);
 
 const STOCKAGE = "gl_mode";
 

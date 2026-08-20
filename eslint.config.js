@@ -33,6 +33,10 @@ const NAVIGATEUR = [
   "__APP_VERSION__",
 ];
 
+// Un fil de calcul n'a ni fenêtre ni document : son contexte global s'appelle
+// « self », et c'est par lui que passent les messages.
+const FIL = ["self", "postMessage", "addEventListener", "removeEventListener", "close"];
+
 const NODE = [
   "require", "module", "exports", "process", "__dirname", "__filename",
   "Buffer", "console", "global", "setTimeout", "clearTimeout", "setInterval",
@@ -44,12 +48,23 @@ const lecture = (noms) => Object.fromEntries(noms.map((n) => [n, "readonly"]));
 
 export default [
   {
-    files: ["src/**/*.{js,jsx}"],
+    // « outils » contient aussi du code de navigateur : le banc d'essai du
+    // solveur, servi en développement seulement.
+    files: ["src/**/*.{js,jsx}", "outils/apercu-*.jsx", "outils/mainsFactices.js"],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
       parserOptions: { ecmaFeatures: { jsx: true } },
       globals: lecture(NAVIGATEUR),
+    },
+    rules: { "no-undef": "error" },
+  },
+  {
+    files: ["src/**/*.worker.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "module",
+      globals: lecture([...NAVIGATEUR, ...FIL]),
     },
     rules: { "no-undef": "error" },
   },

@@ -9,3 +9,6 @@ supabase/.env
 supabase/.env.*
 .supabase/
 .tmp/
+
+# Cache Python des outils d'edition
+__pycache__/

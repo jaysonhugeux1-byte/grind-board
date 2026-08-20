@@ -856,6 +856,55 @@ export function strategieParClasse(noeud, ctx, action) {
   return out;
 }
 
+/**
+ * Réduit une solution à ce qu'un écran en montre.
+ *
+ * POURQUOI NE PAS RENVOYER LA SOLUTION ENTIÈRE. Un turn porte cent quarante-cinq
+ * sous-arbres, chacun avec ses tableaux de regrets et ses tirages préparés :
+ * plusieurs dizaines de mégaoctets, dont l'écran n'affiche rien. Faire traverser
+ * cela à un fil de calcul coûterait plus cher que la résolution elle-même.
+ *
+ * L'écran montre deux nœuds — celui du premier à parler, et celui du second
+ * après un check — avec pour chacun la grille par classe de chaque action. C'est
+ * quelques kilo-octets, et c'est tout ce qui est envoyé.
+ *
+ * La contrepartie est assumée : ajouter un nœud à l'écran demande de l'ajouter
+ * ici. C'est un endroit, il est nommé, et c'est préférable à recopier un arbre
+ * dont on n'utilise qu'un millième.
+ */
+export function extraireAffichage(r) {
+  if (!r || r.erreur) return r;
+
+  const noeuds = [];
+  const ajouter = (noeud, titre) => {
+    if (!noeud || noeud.type !== "decision") return;
+    noeuds.push({
+      titre,
+      joueur: noeud.joueur,
+      actions: noeud.actions.map((a, i) => ({
+        nom: a.nom,
+        grille: strategieParClasse(noeud, r.ctx, i),
+      })),
+    });
+  };
+  ajouter(r.arbre.racine, "premier");
+  ajouter(r.arbre.racine.actions.find((a) => a.nom === "check")?.noeud, "apres-check");
+
+  return {
+    iterations: r.iterations,
+    sousJeux: r.sousJeux,
+    ruesRestantes: r.ruesRestantes,
+    echantillonne: r.echantillonne,
+    valeurOOP: r.valeurOOP,
+    valeurIP: r.valeurIP,
+    exploitabilite: r.exploitabilite,
+    exploitabilitePourcentPot: r.exploitabilitePourcentPot,
+    convergee: r.convergee,
+    presence: [presenceParClasse(r.ctx, OOP), presenceParClasse(r.ctx, IP)],
+    noeuds,
+  };
+}
+
 /** Poids d'une range ramené au niveau classe, pour éteindre ce qui est absent. */
 export function presenceParClasse(ctx, joueur) {
   const out = new Float64Array(169);

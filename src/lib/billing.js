@@ -12,6 +12,21 @@ export const PRODUITS = [
   { id: "duo", label: "Les deux", desc: "Cash game et spin réunis", remise: "−40 % sur le second" },
 ];
 
+// Options : elles s'ajoutent à un abonnement, elles ne le remplacent pas.
+//
+// Le solveur est à part parce qu'il coûte à part : c'est le seul écran qui
+// CALCULE au lieu de compter. Une résolution de turn brasse cent quarante-cinq
+// sous-arbres et des millions d'évaluations d'abattage — c'est un travail que
+// les autres pages ne font pas, et le prix le reflète.
+export const OPTIONS = [
+  {
+    id: "solveur",
+    label: "Solveur",
+    desc: "Turn et river résolus exactement, préflop à l'équilibre",
+    base: "s'ajoute à un abonnement cash game ou spin",
+  },
+];
+
 export const DUREES = [
   { id: "m1", label: "1 mois" },
   { id: "m3", label: "3 mois" },
@@ -24,6 +39,7 @@ const TARIFS = {
   cash: { m1: "9,90 €", m3: "26,90 €", m12: "94,90 €" },
   spin: { m1: "9,90 €", m3: "26,90 €", m12: "94,90 €" },
   duo: { m1: "15,90 €", m3: "42,90 €", m12: "151,90 €" },
+  solveur: { m1: "6,90 €", m3: "18,90 €", m12: "64,90 €" },
 };
 
 export function tarif(produit, duree) {

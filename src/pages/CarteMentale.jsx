@@ -4,6 +4,8 @@ import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState } from "../components/ui";
 import CarteMentaleVue from "../components/CarteMentaleVue";
 import { CARTE_SPIN, analyserCarte } from "../lib/carteMentale";
+import { CARTE_CASH, adapterMainsCash } from "../lib/carteCash";
+import { useMode } from "../contexts/ModeContext";
 
 // Analyse décisionnelle (MDA) : ta carte mentale confrontée à tes mains.
 //
@@ -29,10 +31,36 @@ const carte = (c) => {
 
 export default function CarteMentale() {
   const { hands, loading } = useData();
+  const { mode } = useMode();
+  const cash = mode === "cash";
   const [seuil, setSeuil] = useState(30);
   const [selection, setSelection] = useState(null);
 
-  const stats = useMemo(() => (hands?.length ? analyserCarte(hands) : null), [hands]);
+  // DEUX CARTES, DEUX QUESTIONS DIFFÉRENTES.
+  //
+  // Celle de spin est celle que tu as dessinée : la confronter à tes mains
+  // répond à « est-ce que je suis MA stratégie ». Celle de cash game est un jeu
+  // de repères standards — tu ne m'as pas donné la tienne — et répond à une
+  // question plus modeste : « où est-ce que je m'écarte de ce que fait la
+  // majorité, et est-ce que ça me rapporte ou ça me coûte ».
+  //
+  // La nuance change tout : s'écarter de sa propre carte est une erreur
+  // d'exécution, s'écarter d'une carte de référence peut être exactement ce
+  // qu'il faut faire. L'écran le dit plus bas.
+  const carte = cash ? CARTE_CASH : CARTE_SPIN;
+
+  // En cash game, les mains n'ont pas la forme que le moteur attend : on relit
+  // leur texte et on les convertit. Le calcul est mémorisé — quelques
+  // millisecondes au millier de mains, une seule fois.
+  const mainsCarte = useMemo(
+    () => (cash ? adapterMainsCash(hands) : hands),
+    [cash, hands],
+  );
+
+  const stats = useMemo(
+    () => (mainsCarte?.length ? analyserCarte(mainsCarte, carte) : null),
+    [mainsCarte, carte],
+  );
 
   const selectionne = useMemo(() => {
     if (!stats || !selection) return null;
@@ -78,8 +106,15 @@ export default function CarteMentale() {
   if (!hands?.length || !stats?.resume.decisions) {
     return (
       <div className="page">
-        <PageHeader title="Carte mentale" subtitle="Ta stratégie écrite, confrontée à tes mains jouées" />
-        <EmptyState text="Importe des historiques de spin pour confronter ta carte à tes décisions réelles." />
+        <PageHeader
+          title="Carte mentale"
+          subtitle={cash
+            ? "Des repères standards, confrontés à tes mains jouées"
+            : "Ta stratégie écrite, confrontée à tes mains jouées"}
+        />
+        <EmptyState text={cash
+          ? "Importe des historiques de cash game pour confronter tes décisions à ces repères."
+          : "Importe des historiques de spin pour confronter ta carte à tes décisions réelles."} />
       </div>
     );
   }
@@ -90,8 +125,28 @@ export default function CarteMentale() {
     <div className="page">
       <PageHeader
         title="Carte mentale"
-        subtitle="Ta stratégie écrite, confrontée à tes mains jouées"
+        subtitle={cash
+          ? "Des repères standards, confrontés à tes mains jouées"
+          : "Ta stratégie écrite, confrontée à tes mains jouées"}
       />
+
+      {/* LE STATUT DE CETTE CARTE DOIT ÊTRE DIT, PAS SOUS-ENTENDU. En spin,
+          c'est la stratégie du joueur : s'en écarter est une erreur d'exécution.
+          En cash game, ce sont des repères que je propose : s'en écarter peut
+          être exactement ce qu'il faut faire. Laisser croire le contraire ferait
+          corriger un jeu correct. */}
+      {cash && (
+        <div className="carte-avertissement">
+          <Info size={15} />
+          <p>
+            Cette carte n'est pas la tienne : c'est un jeu de <strong>repères standards</strong> de
+            6-max en petites limites. S'en écarter n'est donc pas une faute — c'est peut-être ta
+            lecture qui a raison. Ce que l'écran mesure, c'est <strong>ce que chaque écart te
+            rapporte ou te coûte réellement</strong>, et c'est ce chiffre-là qui tranche, pas la
+            règle. Les cases perdantes sont à réécrire, y compris quand tu les as suivies.
+          </p>
+        </div>
+      )}
 
       <div className="carte-synthese">
         <div className="carte-kpi">
@@ -143,7 +198,7 @@ export default function CarteMentale() {
       </div>
 
       <CarteMentaleVue
-        carte={CARTE_SPIN}
+        carte={carte}
         stats={stats}
         seuil={seuil}
         selection={selection}

@@ -14,6 +14,9 @@ import Bankroll from "./pages/Bankroll";
 import TopHands from "./pages/TopHands";
 import TableTendencies from "./pages/TableTendencies";
 import Statistics from "./pages/Statistics";
+import StatsHero from "./pages/StatsHero";
+import ProjectionCash from "./pages/ProjectionCash";
+import GestionBankrollCash from "./pages/GestionBankrollCash";
 import HandSearch from "./pages/HandSearch";
 import Settings from "./pages/Settings";
 import SpinDashboard from "./pages/SpinDashboard";
@@ -25,6 +28,7 @@ import Projection from "./pages/Projection";
 import GestionBankroll from "./pages/GestionBankroll";
 import Solveur from "./pages/Solveur";
 import { useMode } from "./contexts/ModeContext";
+import RequireOption from "./components/RequireOption";
 
 // Le tableau de bord n'a rien de commun entre les deux formats : en cash game
 // on suit un gain en ₮ par main, en spin un ROI par tournoi.
@@ -38,6 +42,45 @@ function TableauDeBord() {
 function Importer() {
   const { estSpin } = useMode();
   return estSpin ? <SpinImport /> : <Import />;
+}
+
+// PROJECTION ET BANKROLL SE CALCULENT DANS DES UNITÉS DIFFÉRENTES.
+//
+// Le spin compte en tournois et en ROI ; le cash game en blocs de cent mains et
+// en bb/100. Les MOTEURS sont les mêmes — simuler des parcours, mesurer un
+// risque de ruine, bâtir une échelle de limites ne connaît que des résultats par
+// unité — mais les écrans ne peuvent pas l'être : la page de spin filtre par
+// tournoi et raisonne en CEV, deux notions qui n'existent pas ici.
+//
+// On aiguille donc plutôt que de truffer une page de conditions. Injecter le
+// cash game dans un écran conçu pour le spin aurait mis en péril le spin, qui
+// fonctionne, pour économiser deux fichiers.
+function ProjectionParMode() {
+  const { mode } = useMode();
+  return mode === "cash" ? <ProjectionCash /> : <Projection />;
+}
+
+function GestionBankrollParMode() {
+  const { mode } = useMode();
+  return mode === "cash" ? <GestionBankrollCash /> : <GestionBankroll />;
+}
+
+// Le solveur est une option payante : on garde l'écran plutôt que de rediriger,
+// pour que celui qui arrive dessus sache ce qu'il achèterait.
+function SolveurProtege() {
+  return (
+    <RequireOption
+      option="solveur"
+      titre="Solveur"
+      sousTitre="Ce que l'équilibre ferait à ta place, et ce qu'il faut en changer"
+      quoi={"Le solveur calcule au lieu de compter : il résout le tour de mises que tu lui "
+        + "décris, et te rend la stratégie d'équilibre avec son exploitabilité mesurée. "
+        + "C'est le seul écran de Grand Livre qui fasse ce travail, et il fait l'objet "
+        + "d'une option distincte."}
+    >
+      <Solveur />
+    </RequireOption>
+  );
 }
 
 export default function App() {
@@ -67,15 +110,16 @@ export default function App() {
         <Route path="/adversaires" element={<Adversaires />} />
         <Route path="/adversaires/:nom" element={<Adversaires />} />
         <Route path="/carte-mentale" element={<CarteMentale />} />
-        <Route path="/projection" element={<Projection />} />
-        <Route path="/gestion-bankroll" element={<GestionBankroll />} />
-        <Route path="/solveur" element={<Solveur />} />
+        <Route path="/projection" element={<ProjectionParMode />} />
+        <Route path="/gestion-bankroll" element={<GestionBankrollParMode />} />
+        <Route path="/solveur" element={<SolveurProtege />} />
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/ranges" element={<Ranges />} />
         <Route path="/ev" element={<EvByPosition />} />
         <Route path="/top-hands" element={<TopHands />} />
         <Route path="/table-tendencies" element={<TableTendencies />} />
         <Route path="/statistics" element={<Statistics />} />
+        <Route path="/stats-hero" element={<StatsHero />} />
         <Route path="/search" element={<HandSearch />} />
         <Route path="/bankroll" element={<Bankroll />} />
         <Route path="/settings" element={<Settings />} />
