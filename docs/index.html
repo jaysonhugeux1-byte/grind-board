@@ -180,45 +180,126 @@
   }
 
   /* ---------- tarifs ---------- */
-  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
-  .plan {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    padding: 24px 20px; text-align: center; position: relative;
+
+  /* ---------------------------------------------------------------- Offres
+     TROIS CARTES QUI SE RETOURNENT. La face avant vend, la face arriere
+     configure. Tout afficher d'un coup — trois formules, deux formats, quatre
+     durees — donnerait vingt-quatre cases a comparer, et personne ne compare
+     vingt-quatre cases.
+
+     Le retournement est une VRAIE rotation 3D quand le navigateur la permet, et
+     un simple echange de faces sinon : la carte doit rester utilisable meme
+     quand l'animation ne l'est pas. */
+  .offres {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    margin-bottom: 18px; align-items: stretch;
   }
-  .plan.featured { border-color: var(--gold); }
-  .plan-flag {
-    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
-    background: var(--gold); color: #1a1305; font-size: 10.5px; font-weight: 700;
-    letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 11px; border-radius: 999px;
+  .offre {
+    position: relative; perspective: 1400px; min-height: 430px;
   }
-  .plan-duration { font-size: 13.5px; color: var(--text-muted); }
-  .plan-price { font-family: var(--font-display); font-size: 30px; font-weight: 700; margin: 6px 0 2px; }
-  .plan-unit { font-size: 12px; color: var(--text-muted); }
-  .plan-btn { width: 100%; margin-top: 16px; }
-  .produits {
-    /* Quatre onglets tiennent tout juste sur un telephone : 348 px pour 353
-       disponibles. En « nowrap », un libelle plus long ou une police agrandie
-       par l'utilisateur deborderait sans que rien ne le rattrape. */
-    display: flex; flex-wrap: wrap; width: max-content; max-width: 100%;
-    gap: 4px; background: var(--surface);
-    border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 10px;
+  .offre-face {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 22px 20px; backface-visibility: hidden;
+    transition: transform .5s cubic-bezier(.4,.2,.2,1);
   }
-  .produit {
-    background: none; border: 0; color: var(--text-muted); font: inherit;
-    font-size: 13.5px; padding: 7px 16px; border-radius: 7px; cursor: pointer;
+  .offre-avant { transform: rotateY(0deg); }
+  .offre-arriere { transform: rotateY(180deg); }
+  .offre.retournee .offre-avant { transform: rotateY(-180deg); }
+  .offre.retournee .offre-arriere { transform: rotateY(0deg); }
+  /* Une face cachee ne doit pas rester cliquable au clavier : sinon la
+     tabulation traverse une carte invisible. */
+  .offre:not(.retournee) .offre-arriere,
+  .offre.retournee .offre-avant { pointer-events: none; }
+
+  .offre-vedette .offre-face { border-color: var(--gold, #c9a227); }
+  .offre-expert .offre-face { border-color: rgba(201,162,39,.4); }
+  .offre-drapeau {
+    position: absolute; top: -11px; left: 50%; transform: translateX(-50%); z-index: 2;
+    background: var(--gold, #c9a227); color: #14100a; border-radius: 999px;
+    padding: 3px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    font-weight: 600; white-space: nowrap;
   }
-  .produit.actif { background: var(--gold); color: #16110a; font-weight: 600; }
-  .produit-note { font-size: 13px; color: var(--text-muted); margin: 0 0 18px; }
+
+  .offre-nom { font-size: 19px; font-weight: 600; margin: 0 0 2px; }
+  .offre-tag { font-size: 12px; color: var(--text-muted); margin: 0 0 14px; }
+  .offre-prix { font-size: 30px; font-weight: 600; margin: 0; line-height: 1.1; }
+  .offre-unite { font-size: 11.5px; color: var(--text-muted); margin: 2px 0 16px; }
+
+  .offre-liste { list-style: none; padding: 0; margin: 0 0 18px; flex: 1; }
+  .offre-liste li {
+    font-size: 12.5px; color: var(--text-muted); padding: 4px 0 4px 16px;
+    position: relative; line-height: 1.45;
+  }
+  .offre-liste li::before {
+    content: "·"; position: absolute; left: 3px; color: var(--gold, #c9a227);
+  }
+  /* Ce qu'une formule ne contient PAS se dit sur la carte, pas apres l'achat. */
+  .offre-liste li.sans { opacity: .55; }
+  .offre-liste li.sans::before { content: "×"; color: var(--text-muted); font-size: 11px; }
+  .offre-liste li.avec { color: var(--gold-soft, #e0c25f); }
+
+  .offre-choisir, .offre-payer { width: 100%; margin-top: auto; }
+
+  .offre-retour {
+    position: absolute; top: 14px; left: 14px; width: 26px; height: 26px;
+    background: none; border: 1px solid var(--border); border-radius: 7px;
+    color: var(--text-muted); cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .offre-retour:hover { border-color: var(--gold, #c9a227); color: var(--gold-soft, #e0c25f); }
+  .offre-arriere .offre-nom { margin-top: 18px; }
+  .offre-question {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--text-muted); margin: 14px 0 7px;
+  }
+  .offre-formats { display: flex; gap: 6px; }
+  .offre-format {
+    flex: 1; background: var(--surface-2, rgba(255,255,255,.04));
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 6px;
+    font: inherit; font-size: 12px; color: var(--text); cursor: pointer;
+  }
+  .offre-format:hover { border-color: var(--gold, #c9a227); }
+  .offre-format.actif {
+    border-color: var(--gold, #c9a227); background: rgba(201,162,39,.12);
+    color: var(--gold-soft, #e0c25f);
+  }
+  .offre-durees { display: flex; flex-direction: column; gap: 6px; }
+  .offre-duree {
+    display: flex; align-items: baseline; gap: 8px; text-align: left;
+    background: var(--surface-2, rgba(255,255,255,.04));
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px;
+    font: inherit; font-size: 12.5px; color: var(--text); cursor: pointer;
+  }
+  .offre-duree:hover { border-color: var(--gold, #c9a227); }
+  .offre-duree.actif { border-color: var(--gold, #c9a227); background: rgba(201,162,39,.12); }
+  .offre-duree-label { flex: 1; }
+  .offre-duree-prix { font-weight: 600; }
+  .offre-duree-mois { font-size: 10.5px; color: var(--text-muted); }
+  /* L'economie realisee se lit sur la ligne, sinon personne ne compare. */
+  .offre-duree-remise {
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--gold-soft, #e0c25f); background: rgba(201,162,39,.14);
+    border-radius: 4px; padding: 1px 5px;
+  }
+
+  @media (max-width: 900px) {
+    .offres { grid-template-columns: 1fr; }
+    .offre { min-height: 0; perspective: none; }
+    /* Sans place pour trois colonnes, on empile — et on abandonne la rotation,
+       qui demanderait une hauteur fixe que le contenu ne respecte plus. */
+    .offre-face { position: relative; inset: auto; transform: none !important; backface-visibility: visible; }
+    .offre:not(.retournee) .offre-arriere { display: none; }
+    .offre.retournee .offre-avant { display: none; }
+  }
+
   /* Une option se distingue d'un abonnement : la confondre ferait acheter
      quelque chose qui n'ouvre rien. */
-  .produit-note.est-option { color: var(--gold, #c9a227); }
   .badge-option {
     display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
     background: rgba(201,162,39,.16); color: #c9a227;
     font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; vertical-align: 1px;
   }
-  .produit-option.actif .badge-option { background: rgba(0,0,0,.18); color: inherit; }
-  .plan-btn[disabled] { opacity: 0.55; cursor: default; }
+  .offre-payer[disabled], .offre-choisir[disabled] { opacity: .55; cursor: default; }
   .price-note { font-size: 13px; color: var(--text-muted); margin-top: 22px; max-width: 66ch; }
   .pay-error {
     margin-top: 18px; font-size: 13.5px; color: var(--loss);
@@ -537,44 +618,99 @@
 <section id="tarifs">
   <div class="wrap">
     <p class="eyebrow">Tarifs</p>
-    <h2>Accès prépayé, sans engagement</h2>
+    <h2>Trois formules, sans engagement</h2>
     <p class="lead">
-      Aucun prélèvement automatique : tu achètes une durée, elle expire, tu décides de continuer ou non.
-      Un rachat anticipé s'ajoute au temps qu'il te reste.
+      Aucun prélèvement automatique : tu achètes une durée, elle expire, tu décides de continuer
+      ou non. Un rachat anticipé s'ajoute au temps qu'il te reste.
     </p>
 
     <div id="access-card" class="access-card" hidden></div>
 
-    <div class="produits">
-      <button class="produit actif" data-produit="spin">Spin &amp; Go</button>
-      <button class="produit" data-produit="cash">Cash game</button>
-      <button class="produit" data-produit="duo">Les deux</button>
-      <button class="produit produit-option" data-produit="solveur">
-        Solveur <span class="badge-option">option</span>
-      </button>
-    </div>
-    <p class="produit-note" id="produit-note"></p>
+    <!-- TROIS CARTES QUI SE RETOURNENT.
+         La face avant vend la formule, la face arrière la configure. Tout
+         afficher d'un coup — trois formules, deux formats, quatre durées —
+         donnerait vingt-quatre cases à comparer, et personne ne compare vingt-
+         quatre cases : on referme l'onglet. -->
+    <div class="offres">
 
-    <div class="plans">
-      <div class="plan">
-        <p class="plan-duration">1 mois</p>
-        <p class="plan-price" data-prix="m1"></p>
-        <p class="plan-unit" data-unite="m1"></p>
-        <button class="btn btn-ghost plan-btn" data-duree="m1">Choisir</button>
+      <div class="offre" data-offre="basic">
+        <div class="offre-face offre-avant">
+          <p class="offre-nom">Basic</p>
+          <p class="offre-tag">Un format</p>
+          <p class="offre-prix"><span data-mini="basic"></span></p>
+          <p class="offre-unite">par mois, en payant 12 mois</p>
+          <ul class="offre-liste">
+            <li>Cash game <em>ou</em> Spin, au choix</li>
+            <li>Import, replayer, EV réelle</li>
+            <li>Recherche par spot et fuites</li>
+            <li>Projection et gestion de bankroll</li>
+            <li class="sans">Sans le solveur</li>
+          </ul>
+          <button class="btn btn-ghost offre-choisir">Choisir</button>
+        </div>
+        <div class="offre-face offre-arriere">
+          <button class="offre-retour" aria-label="Revenir">&larr;</button>
+          <p class="offre-nom">Basic</p>
+          <p class="offre-question">Quel format ?</p>
+          <div class="offre-formats">
+            <button class="offre-format actif" data-format="cash">Cash game</button>
+            <button class="offre-format" data-format="spin">Spin &amp; Go</button>
+          </div>
+          <p class="offre-question">Quelle durée ?</p>
+          <div class="offre-durees"></div>
+          <button class="btn btn-primary offre-payer">Payer</button>
+        </div>
       </div>
-      <div class="plan featured">
-        <span class="plan-flag">Le plus choisi</span>
-        <p class="plan-duration">3 mois</p>
-        <p class="plan-price" data-prix="m3"></p>
-        <p class="plan-unit" data-unite="m3"></p>
-        <button class="btn btn-primary plan-btn" data-duree="m3">Choisir</button>
+
+      <div class="offre offre-vedette" data-offre="pro">
+        <span class="offre-drapeau">Le plus choisi</span>
+        <div class="offre-face offre-avant">
+          <p class="offre-nom">Pro</p>
+          <p class="offre-tag">Les deux formats</p>
+          <p class="offre-prix"><span data-mini="pro"></span></p>
+          <p class="offre-unite">par mois, en payant 12 mois</p>
+          <ul class="offre-liste">
+            <li>Cash game <em>et</em> Spin</li>
+            <li>Tout le Basic, sur les deux</li>
+            <li>Une seule bankroll, deux formats</li>
+            <li>Coach IA sur les deux</li>
+            <li class="sans">Sans le solveur</li>
+          </ul>
+          <button class="btn btn-ghost offre-choisir">Choisir</button>
+        </div>
+        <div class="offre-face offre-arriere">
+          <button class="offre-retour" aria-label="Revenir">&larr;</button>
+          <p class="offre-nom">Pro</p>
+          <p class="offre-question">Quelle durée ?</p>
+          <div class="offre-durees"></div>
+          <button class="btn btn-primary offre-payer">Payer</button>
+        </div>
       </div>
-      <div class="plan">
-        <p class="plan-duration">12 mois</p>
-        <p class="plan-price" data-prix="m12"></p>
-        <p class="plan-unit" data-unite="m12"></p>
-        <button class="btn btn-ghost plan-btn" data-duree="m12">Choisir</button>
+
+      <div class="offre offre-expert" data-offre="expert">
+        <div class="offre-face offre-avant">
+          <p class="offre-nom">Expert</p>
+          <p class="offre-tag">Tout, solveur compris</p>
+          <p class="offre-prix"><span data-mini="expert"></span></p>
+          <p class="offre-unite">par mois, en payant 12 mois</p>
+          <ul class="offre-liste">
+            <li>Tout le Pro</li>
+            <li class="avec">Solveur postflop</li>
+            <li class="avec">Turn et river résolus exactement</li>
+            <li class="avec">Équilibre push/fold</li>
+            <li class="avec">Moins cher que Pro + l'option</li>
+          </ul>
+          <button class="btn btn-ghost offre-choisir">Choisir</button>
+        </div>
+        <div class="offre-face offre-arriere">
+          <button class="offre-retour" aria-label="Revenir">&larr;</button>
+          <p class="offre-nom">Expert</p>
+          <p class="offre-question">Quelle durée ?</p>
+          <div class="offre-durees"></div>
+          <button class="btn btn-primary offre-payer">Payer</button>
+        </div>
       </div>
+
     </div>
 
     <p id="pay-error" class="pay-error" hidden></p>
@@ -792,35 +928,32 @@
   $("signout").addEventListener("click", () => supabase.auth.signOut());
 
   // --- achat --------------------------------------------------------------
-  const planButtons = [...document.querySelectorAll(".plan-btn")];
-
+  //
   // Les identifiants de formule doivent correspondre EXACTEMENT à ceux que
-  // connaît create-crypto-payment : produit puis durée. C'est la divergence qui
+  // connaît create-crypto-payment : formule puis durée. C'est la divergence qui
   // a rendu l'achat impossible pendant toute la migration multi-produits — la
   // page envoyait « m3 », la fonction n'acceptait que « spin_m3 », et répondait
   // « Formule inconnue » sans que rien ne s'ouvre.
+  //
   // Ces montants ne servent QU'À L'AFFICHAGE : le prix facturé est décidé côté
-  // serveur, dans l'Edge Function. Les identifiants envoyés sont de la forme
-  // `${produit}_${duree}`, et le serveur les connaît tous les quatre.
+  // serveur. Ce qui doit rester juste ici, ce sont les CLÉS.
   const TARIFS = {
-    spin: { m1: 9.9, m3: 26.9, m12: 94.9 },
-    cash: { m1: 9.9, m3: 26.9, m12: 94.9 },
-    duo:  { m1: 15.9, m3: 42.9, m12: 151.9 },
-    solveur: { m1: 6.9, m3: 18.9, m12: 64.9 },
+    cash:    { m1: 9.9,  m3: 26.9, m6: 49.9, m12: 94.9 },
+    spin:    { m1: 9.9,  m3: 26.9, m6: 49.9, m12: 94.9 },
+    duo:     { m1: 15.9, m3: 42.9, m6: 79.9, m12: 151.9 },
+    expert:  { m1: 19.9, m3: 53.9, m6: 99.9, m12: 189.9 },
+    solveur: { m1: 6.9,  m3: 18.9, m6: 34.9, m12: 64.9 },
   };
+  const MOIS = { m1: 1, m3: 3, m6: 6, m12: 12 };
+  const DUREES = ["m1", "m3", "m6", "m12"];
+  const LIBELLE_DUREE = { m1: "1 mois", m3: "3 mois", m6: "6 mois", m12: "12 mois" };
 
-  // Une option s'AJOUTE à un abonnement, elle ne le remplace pas. Le dire avant
-  // le paiement et non après : quelqu'un qui achèterait le solveur seul
-  // n'ouvrirait aucune page de l'application.
-  const OPTIONS = new Set(["solveur"]);
-  const MOIS = { m1: 1, m3: 3, m12: 12 };
-  const NOTES = {
-    spin: "Suivi des tournois, EV main par main, lecteur en direct, base d'adversaires, carte mentale, projection et gestion de bankroll.",
-    cash: "Sessions, ranges, recherche par spot, EV par position, carte mentale, projection, gestion de bankroll et coach IA.",
-    duo:  "Tout le cash game et tout le spin, sur le même compte.",
-    solveur: "Option — s'ajoute à un abonnement cash game ou spin, et n'ouvre pas l'application à elle seule. Turn et river résolus exactement, exploitabilité mesurée, équilibre push/fold.",
-  };
-  let produit = "spin";
+  // Une formule choisie sur une carte, c'est un produit à envoyer au serveur.
+  // Basic en demande deux — le format n'est décidé qu'au retournement.
+  const PRODUIT_DE = { pro: "duo", expert: "expert" };
+  const formatBasic = { valeur: "cash" };
+
+  const produitDe = (offre) => PRODUIT_DE[offre] ?? formatBasic.valeur;
 
   const euro = (v) =>
     v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
@@ -840,28 +973,84 @@
     return p || params.get("plan");
   };
 
-  function majTarifs() {
-    for (const d of Object.keys(MOIS)) {
-      const prix = TARIFS[produit][d];
-      $$(`[data-prix="${d}"]`).textContent = euro(prix);
-      $$(`[data-unite="${d}"]`).textContent =
-        (MOIS[d] > 1 ? "≈ " : "") + euro(prix / MOIS[d]) + " par mois";
+  // --- les cartes ---------------------------------------------------------
+
+  const cartes = [...document.querySelectorAll(".offre")];
+
+  function majCarte(carte) {
+    const offre = carte.dataset.offre;
+    const produit = produitDe(offre);
+    const grille = TARIFS[produit];
+
+    // Le prix d'appel est le mensuel de la durée la plus longue : c'est celui
+    // qu'on annonce partout, et le comparer d'une carte à l'autre a du sens.
+    const mini = carte.querySelector("[data-mini]");
+    if (mini) mini.textContent = euro(grille.m12 / 12);
+
+    const zone = carte.querySelector(".offre-durees");
+    if (!zone) return;
+    zone.innerHTML = "";
+    for (const d of DUREES) {
+      const prix = grille[d];
+      const parMois = prix / MOIS[d];
+      // L'économie par rapport au tarif mensuel : c'est ce qui rend une durée
+      // longue lisible, et elle se calcule plutôt qu'elle ne se décrète.
+      const remise = Math.round((1 - parMois / grille.m1) * 100);
+      const b = document.createElement("button");
+      b.className = "offre-duree" + (carte.dataset.duree === d ? " actif" : "");
+      b.dataset.duree = d;
+      b.innerHTML =
+        `<span class="offre-duree-label">${LIBELLE_DUREE[d]}</span>`
+        + `<span class="offre-duree-prix">${euro(prix)}</span>`
+        + (remise >= 5 ? `<span class="offre-duree-remise">−${remise} %</span>` : "")
+        + `<span class="offre-duree-mois">${MOIS[d] > 1 ? "≈ " : ""}${euro(parMois)}/mois</span>`;
+      b.addEventListener("click", () => {
+        carte.dataset.duree = d;
+        majCarte(carte);
+      });
+      zone.appendChild(b);
     }
-    $$("#produit-note").textContent = NOTES[produit];
-    $$("#produit-note").classList.toggle("est-option", OPTIONS.has(produit));
-    document.querySelectorAll(".produit").forEach((b) =>
-      b.classList.toggle("actif", b.dataset.produit === produit));
   }
 
-  document.querySelectorAll(".produit").forEach((b) =>
-    b.addEventListener("click", () => { produit = b.dataset.produit; majTarifs(); }));
-  majTarifs();
+  function majToutesLesCartes() {
+    cartes.forEach(majCarte);
+    // Le format choisi sur la carte Basic pilote ses deux boutons.
+    const basic = cartes.find((c) => c.dataset.offre === "basic");
+    basic?.querySelectorAll(".offre-format").forEach((b) =>
+      b.classList.toggle("actif", b.dataset.format === formatBasic.valeur));
+  }
+
+  for (const carte of cartes) {
+    // Trois mois par défaut : assez long pour valoir la remise, assez court
+    // pour qu'on ose.
+    carte.dataset.duree = "m3";
+
+    carte.querySelector(".offre-choisir")?.addEventListener("click", () => {
+      // Une seule carte retournée à la fois : deux configurations ouvertes en
+      // même temps, on ne sait plus laquelle on paie.
+      cartes.forEach((c) => c.classList.toggle("retournee", c === carte));
+    });
+    carte.querySelector(".offre-retour")?.addEventListener("click", () =>
+      carte.classList.remove("retournee"));
+
+    carte.querySelectorAll(".offre-format").forEach((b) =>
+      b.addEventListener("click", () => {
+        formatBasic.valeur = b.dataset.format;
+        majToutesLesCartes();
+      }));
+
+    carte.querySelector(".offre-payer")?.addEventListener("click", () => {
+      const plan = `${produitDe(carte.dataset.offre)}_${carte.dataset.duree}`;
+      buy(plan, carte.querySelector(".offre-payer"));
+    });
+  }
+  majToutesLesCartes();
 
   function setBusy(busy, activeBtn) {
-    planButtons.forEach((b) => {
+    for (const b of document.querySelectorAll(".offre-payer")) {
       b.disabled = busy;
-      b.textContent = busy && b === activeBtn ? "Ouverture…" : "Choisir";
-    });
+      b.textContent = busy && b === activeBtn ? "Ouverture…" : "Payer";
+    }
   }
 
 
@@ -896,6 +1085,12 @@
         memoriserPlan(planId);
         const retour = new URL(location.href);
         retour.searchParams.set("plan", planId);
+        // LE FRAGMENT DOIT PARTIR. Supabase accroche son « ?code=… » à cette
+        // URL ; avec un « #tarifs » à la fin — celui que laisse le lien « Voir
+        // les tarifs » — le code se retrouve derrière le fragment, le client ne
+        // le lit plus, et aucune session n'est créée. On revient alors sur une
+        // page d'apparence normale où plus rien ne se passe.
+        retour.hash = "";
         await supabase.auth.signInWithOAuth({
           provider: "google",
           options: { redirectTo: retour.toString() },
@@ -916,35 +1111,60 @@
     }
   }
 
-  planButtons.forEach((btn) =>
-    btn.addEventListener("click", () => buy(`${produit}_${btn.dataset.duree}`, btn)),
-  );
-
-  // Reprise automatique après le détour par Google.
   // Reprise de l'achat après le détour par Google.
   //
-  // Deux pièges ici, et tous deux se traduisent à l'écran par « je clique et
-  // rien ne change, je reviens sur la même page » :
+  // TROIS PIÈGES ICI, et tous les trois se traduisent à l'écran par « je clique,
+  // je reviens sur la même page, et rien ne se passe » :
   //
   //   1. la formule disparaissait de l'URL au retour (voir memoriserPlan) ;
-  //   2. la session n'existe pas encore au moment du chargement. Supabase lit le
-  //      fragment de manière ASYNCHRONE : appeler getSession() tout de suite
-  //      renvoie null, et le code abandonnait alors sans rien dire. On attend
-  //      donc l'événement de connexion plutôt que d'interroger une fois.
+  //   2. la session n'existe pas encore au chargement — Supabase lit le code de
+  //      manière ASYNCHRONE : interroger une fois renvoie null, et le code
+  //      abandonnait alors sans rien dire. On écoute l'événement de connexion ;
+  //   3. l'URL de retour portait un FRAGMENT (« #tarifs », laissé par le lien
+  //      « Voir les tarifs »). Supabase y accroche son « ?code=… », le client ne
+  //      le retrouve plus, aucune session n'est créée — et l'utilisateur revient
+  //      sur une page qui a l'air normale. Le fragment est désormais retiré
+  //      avant le départ (voir buy).
+  //
+  // Et si malgré tout la connexion n'aboutit pas, ON LE DIT. Un échec muet est
+  // ce qui a coûté le plus de temps ici : la page semblait fonctionner.
   const planEnAttente = reprendrePlan();
   if (planEnAttente) {
     const [prod, duree] = planEnAttente.split("_");
-    if (TARIFS[prod]) { produit = prod; majTarifs(); }
+    const carteDuPlan = cartes.find((c) => produitDe(c.dataset.offre) === prod)
+      // Basic couvre deux produits : si le plan repris est cash ou spin, c'est
+      // sa carte, et il faut aussi restaurer le format choisi.
+      ?? cartes.find((c) => c.dataset.offre === "basic");
+    if (carteDuPlan) {
+      if (prod === "cash" || prod === "spin") formatBasic.valeur = prod;
+      if (MOIS[duree]) carteDuPlan.dataset.duree = duree;
+      carteDuPlan.classList.add("retournee");
+      majToutesLesCartes();
+    }
 
     let repris = false;
     const reprendre = (session) => {
       if (repris || !session) return;
       repris = true;
+      clearTimeout(minuteurEchec);
       // Oublié AVANT de relancer l'achat : sans cela, un rechargement de la
       // page rouvrirait une facture à chaque fois.
       oublierPlan();
-      buy(planEnAttente, planButtons.find((b) => b.dataset.duree === duree) || null);
+      buy(planEnAttente, carteDuPlan?.querySelector(".offre-payer") ?? null);
     };
+
+    // Au bout de six secondes sans session, la connexion a échoué. Mieux vaut
+    // une phrase franche qu'une page qui fait semblant d'attendre.
+    const minuteurEchec = setTimeout(() => {
+      if (repris) return;
+      oublierPlan();
+      payError.innerHTML =
+        "La connexion Google n'a pas abouti, donc le paiement n'a pas pu s'ouvrir. "
+        + "Réessaie — et si ton navigateur bloque les cookies tiers, autorise-les "
+        + "pour <strong>supabase.co</strong> le temps de la connexion.";
+      payError.hidden = false;
+    }, 6000);
+
     supabase.auth.getSession().then(({ data }) => reprendre(data.session));
     supabase.auth.onAuthStateChange((_e, session) => reprendre(session));
   }
