@@ -24,6 +24,22 @@ alter table public.access
 
 -- ------------------------------------------------- la fonction qui crédite
 --
+-- ON REPREND LA FONCTION À L'IDENTIQUE, à un mot près : la liste des produits
+-- acceptés. Tout le reste — le type de retour, la valeur par défaut du
+-- fournisseur, le corps — doit rester rigoureusement le même.
+--
+--   Le TYPE DE RETOUR d'abord, parce que PostgreSQL refuse de le changer par
+--   « create or replace ». Le contourner demanderait de SUPPRIMER la fonction,
+--   ce qui emporterait au passage les révocations de droits posées sur elle :
+--   la fonction redeviendrait appelable par « anon » et « authenticated », donc
+--   par n'importe qui, alors qu'elle crédite des accès payants. Le webhook, lui,
+--   ne lit que l'erreur et se moque de la valeur rendue — mais un contrat ne se
+--   change pas parce que l'appelant du jour n'en profite pas.
+--
+--   La VALEUR PAR DÉFAUT du fournisseur ensuite : « nowpayments ». La changer
+--   modifierait silencieusement ce qui est enregistré le jour où l'appelant
+--   omet l'argument, et on chercherait longtemps d'où vient l'écart.
+--
 -- La liste blanche est répétée ici volontairement : la fonction est appelée
 -- avec les droits du service, et c'est le dernier endroit où un produit
 -- inventé peut être arrêté.
@@ -31,18 +47,16 @@ create or replace function public.grant_access(
   p_user     uuid,
   p_product  text,
   p_months   int,
-  p_provider text default 'crypto'
+  p_provider text default 'nowpayments'
 )
-returns void
+returns timestamptz
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_until timestamptz;
 begin
-  if p_months is null or p_months <= 0 then
-    raise exception 'Durée invalide : %', p_months;
-  end if;
-
   if p_product not in ('cash', 'spin', 'solveur') then
     raise exception 'Produit inconnu : %', p_product;
   end if;
@@ -50,14 +64,19 @@ begin
   insert into public.access as a (user_id, product, access_until, provider, updated_at)
   values (p_user, p_product, now() + make_interval(months => p_months), p_provider, now())
   on conflict (user_id, product) do update
-    -- On prolonge à partir de la date la plus lointaine entre l'échéance en
-    -- cours et maintenant : renouveler avant l'échéance ne doit pas faire
-    -- perdre les jours restants.
+    -- Un rachat anticipé s'ajoute au temps restant plutôt que de l'écraser.
     set access_until = greatest(a.access_until, now()) + make_interval(months => p_months),
         provider     = excluded.provider,
-        updated_at   = now();
+        updated_at   = now()
+  returning a.access_until into v_until;
+
+  return v_until;
 end;
 $$;
+
+-- « create or replace » conserve les droits déjà posés ; on les repose quand
+-- même, pour que ce fichier suffise à lui seul si la fonction était recréée.
+revoke all on function public.grant_access(uuid, text, int, text) from public, anon, authenticated;
 
 -- ------------------------------------------------------ commandes crypto
 alter table public.crypto_orders
