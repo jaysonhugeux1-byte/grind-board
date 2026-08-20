@@ -14,6 +14,8 @@ const NAV_ITEMS = [
   { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"] },
   { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"] },
   { to: "/adversaires", label: "Adversaires", icon: Users, modes: ["cash", "spin"] },
+  // « option » marque une entree reservee a une formule : elle reste visible et
+  // porte un point tant qu'elle n'est pas accessible.
   { to: "/solveur", label: "Solveur", icon: Scale, modes: ["cash", "spin"], option: "solveur" },
   { to: "/carte-mentale", label: "Carte mentale", icon: Waypoints, modes: ["cash", "spin"] },
   { to: "/projection", label: "Projection", icon: TrendingUp, modes: ["cash", "spin"] },

@@ -6,11 +6,11 @@ import { useAuth } from "./AuthContext";
 // sans session ni paiement. Les écrans lisent toujours par useSubscription.
 export const SubscriptionContext = createContext(null);
 
-// « cash » et « spin » ouvrent l'application ; « solveur » est une OPTION qui
-// s'ajoute à l'un des deux. La distinction est portée par isActive plus bas, et
-// c'est le seul endroit où elle existe.
+// « cash » et « spin » ouvrent l'application ; « solveur » ne l'ouvre pas et ne
+// se vend plus seul — il est crédité par la formule Expert, qui crédite aussi
+// les deux autres. La distinction est portée par isActive plus bas, et c'est le
+// seul endroit où elle existe.
 export const PRODUITS = ["cash", "spin", "solveur"];
-export const OPTIONS = ["solveur"];
 
 export function SubscriptionProvider({ children }) {
   const { user, loading: authLoading } = useAuth();
@@ -79,13 +79,13 @@ export function SubscriptionProvider({ children }) {
   const value = {
     loading: authLoading || loading,
     acces,
-    // UNE OPTION N'OUVRE PAS L'APPLICATION. Un accès à « cash » ou à « spin »
+    // LE SOLVEUR N'OUVRE PAS L'APPLICATION. Un accès à « cash » ou à « spin »
     // suffit à entrer ; le mode choisi détermine ensuite ce qui est accessible.
-    // « solveur » n'est délibérément PAS dans cette liste : quelqu'un qui aurait
-    // acheté l'option seule entrerait sinon dans une application dont il n'a
-    // aucune page.
+    // « solveur » n'est délibérément PAS dans cette liste : il n'ouvre qu'un
+    // écran, et quelqu'un qui n'aurait que lui — un ancien acheteur de l'option,
+    // du temps où elle existait — entrerait sinon dans une application dont il
+    // n'a aucune page.
     isActive: actif("cash") || actif("spin"),
-    // L'abonnement de base, celui auquel une option s'ajoute.
     aUneBase: actif("cash") || actif("spin"),
     aAcces: actif,
     finAcces: (produit) => (actif(produit) ? acces[produit] : null),

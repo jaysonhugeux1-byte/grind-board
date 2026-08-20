@@ -4,12 +4,12 @@ import { Lock, Scale } from "lucide-react";
 import { useSubscription } from "../contexts/SubscriptionContext";
 import { PageHeader } from "./ui";
 
-// Garde d'une option payante.
+// Garde d'un écran réservé à une formule.
 //
 // POURQUOI PAS UNE REDIRECTION. Rediriger vers la page d'abonnement ferait
 // disparaître l'écran demandé sans dire ce qu'il contient : on se retrouve
 // devant un tarif sans savoir ce qu'on achète. On garde donc la page, on
-// explique ce que l'option débloque, et le bouton mène au paiement.
+// explique ce qu'elle contient, et le bouton mène au paiement.
 //
 // LA GARDE EST DE CONFORT, PAS DE SÉCURITÉ. Elle vit dans le navigateur et
 // quelqu'un de déterminé la contournera : ce qu'elle protège n'est pas une
@@ -30,7 +30,7 @@ export default function RequireOption({ option, titre, sousTitre, quoi, children
       <div className="carte-option">
         <div className="carte-option-tete">
           <Lock size={18} />
-          <h3>Option non activée</h3>
+          <h3>Réservé à la formule Expert</h3>
         </div>
 
         <p className="carte-option-quoi">{quoi}</p>
@@ -41,18 +41,18 @@ export default function RequireOption({ option, titre, sousTitre, quoi, children
           <li><Scale size={13} /> Équilibre push/fold et meilleure réponse par adversaire</li>
         </ul>
 
-        {aUneBase ? (
-          <Link className="btn-lancer" to="/subscribe">Activer le solveur</Link>
-        ) : (
-          <>
-            <p className="card-sub">
-              {/* Le dire avant le paiement, pas après : une option achetée sans
-                  abonnement n'ouvrirait aucune page. */}
-              Le solveur s'ajoute à un abonnement — cash game ou spin. Prends d'abord l'un des deux.
-            </p>
-            <Link className="btn-lancer" to="/subscribe">Voir les formules</Link>
-          </>
-        )}
+        {/* LE SOLVEUR NE S'ACHÈTE PLUS SÉPARÉMENT : il vient avec Expert, et
+            avec rien d'autre. Le dire ici évite de chercher une option qui
+            n'existe plus. */}
+        <p className="card-sub">
+          {aUneBase
+            ? "Le solveur ne s'achète pas séparément : il vient avec la formule Expert, qui "
+              + "comprend aussi le cash game et le spin. Passer d'un abonnement en cours à "
+              + "Expert ajoute la durée achetée au temps qu'il te reste."
+            : "Le solveur vient avec la formule Expert, qui comprend les deux formats. "
+              + "Aucune autre formule n'y donne accès."}
+        </p>
+        <Link className="btn-lancer" to="/subscribe">Voir la formule Expert</Link>
       </div>
     </div>
   );

@@ -292,8 +292,7 @@
     .offre.retournee .offre-avant { display: none; }
   }
 
-  /* Une option se distingue d'un abonnement : la confondre ferait acheter
-     quelque chose qui n'ouvre rien. */
+  /* Le badge marque ce qui n'est pas dans toutes les formules. */
   .badge-option {
     display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
     background: rgba(201,162,39,.16); color: #c9a227;
@@ -532,7 +531,7 @@
         </p>
       </div>
       <div class="feature feature-option">
-        <h3>Solveur <span class="badge-option">option</span></h3>
+        <h3>Solveur <span class="badge-option">Expert</span></h3>
         <p>
           Le turn et la river résolus <em>exactement</em>, avec leur exploitabilité affichée —
           une solution dont l'exploitabilité n'est pas quasi nulle n'en est pas une, et le chiffre
@@ -698,7 +697,7 @@
             <li class="avec">Solveur postflop</li>
             <li class="avec">Turn et river résolus exactement</li>
             <li class="avec">Équilibre push/fold</li>
-            <li class="avec">Dès 3 mois, moins cher que Pro + l'option</li>
+            <li class="avec">La seule formule avec le solveur</li>
           </ul>
           <button class="btn btn-ghost offre-choisir">Choisir</button>
         </div>
@@ -778,10 +777,10 @@
       <div>
         <h3>Le solveur est-il inclus ?</h3>
         <p>
-          Non : c'est une <strong>option</strong>, à 6,90 € par mois, qui s'ajoute à un abonnement
-          cash game ou spin. Elle n'ouvre pas l'application à elle seule. C'est le seul écran qui
-          calcule au lieu de compter — une résolution de turn brasse cent quarante-cinq sous-arbres
-          — et il coûte à part parce qu'il coûte à part.
+          Dans <strong>Expert</strong> seulement, et il ne se vend pas séparément. C'est le seul
+          écran qui calcule au lieu de compter — une résolution de turn brasse cent quarante-cinq
+          sous-arbres et des millions d'évaluations d'abattage — et c'est ce qui sépare Expert des
+          deux autres formules.
         </p>
       </div>
       <div>
@@ -941,8 +940,7 @@
     cash:    { m1: 9.9,  m3: 26.9, m6: 49.9, m12: 94.9 },
     spin:    { m1: 9.9,  m3: 26.9, m6: 49.9, m12: 94.9 },
     duo:     { m1: 15.9, m3: 42.9, m6: 79.9, m12: 151.9 },
-    expert:  { m1: 30,   m3: 53.9, m6: 99.9, m12: 189.9 },
-    solveur: { m1: 6.9,  m3: 18.9, m6: 34.9, m12: 64.9 },
+    expert:  { m1: 30,   m3: 71.9, m6: 125.9, m12: 215.9 },
   };
   const MOIS = { m1: 1, m3: 3, m6: 6, m12: 12 };
   const DUREES = ["m1", "m3", "m6", "m12"];

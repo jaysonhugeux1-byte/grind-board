@@ -72,20 +72,25 @@ const PLANS: Record<string, Plan> = {
   // Conséquence assumée : les remises affichées pour Expert deviennent énormes
   // (−40 %, −44 %, −47 %) puisqu'elles se comparent à ce mois-là.
   expert_m1: { months: 1, amount: 30, label: "Expert — 1 mois", products: ["cash", "spin", "solveur"] },
-  expert_m3: { months: 3, amount: 53.9, label: "Expert — 3 mois", products: ["cash", "spin", "solveur"] },
-  expert_m6: { months: 6, amount: 99.9, label: "Expert — 6 mois", products: ["cash", "spin", "solveur"] },
-  expert_m12: { months: 12, amount: 189.9, label: "Expert — 12 mois", products: ["cash", "spin", "solveur"] },
+  // Les montants sont choisis pour que la remise AFFICHEE tombe juste : -20, -30
+  // et -40 % par rapport au mois a trente euros. 71,90 / 3 = 23,97, soit 20,1 %
+  // de moins que trente ; et ainsi de suite. Un prix rond aurait donne les memes
+  // pourcentages, mais aurait detonne dans une grille entierement en « ,90 ».
+  expert_m3: { months: 3, amount: 71.9, label: "Expert — 3 mois", products: ["cash", "spin", "solveur"] },
+  expert_m6: { months: 6, amount: 125.9, label: "Expert — 6 mois", products: ["cash", "spin", "solveur"] },
+  expert_m12: { months: 12, amount: 215.9, label: "Expert — 12 mois", products: ["cash", "spin", "solveur"] },
 
-  // ------------------------------------------------------- l'option seule
+  // LE SOLVEUR NE SE VEND PLUS SÉPARÉMENT. Il s'obtient par Expert, et par rien
+  // d'autre. Les formules « solveur_* » ont donc disparu de cette table.
   //
-  // Elle reste vendable depuis l'application, pour qui est déjà abonné et ne
-  // veut pas changer de formule. ELLE N'OUVRE PAS L'APPLICATION : « solveur »
-  // est un produit comme un autre ici, et c'est l'application qui refuse
-  // d'ouvrir sans « cash » ni « spin ».
-  solveur_m1: { months: 1, amount: 6.9, label: "Solveur — 1 mois", products: ["solveur"] },
-  solveur_m3: { months: 3, amount: 18.9, label: "Solveur — 3 mois", products: ["solveur"] },
-  solveur_m6: { months: 6, amount: 34.9, label: "Solveur — 6 mois", products: ["solveur"] },
-  solveur_m12: { months: 12, amount: 64.9, label: "Solveur — 12 mois", products: ["solveur"] },
+  // Aucune facture ouverte avant ce changement n'en pâtit : le webhook crédite
+  // les produits ENREGISTRÉS SUR LA COMMANDE, pas ceux que cette table décrit
+  // aujourd'hui. Une facture « solveur_m3 » émise hier se paiera et créditera
+  // normalement demain.
+  //
+  // « solveur » reste un produit à part entière dans la table des accès : c'est
+  // ce qui permet à Expert de le créditer, et à l'application de vérifier
+  // l'accès sans avoir à savoir par quelle formule il est arrivé.
 };
 
 // L'application de bureau sert son interface sur un port local tiré au hasard

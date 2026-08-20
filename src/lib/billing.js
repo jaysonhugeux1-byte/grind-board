@@ -6,40 +6,40 @@ import { supabase } from "../supabase";
 // Formules d'accès prépayé. Les montants ci-dessous ne servent QU'À L'AFFICHAGE :
 // le prix réellement facturé est décidé côté serveur, dans l'Edge Function.
 // L'identifiant envoyé est de la forme `${produit}_${duree}`.
+// Les formules, dans l'ordre où on les propose. Elles doivent correspondre à
+// celles de la vitrine, et surtout aux identifiants que connaît le serveur.
 export const PRODUITS = [
   { id: "cash", label: "Cash game", desc: "Suivi et analyse de tes parties de cash game" },
   { id: "spin", label: "Spin", desc: "ROI, multiplicateurs et ranges de push/fold" },
-  { id: "duo", label: "Les deux", desc: "Cash game et spin réunis", remise: "−40 % sur le second" },
+  { id: "duo", label: "Pro", desc: "Cash game et spin réunis", remise: "−40 % sur le second" },
+  { id: "expert", label: "Expert", desc: "Les deux formats, et le solveur", solveur: true },
 ];
 
-// Options : elles s'ajoutent à un abonnement, elles ne le remplacent pas.
-//
-// Le solveur est à part parce qu'il coûte à part : c'est le seul écran qui
-// CALCULE au lieu de compter. Une résolution de turn brasse cent quarante-cinq
-// sous-arbres et des millions d'évaluations d'abattage — c'est un travail que
-// les autres pages ne font pas, et le prix le reflète.
-export const OPTIONS = [
-  {
-    id: "solveur",
-    label: "Solveur",
-    desc: "Turn et river résolus exactement, préflop à l'équilibre",
-    base: "s'ajoute à un abonnement cash game ou spin",
-  },
-];
+// LE SOLVEUR NE SE VEND PLUS SÉPARÉMENT : il vient avec Expert, et avec rien
+// d'autre. La liste reste — vide — plutôt que d'être supprimée : l'écran
+// d'abonnement la parcourt, et un tableau vide s'y lit mieux qu'un import
+// disparu.
+export const OPTIONS = [];
+
+/** La formule qui donne accès au solveur. */
+export const FORMULE_SOLVEUR = "expert";
 
 export const DUREES = [
   { id: "m1", label: "1 mois" },
   { id: "m3", label: "3 mois" },
+  { id: "m6", label: "6 mois" },
   { id: "m12", label: "12 mois" },
 ];
 
 // Facturé en euros : le public visé est français, et une conversion affichée
 // en dollars ferait payer un écart de change pour rien.
+// Ces montants ne servent QU'À L'AFFICHAGE : le prix facturé est décidé côté
+// serveur. Ce qui doit rester juste ici, ce sont les CLÉS.
 const TARIFS = {
-  cash: { m1: "9,90 €", m3: "26,90 €", m12: "94,90 €" },
-  spin: { m1: "9,90 €", m3: "26,90 €", m12: "94,90 €" },
-  duo: { m1: "15,90 €", m3: "42,90 €", m12: "151,90 €" },
-  solveur: { m1: "6,90 €", m3: "18,90 €", m12: "64,90 €" },
+  cash: { m1: "9,90 €", m3: "26,90 €", m6: "49,90 €", m12: "94,90 €" },
+  spin: { m1: "9,90 €", m3: "26,90 €", m6: "49,90 €", m12: "94,90 €" },
+  duo: { m1: "15,90 €", m3: "42,90 €", m6: "79,90 €", m12: "151,90 €" },
+  expert: { m1: "30,00 €", m3: "71,90 €", m6: "125,90 €", m12: "215,90 €" },
 };
 
 export function tarif(produit, duree) {
@@ -48,7 +48,7 @@ export function tarif(produit, duree) {
 
 // Prix mensuel équivalent, pour rendre les durées comparables d'un coup d'œil.
 export function tarifMensuel(produit, duree) {
-  const mois = { m1: 1, m3: 3, m12: 12 }[duree];
+  const mois = { m1: 1, m3: 3, m6: 6, m12: 12 }[duree];
   const montant = parseFloat(TARIFS[produit]?.[duree]?.replace(",", ".") ?? "");
   if (!mois || !Number.isFinite(montant)) return null;
   return `${(montant / mois).toFixed(2).replace(".", ",")} € / mois`;

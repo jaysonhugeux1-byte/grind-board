@@ -65,8 +65,8 @@ function GestionBankrollParMode() {
   return mode === "cash" ? <GestionBankrollCash /> : <GestionBankroll />;
 }
 
-// Le solveur est une option payante : on garde l'écran plutôt que de rediriger,
-// pour que celui qui arrive dessus sache ce qu'il achèterait.
+// Le solveur est réservé à la formule Expert : on garde l'écran plutôt que de
+// rediriger, pour que celui qui arrive dessus sache ce qu'il achèterait.
 function SolveurProtege() {
   return (
     <RequireOption
@@ -75,8 +75,8 @@ function SolveurProtege() {
       sousTitre="Ce que l'équilibre ferait à ta place, et ce qu'il faut en changer"
       quoi={"Le solveur calcule au lieu de compter : il résout le tour de mises que tu lui "
         + "décris, et te rend la stratégie d'équilibre avec son exploitabilité mesurée. "
-        + "C'est le seul écran de Grand Livre qui fasse ce travail, et il fait l'objet "
-        + "d'une option distincte."}
+        + "C'est le seul écran de Grand Livre qui fasse ce travail, et la seule formule "
+        + "qui y donne accès est Expert."}
     >
       <Solveur />
     </RequireOption>
