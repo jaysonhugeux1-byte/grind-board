@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState } from "../components/ui";
 import GrilleRange from "../components/GrilleRange";
+import SolveurPostflop from "../components/SolveurPostflop";
 import {
   resoudreDuel, meilleureReponse, gainExploitation, rangeParLargeur,
   frequence, CLASSES,
@@ -35,6 +36,10 @@ const bb = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toF
 
 export default function Solveur() {
   const { hands, tournois, loading } = useData();
+  // Deux moteurs distincts sous un seul ecran : le preflop se resout exactement
+  // par jeu fictif, le postflop par minimisation de regret. Les melanger dans une
+  // meme page ne les melange pas dans le code.
+  const [mode, setMode] = useState("preflop");
   const [tapis, setTapis] = useState(10);
   const [ante, setAnte] = useState(0);
   const [profil, setProfil] = useState("nash");
@@ -107,6 +112,18 @@ export default function Solveur() {
         subtitle="L'équilibre push/fold, et ce qu'il faut en changer selon l'adversaire"
       />
 
+      <div className="segmented" style={{ marginBottom: 16 }}>
+        <button className={mode === "preflop" ? "active" : ""} onClick={() => setMode("preflop")}>
+          Préflop — tapis ou couché
+        </button>
+        <button className={mode === "postflop" ? "active" : ""} onClick={() => setMode("postflop")}>
+          Postflop — river
+        </button>
+      </div>
+
+      {mode === "postflop" && <SolveurPostflop />}
+
+      {mode === "preflop" && (<>
       <div className="carte-avertissement">
         <Scale size={15} />
         <p>
@@ -314,6 +331,7 @@ export default function Solveur() {
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 }

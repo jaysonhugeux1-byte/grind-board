@@ -25,7 +25,7 @@
 // croire que tout est déjà là.
 
 import {
-  NB_COMBOS, forcesSurBoard, indicesActifs, preparerAbattage,
+  NB_COMBOS, COMBOS, forcesSurBoard, indicesActifs, preparerAbattage,
   valeursAbattage, poidsDisponible,
 } from "./postflop.js";
 
@@ -417,4 +417,61 @@ function parcourirSansRegret(n, ctx, p, atteinteMoi, atteinteAdv, meilleureRepon
     for (const c of ctx.indices[p]) v[c] += va[c];
   }
   return v;
+}
+
+/**
+ * Ramène une stratégie du niveau COMBINAISON au niveau CLASSE, pour l'affichage.
+ *
+ * La grille 13×13 que tout joueur sait lire ne connaît que des classes. On y
+ * porte donc la moyenne des combinaisons de chaque classe, pondérée par leur
+ * poids dans la range — sans quoi une classe présente à moitié pèserait autant
+ * qu'une classe entière.
+ *
+ * C'est une PERTE d'information, et il faut la connaître : le solveur joue
+ * parfois deux combinaisons d'une même classe différemment, selon les cartes
+ * qu'elles bloquent. La moyenne l'aplatit. L'écran doit donc pouvoir descendre
+ * au détail, et la grille ne sert qu'à repérer où regarder.
+ */
+export function strategieParClasse(noeud, ctx, action) {
+  const moy = strategieMoyenne(noeud, ctx);
+  const na = noeud.actions.length;
+  const idx = ctx.indices[noeud.joueur];
+  const poids = ctx.poids[noeud.joueur];
+
+  const somme = new Float64Array(169);
+  const total = new Float64Array(169);
+  for (let h = 0; h < idx.length; h++) {
+    const c = idx[h];
+    const [a, b] = COMBOS[c];
+    const ra = a >> 2;
+    const rb = b >> 2;
+    const assortie = (a & 3) === (b & 3);
+    const haut = Math.max(ra, rb);
+    const bas = Math.min(ra, rb);
+    const k = ra === rb ? ra * 13 + ra : (assortie ? bas * 13 + haut : haut * 13 + bas);
+    const p = poids[c];
+    somme[k] += p * moy[h * na + action];
+    total[k] += p;
+  }
+  const out = new Float64Array(169);
+  for (let k = 0; k < 169; k++) out[k] = total[k] > 0 ? somme[k] / total[k] : 0;
+  return out;
+}
+
+/** Poids d'une range ramené au niveau classe, pour griser ce qui est absent. */
+export function presenceParClasse(ctx, joueur) {
+  const idx = ctx.indices[joueur];
+  const poids = ctx.poids[joueur];
+  const out = new Float64Array(169);
+  for (const c of idx) {
+    const [a, b] = COMBOS[c];
+    const ra = a >> 2;
+    const rb = b >> 2;
+    const assortie = (a & 3) === (b & 3);
+    const haut = Math.max(ra, rb);
+    const bas = Math.min(ra, rb);
+    const k = ra === rb ? ra * 13 + ra : (assortie ? bas * 13 + haut : haut * 13 + bas);
+    out[k] = Math.max(out[k], poids[c]);
+  }
+  return out;
 }
