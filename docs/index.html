@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Grand Livre — Suivi de bankroll pour le cash game CoinPoker</title>
-<meta name="description" content="Logiciel de suivi de bankroll et d'analyse de mains pour le cash game CoinPoker : replayer visuel, statistiques avancées, détection de leaks et coach IA." />
+<title>Grand Livre — Analyse de cash game et de Spin &amp; Go</title>
+<meta name="description" content="Logiciel d'analyse de mains et de bankroll pour le cash game et le Spin &amp; Go : recherche par spot, solveur postflop, projection de variance, carte mentale, replayer visuel et coach IA." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -163,6 +163,7 @@
   }
   .feature h3 { font-size: 15px; margin-bottom: 7px; }
   .feature p { font-size: 13.5px; color: var(--text-muted); margin: 0; }
+  .feature-option { border-color: rgba(201,162,39,.45); }
 
   /* ---------- coach IA ---------- */
   .ai-demo {
@@ -195,7 +196,11 @@
   .plan-unit { font-size: 12px; color: var(--text-muted); }
   .plan-btn { width: 100%; margin-top: 16px; }
   .produits {
-    display: inline-flex; gap: 4px; background: var(--surface);
+    /* Quatre onglets tiennent tout juste sur un telephone : 348 px pour 353
+       disponibles. En « nowrap », un libelle plus long ou une police agrandie
+       par l'utilisateur deborderait sans que rien ne le rattrape. */
+    display: flex; flex-wrap: wrap; width: max-content; max-width: 100%;
+    gap: 4px; background: var(--surface);
     border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 10px;
   }
   .produit {
@@ -204,6 +209,15 @@
   }
   .produit.actif { background: var(--gold); color: #16110a; font-weight: 600; }
   .produit-note { font-size: 13px; color: var(--text-muted); margin: 0 0 18px; }
+  /* Une option se distingue d'un abonnement : la confondre ferait acheter
+     quelque chose qui n'ouvre rien. */
+  .produit-note.est-option { color: var(--gold, #c9a227); }
+  .badge-option {
+    display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+    background: rgba(201,162,39,.16); color: #c9a227;
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; vertical-align: 1px;
+  }
+  .produit-option.actif .badge-option { background: rgba(0,0,0,.18); color: inherit; }
   .plan-btn[disabled] { opacity: 0.55; cursor: default; }
   .price-note { font-size: 13px; color: var(--text-muted); margin-top: 22px; max-width: 66ch; }
   .pay-error {
@@ -309,10 +323,12 @@
 </div>
 
 <div class="wrap hero">
-  <h1>Ton cash game CoinPoker, <em>enfin mesuré</em>.</h1>
+  <h1>Ton jeu, <em>enfin mesuré</em>.</h1>
   <p>
-    Importe tes mains, rejoue-les sur une vraie table, et découvre où part réellement ton argent.
-    Grand Livre calcule ton EV, traque tes fuites et te dit quoi corriger en priorité.
+    Cash game et Spin &amp; Go. Importe tes mains, rejoue-les sur une vraie table, et va chercher
+    n'importe quel spot pour savoir ce qu'il te rapporte ou te coûte. Grand Livre calcule ton EV,
+    classe tes fuites par ce qu'elles coûtent vraiment, et ne conclut jamais sur un échantillon
+    trop court.
   </p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="#tarifs">Commencer</a>
@@ -399,8 +415,10 @@
     <p class="eyebrow">Ce que fait le logiciel</p>
     <h2>Des chiffres que tu ne peux pas obtenir autrement</h2>
     <p class="lead">
-      CoinPoker anonymise les adversaires, ce qui rend les trackers classiques inutilisables.
-      Grand Livre est construit autour de cette contrainte : tout ce qu'il mesure porte sur ton propre jeu.
+      En cash game CoinPoker, les adversaires sont anonymisés à chaque main : les trackers
+      classiques y sont inutilisables, et tout ce que Grand Livre mesure porte donc sur ton propre
+      jeu. En Spin &amp; Go, les pseudos persistent — la base d'adversaires y devient un vrai suivi
+      joueur par joueur.
     </p>
 
     <div class="grid">
@@ -430,6 +448,47 @@
         <p>
           Choisis ta position et ce qu'ont fait les joueurs avant toi — limp, relance, fold — et
           compare ta range réelle à une référence ou à la tienne.
+        </p>
+      </div>
+      <div class="feature feature-option">
+        <h3>Solveur <span class="badge-option">option</span></h3>
+        <p>
+          Le turn et la river résolus <em>exactement</em>, avec leur exploitabilité affichée —
+          une solution dont l'exploitabilité n'est pas quasi nulle n'en est pas une, et le chiffre
+          est là pour le vérifier. Tu saisis le déroulé de la main, le pot et les ranges s'en
+          déduisent. Le coût du calcul est annoncé avant de te faire attendre.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Recherche par spot</h3>
+        <p>
+          Chaque main est relue depuis son texte : rôle préflop, type de pot, position, texture,
+          force de main, taille jouée. Chaque ligne de chaque tableau devient un filtre, donc
+          n'importe quel spot est atteignable — même ceux auxquels personne n'avait pensé.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Ce qui coûte, pas ce qui a le pire taux</h3>
+        <p>
+          Les fuites sont classées par perte totale : un spot à −300 bb/100 sur douze mains coûte
+          moins qu'un spot à −8 sur quatre mille. Et rien n'est déclaré acquis sous trente mains —
+          chaque chiffre porte son intervalle.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Projection et gestion de bankroll</h3>
+        <p>
+          Des milliers de parcours tirés de <em>ta</em> dispersion, pas d'une loi théorique : ce
+          que la variance peut te faire traverser, le pire creux du chemin, et le capital que
+          chaque limite demande réellement. Rien n'est récité, tout est calculé sur tes mains.
+        </p>
+      </div>
+      <div class="feature">
+        <h3>Carte mentale</h3>
+        <p>
+          Ta stratégie écrite, confrontée à tes décisions réelles : suis-tu ta propre carte,
+          combien te coûtent les écarts, et quelles cases perdent de l'argent même quand tu les
+          suis. La dernière question est la plus utile — elle juge la carte, pas le joueur.
         </p>
       </div>
       <div class="feature">
@@ -490,6 +549,9 @@
       <button class="produit actif" data-produit="spin">Spin &amp; Go</button>
       <button class="produit" data-produit="cash">Cash game</button>
       <button class="produit" data-produit="duo">Les deux</button>
+      <button class="produit produit-option" data-produit="solveur">
+        Solveur <span class="badge-option">option</span>
+      </button>
     </div>
     <p class="produit-note" id="produit-note"></p>
 
@@ -569,8 +631,21 @@
       <div>
         <h3>Puis-je suivre mes adversaires ?</h3>
         <p>
-          Non, et aucun logiciel ne le peut sur CoinPoker : les identifiants des joueurs changent à
-          chaque main. Grand Livre mesure les tendances globales de la table, jamais un joueur nommé.
+          <strong>En Spin &amp; Go, oui</strong> : les pseudos persistent, et Grand Livre tient une
+          fiche par joueur — fréquences mesurées, mains montrées à l'abattage, résultat contre lui.
+          <strong>En cash game CoinPoker, non</strong>, et aucun logiciel ne le peut : la salle
+          réattribue le pseudo de chaque joueur à chaque main, si bien qu'un même adversaire n'a en
+          moyenne qu'une seule main avec toi sur un export entier. On y mesure alors les tendances
+          de la population affrontée, jamais un joueur nommé.
+        </p>
+      </div>
+      <div>
+        <h3>Le solveur est-il inclus ?</h3>
+        <p>
+          Non : c'est une <strong>option</strong>, à 6,90 € par mois, qui s'ajoute à un abonnement
+          cash game ou spin. Elle n'ouvre pas l'application à elle seule. C'est le seul écran qui
+          calcule au lieu de compter — une résolution de turn brasse cent quarante-cinq sous-arbres
+          — et il coûte à part parce qu'il coûte à part.
         </p>
       </div>
       <div>
@@ -724,16 +799,26 @@
   // a rendu l'achat impossible pendant toute la migration multi-produits — la
   // page envoyait « m3 », la fonction n'acceptait que « spin_m3 », et répondait
   // « Formule inconnue » sans que rien ne s'ouvre.
+  // Ces montants ne servent QU'À L'AFFICHAGE : le prix facturé est décidé côté
+  // serveur, dans l'Edge Function. Les identifiants envoyés sont de la forme
+  // `${produit}_${duree}`, et le serveur les connaît tous les quatre.
   const TARIFS = {
     spin: { m1: 9.9, m3: 26.9, m12: 94.9 },
     cash: { m1: 9.9, m3: 26.9, m12: 94.9 },
     duo:  { m1: 15.9, m3: 42.9, m12: 151.9 },
+    solveur: { m1: 6.9, m3: 18.9, m12: 64.9 },
   };
+
+  // Une option s'AJOUTE à un abonnement, elle ne le remplace pas. Le dire avant
+  // le paiement et non après : quelqu'un qui achèterait le solveur seul
+  // n'ouvrirait aucune page de l'application.
+  const OPTIONS = new Set(["solveur"]);
   const MOIS = { m1: 1, m3: 3, m12: 12 };
   const NOTES = {
-    spin: "Suivi des tournois, EV main par main, lecteur en direct, base d'adversaires et carte mentale.",
-    cash: "Sessions, ranges, EV par position, recherche de mains et coach IA.",
+    spin: "Suivi des tournois, EV main par main, lecteur en direct, base d'adversaires, carte mentale, projection et gestion de bankroll.",
+    cash: "Sessions, ranges, recherche par spot, EV par position, carte mentale, projection, gestion de bankroll et coach IA.",
     duo:  "Tout le cash game et tout le spin, sur le même compte.",
+    solveur: "Option — s'ajoute à un abonnement cash game ou spin, et n'ouvre pas l'application à elle seule. Turn et river résolus exactement, exploitabilité mesurée, équilibre push/fold.",
   };
   let produit = "spin";
 
@@ -763,6 +848,7 @@
         (MOIS[d] > 1 ? "≈ " : "") + euro(prix / MOIS[d]) + " par mois";
     }
     $$("#produit-note").textContent = NOTES[produit];
+    $$("#produit-note").classList.toggle("est-option", OPTIONS.has(produit));
     document.querySelectorAll(".produit").forEach((b) =>
       b.classList.toggle("actif", b.dataset.produit === produit));
   }
