@@ -85,7 +85,11 @@ body {
 .sidebar-user-name { display: block; font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-version { margin: 8px 6px 0; font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); opacity: 0.7; }
 
-.main-content { flex: 1; padding: 28px 34px 60px; max-width: 980px; }
+/* Pas de plafond de largeur : sur un ecran large, un tableau de bord bride a
+   980 px laisse les deux tiers de la fenetre vides alors que les courbes et
+   les tableaux, eux, gagnent a s'etaler. La lisibilite des paragraphes est
+   assuree la ou elle compte, par un max-width sur les blocs de texte. */
+.main-content { flex: 1; min-width: 0; padding: 28px 34px 60px; }
 
 .full-page-loader { display: flex; align-items: center; justify-content: center; gap: 10px; height: 60vh; color: var(--text-muted); }
 
@@ -1008,3 +1012,29 @@ body {
 .profil-resume { font-size: 12.5px; color: var(--text-muted); }
 .profil-chiffres { font-size: 11px; color: var(--gold-soft); margin-top: 3px; }
 .profil-detail { margin: 0 0 16px; max-width: 70ch; }
+
+/* Case d'ajustement au CEV : la raison du calcul est dite sous la case, pas
+   cachée dans une infobulle. */
+.ajust {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 11px 14px; margin-bottom: 16px;
+  font-size: 13px; cursor: pointer;
+}
+.ajust.inactif { opacity: .55; cursor: default; }
+.ajust input { margin-top: 3px; accent-color: var(--gold); }
+.ajust .card-sub { display: block; margin: 4px 0 0; max-width: 78ch; }
+
+/* Base du seuil : trois façons de poser la même question. Le choix reste
+   visible en permanence, parce qu'il change le sens de tous les nombres
+   affichés ensuite. */
+.bases { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.base {
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 13px; cursor: pointer; font: inherit; color: var(--text);
+}
+.base:hover { border-color: var(--text-muted); }
+.base.actif { border-color: var(--gold); background: rgba(201, 162, 39, .07); }
+.base-nom { font-size: 13px; font-weight: 600; }
+.base-aide { font-size: 11px; color: var(--text-muted); }

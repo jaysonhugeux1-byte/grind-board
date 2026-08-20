@@ -26,7 +26,7 @@ T("limite invalide : aucune proposition", paliersAutour(0).length === 0);
 // Echelle : un seuil par limite, calcule et non decrete
 // ---------------------------------------------------------------------------
 
-const ech = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1, 2, 5], nTournois: 400, nSimulations: 250 });
+const ech = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1, 2, 5], caves: 100, horizon: 400, nSimulations: 250 });
 T("une ligne par limite", ech.length === 3);
 T("limites triees", ech[0].buyIn < ech[1].buyIn && ech[1].buyIn < ech[2].buyIn);
 T("seuil calcule pour chaque limite", ech.every((p) => p.requis > 0), JSON.stringify(ech.map((p) => p.requis)));
@@ -42,7 +42,7 @@ T("marge de descente respectee",
   Math.abs(ech[0].plancher - ech[0].requis * MARGE_DESCENTE) < 0.02);
 
 T("echantillon trop court : aucune echelle",
-  echelle({ resultats: gagnant.slice(0, 5), buyInActuel: 1, limites: [1] }).length === 0);
+  echelle({ resultats: gagnant.slice(0, 5), buyInActuel: 1, limites: [1], caves: 100 }).length === 0);
 
 // ---------------------------------------------------------------------------
 // Situation : que faire maintenant
@@ -129,14 +129,18 @@ T("simulation reproductible",
 const { PROFILS, profil, comparerProfils } = await import("../src/lib/brm.js");
 
 T("trois profils proposes", PROFILS.length === 3);
-T("identifiants attendus", PROFILS.map((p) => p.id).join() === "prudent,equilibre,agressif");
+T("identifiants attendus", PROFILS.map((p) => p.id).join() === "strict,equilibre,agressif");
 
-// Le risque accepte doit croitre du prudent vers l'agressif, et l'horizon
-// decroitre : jouer plus longtemps expose davantage.
-T("risque croissant",
-  PROFILS[0].risqueCible < PROFILS[1].risqueCible && PROFILS[1].risqueCible < PROFILS[2].risqueCible);
-T("horizon decroissant",
-  PROFILS[0].horizon > PROFILS[1].horizon && PROFILS[1].horizon > PROFILS[2].horizon);
+// Les caves decroissent du strict vers l'agressif, et l'horizon aussi : jouer
+// plus longtemps expose davantage, donc le profil prudent se mesure sur le plus
+// long terme.
+T("caves decroissantes",
+  PROFILS[0].caves === 175 && PROFILS[1].caves === 100 && PROFILS[2].caves === 75);
+// L'horizon n'appartient PAS au profil : mesurer le strict sur deux mille
+// tournois et l'agressif sur cinq cents faisait apparaitre l'agressif comme le
+// moins risque, avec moins de caves. On ne compare pas des risques pris sur des
+// durees differentes.
+T("aucun profil ne porte d'horizon", PROFILS.every((p) => p.horizon === undefined));
 T("marge de descente decroissante",
   PROFILS[0].margeDescente > PROFILS[1].margeDescente && PROFILS[1].margeDescente > PROFILS[2].margeDescente);
 
@@ -152,15 +156,67 @@ T("profil retrouve par identifiant", profil("agressif").id === "agressif");
 T("identifiant inconnu : repli sur l'equilibre", profil("nimportequoi").id === "equilibre");
 
 // ---------------------------------------------------------------------------
+// Ajustement par le CEV
+//
+// FONDEMENT : le risque de ruine vaut approximativement exp(-2 mu B / sigma^2),
+// donc a risque constant la bankroll est INVERSEMENT proportionnelle a
+// l'avantage. Doubler son ROI doit diviser les caves par deux.
+// ---------------------------------------------------------------------------
+
+const { cavesAjustees, ROI_REFERENCE } = await import("../src/lib/brm.js");
+
+T("au ROI de reference, rien ne bouge",
+  cavesAjustees({ cavesBase: 100, roiMesure: ROI_REFERENCE }).caves === 100);
+T("doubler le ROI divise les caves par deux",
+  cavesAjustees({ cavesBase: 100, roiMesure: ROI_REFERENCE * 2 }).caves === 50);
+T("moitie du ROI double les caves",
+  cavesAjustees({ cavesBase: 100, roiMesure: ROI_REFERENCE / 2 }).caves === 200);
+T("sans ROI mesure, aucun ajustement",
+  cavesAjustees({ cavesBase: 100, roiMesure: null }).ajuste === false);
+
+// Un ROI estime sur quelques centaines de tournois est bruyant : diviser par un
+// petit nombre s'emballerait. Le facteur est donc borne des deux cotes.
+T("facteur borne vers le bas",
+  cavesAjustees({ cavesBase: 100, roiMesure: 1 }).caves === 50);
+T("facteur borne vers le haut",
+  cavesAjustees({ cavesBase: 100, roiMesure: 0.0001 }).caves === 300);
+T("bornage signale", cavesAjustees({ cavesBase: 100, roiMesure: 1 }).borne === true);
+T("ajustement dans les bornes non signale",
+  cavesAjustees({ cavesBase: 100, roiMesure: ROI_REFERENCE * 2 }).borne === false);
+
+// Aucune bankroll ne protege d'un jeu perdant : rendre un grand nombre
+// laisserait croire qu'il existe une solution.
+T("jeu a ROI nul : aucune reponse",
+  cavesAjustees({ cavesBase: 100, roiMesure: 0 }).caves === null);
+T("jeu perdant : aucune reponse",
+  cavesAjustees({ cavesBase: 100, roiMesure: -0.05 }).caves === null);
+T("jeu perdant signale comme tel",
+  cavesAjustees({ cavesBase: 100, roiMesure: -0.05 }).jeuPerdant === true);
+
+// ---------------------------------------------------------------------------
 // Ce que chaque profil coute reellement
 // ---------------------------------------------------------------------------
 
 const comp = comparerProfils({ resultats: gagnant, buyInActuel: 1, nSimulations: 200 });
 T("une ligne par profil", comp.length === 3);
-T("le prudent exige le plus de capital",
+T("le strict exige le plus de capital",
   comp[0].requis > comp[2].requis, `${comp[0].requis} vs ${comp[2].requis}`);
 T("l'agressif exige le moins",
   comp[2].requis === Math.min(...comp.map((p) => p.requis)));
+T("le seuil suit exactement les caves du profil",
+  comp[1].requis === comp[1].cavesRetenues * 1);
+// La convention est lisible, mais c'est la simulation qui dit ce qu'elle vaut.
+T("le risque reellement encouru est mesure",
+  comp.every((p) => p.risqueMesure != null && p.risqueMesure >= 0 && p.risqueMesure <= 1));
+
+const ajustee = comparerProfils({
+  resultats: gagnant, buyInActuel: 1, roiMesure: ROI_REFERENCE * 2,
+  ajusterAuCev: true, nSimulations: 200,
+});
+T("l'ajustement reduit les caves d'un bon joueur",
+  ajustee[1].cavesRetenues === 50, String(ajustee[1].cavesRetenues));
+T("sans ajustement demande, les caves de base restent",
+  comp[1].cavesRetenues === 100);
 T("chaque profil chiffre la limite suivante", comp.every((p) => p.requisSuivant > 0));
 T("seul l'agressif propose un tir",
   comp[0].tirSuivant === null && comp[2].tirSuivant > 0);
@@ -171,8 +227,8 @@ T("le tir s'ouvre avant le seuil plein",
 // La marge de descente doit se propager jusqu'au plancher
 // ---------------------------------------------------------------------------
 
-const strict = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1], nTournois: 400, margeDescente: 0.9, nSimulations: 200 });
-const souple = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1], nTournois: 400, margeDescente: 0.65, nSimulations: 200 });
+const strict = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1], caves: 100, horizon: 400, margeDescente: 0.9, nSimulations: 200 });
+const souple = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1], caves: 100, horizon: 400, margeDescente: 0.65, nSimulations: 200 });
 T("un profil strict redescend plus tot",
   strict[0].plancher > souple[0].plancher, `${strict[0].plancher} vs ${souple[0].plancher}`);
 
@@ -180,7 +236,7 @@ T("un profil strict redescend plus tot",
 // Le tir dans la situation
 // ---------------------------------------------------------------------------
 
-const pourTir = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1, 2], nTournois: 500, nSimulations: 200 });
+const pourTir = echelle({ resultats: gagnant, buyInActuel: 1, limites: [1, 2], caves: 100, horizon: 500, nSimulations: 200 });
 const seuilSuivant = pourTir[1].requis;
 
 const enTir = situation({

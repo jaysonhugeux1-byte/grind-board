@@ -5,7 +5,10 @@ import { PageHeader, EmptyState } from "../components/ui";
 import BarreFiltres from "../components/BarreFiltres";
 import { FILTRES_DEFAUT, appliquerFiltres } from "../lib/spinFiltres";
 import { resultatsEuros, MINIMUM_TOURNOIS } from "../lib/projection";
-import { echelle, situation, evaluerObjectif, paliersAutour, comparerProfils, PROFILS, profil } from "../lib/brm";
+import {
+  echelle, situation, evaluerObjectif, paliersAutour, comparerProfils,
+  cavesAjustees, PROFILS, profil, ROI_REFERENCE, BASES, RISQUES, HORIZON_DEFAUT,
+} from "../lib/brm";
 import { tapisDepart, buildCevChart, verdictCev, seuilCevRentable, profitParTournoi } from "../lib/spinRentabilite";
 import { RAKE_PAR_DEFAUT } from "../lib/spinStats";
 
@@ -24,6 +27,9 @@ const CLE_RAKEBACK = "gl_spin_rakeback";
 const CLE_BANKROLL = "gl_brm_bankroll";
 const CLE_CIBLE = "gl_brm_cible";
 const CLE_PROFIL = "gl_brm_profil";
+const CLE_AJUST = "gl_brm_ajuster";
+const CLE_BASE = "gl_brm_base";
+const CLE_HORIZON = "gl_brm_horizon";
 
 const lire = (cle, defaut) => {
   const v = parseFloat(localStorage.getItem(cle));
@@ -60,6 +66,11 @@ export default function GestionBankroll() {
   const [cible, setCible] = useState(() => lire(CLE_CIBLE, 0));
   const [base, setBase] = useState("observe");
   const [idProfil, setIdProfil] = useState(() => localStorage.getItem(CLE_PROFIL) || "equilibre");
+  const [ajusterAuCev, setAjuster] = useState(() => localStorage.getItem(CLE_AJUST) === "1");
+  const [baseSeuil, setBaseSeuil] = useState(() => localStorage.getItem(CLE_BASE) || "caves");
+  const [risqueCible, setRisqueCible] = useState(0.05);
+  const [cavesPerso, setCavesPerso] = useState(100);
+  const [horizon, setHorizon] = useState(() => lire(CLE_HORIZON, HORIZON_DEFAUT));
   const [lance, setLance] = useState(null);
   const [calcul, setCalcul] = useState(false);
 
@@ -97,22 +108,45 @@ export default function GestionBankroll() {
     return profitParTournoi({ cev: v.cev, tapis, buyIn, tauxRake, tauxRakeback });
   }, [vue.mains, buyIn, tauxRake, tauxRakeback]);
 
+  // ROI mesuré à partir du CEV, exprimé en part du buy-in. C'est la grandeur
+  // qui corrige les caves : à risque constant, la bankroll nécessaire est
+  // inversement proportionnelle à l'avantage.
+  const roiMesure = useMemo(
+    () => (espereCev != null && buyIn > 0 ? espereCev / buyIn : null),
+    [espereCev, buyIn],
+  );
+
   const lancer = useCallback(() => {
     setCalcul(true);
     localStorage.setItem(CLE_BANKROLL, String(bankroll));
     localStorage.setItem(CLE_CIBLE, String(cible));
     localStorage.setItem(CLE_PROFIL, idProfil);
+    localStorage.setItem(CLE_AJUST, ajusterAuCev ? "1" : "0");
+    localStorage.setItem(CLE_BASE, baseSeuil);
+    localStorage.setItem(CLE_HORIZON, String(horizon));
     setTimeout(() => {
       const espere = base === "cev" ? espereCev : null;
       const p = profil(idProfil);
-      const paliers = echelle({
+      const ajuste = cavesAjustees({
+        cavesBase: p.caves, roiMesure: ajusterAuCev ? roiMesure : null,
+      });
+      // La base « libre » court-circuite le profil : c'est le joueur qui pose
+      // son nombre de caves, et l'on ne lui rend que le risque qu'il laisse.
+      const cavesRetenues = baseSeuil === "perso" ? cavesPerso : ajuste.caves;
+      const paliers = cavesRetenues == null && baseSeuil !== "ruine" ? [] : echelle({
         resultats, buyInActuel: buyIn, limites: paliersAutour(buyIn),
-        nTournois: p.horizon, risqueCible: p.risqueCible, margeDescente: p.margeDescente,
+        mode: baseSeuil, caves: cavesRetenues, risqueCible,
+        margeDescente: p.margeDescente, horizon,
         profitEspere: espere, nSimulations: 700,
       });
       setLance({
-        bankroll, cible, base, buyIn, espere, paliers, profil: p,
-        comparaison: comparerProfils({ resultats, buyInActuel: buyIn, nSimulations: 400 }),
+        bankroll, cible, base, buyIn, espere, paliers, profil: p, ajuste, roiMesure,
+        horizon, baseSeuil, risqueCible,
+        comparaison: comparerProfils({
+          resultats, buyInActuel: buyIn, roiMesure, ajusterAuCev,
+          horizon, mode: baseSeuil === "perso" ? "caves" : baseSeuil, risqueCible,
+          nSimulations: 400,
+        }),
         etat: situation({
           bankroll, echelle: paliers, buyInActuel: buyIn,
           seuilTir: p.seuilTir, stopLossTir: p.stopLossTir,
@@ -120,17 +154,17 @@ export default function GestionBankroll() {
         objectif: cible > 0
           ? evaluerObjectif({ resultats, bankroll, cible, buyIn, nMax: 8000, profitEspere: espere, nSimulations: 2000 })
           : null,
-        signature: `${resultats.length}|${buyIn}|${idProfil}`,
+        signature: `${resultats.length}|${buyIn}|${idProfil}|${ajusterAuCev}|${baseSeuil}|${risqueCible}|${cavesPerso}|${horizon}`,
       });
       setCalcul(false);
     }, 30);
-  }, [bankroll, cible, base, idProfil, resultats, buyIn, espereCev]);
+  }, [bankroll, cible, base, idProfil, ajusterAuCev, baseSeuil, risqueCible, cavesPerso, horizon, roiMesure, resultats, buyIn, espereCev]);
 
   const perime = useMemo(() => {
     if (!lance) return false;
     return lance.bankroll !== bankroll || lance.cible !== cible || lance.base !== base
-      || lance.signature !== `${resultats.length}|${buyIn}|${idProfil}`;
-  }, [lance, bankroll, cible, base, idProfil, resultats.length, buyIn]);
+      || lance.signature !== `${resultats.length}|${buyIn}|${idProfil}|${ajusterAuCev}|${baseSeuil}|${risqueCible}|${cavesPerso}|${horizon}`;
+  }, [lance, bankroll, cible, base, idProfil, ajusterAuCev, baseSeuil, risqueCible, cavesPerso, horizon, resultats.length, buyIn]);
 
   if (loading) {
     return <div className="page"><div className="loading-block"><Loader2 className="spin" size={22} /> Chargement…</div></div>;
@@ -173,15 +207,89 @@ export default function GestionBankroll() {
             <span className="profil-nom">{p.nom}</span>
             <span className="profil-resume">{p.resume}</span>
             <span className="profil-chiffres mono">
-              {pct(p.risqueCible)} de ruine · {p.horizon.toLocaleString("fr-FR")} tournois
-              {p.seuilTir ? ` · tirs a ${pct(p.seuilTir)}` : ""}
+              {p.caves} caves
+              {ajusterAuCev && roiMesure != null
+                && ` → ${cavesAjustees({ cavesBase: p.caves, roiMesure }).caves ?? "—"}`}
+              {p.seuilTir ? ` · tirs à ${pct(p.seuilTir)}` : ""}
             </span>
           </button>
         ))}
       </div>
-      <p className="card-sub profil-detail">{profil(idProfil).detail}</p>
+      <p className="card-sub profil-detail">
+        {baseSeuil === "perso"
+          ? "En base libre, le nombre de caves vient de toi : le profil ne sert plus qu'à la marge de descente et à l'autorisation des tirs."
+          : profil(idProfil).detail}
+      </p>
+
+      <label className={`ajust${roiMesure == null ? " inactif" : ""}`}>
+        <input
+          type="checkbox"
+          checked={ajusterAuCev}
+          disabled={roiMesure == null}
+          onChange={(e) => setAjuster(e.target.checked)}
+        />
+        <span>
+          <strong>Ajuster ces caves à mon CEV</strong>
+          {roiMesure != null && (
+            <> — ton avantage mesuré vaut {(roiMesure * 100).toFixed(1)} % de ROI, contre{" "}
+            {(ROI_REFERENCE * 100).toFixed(0)} % supposés par les recommandations usuelles.</>
+          )}
+          <span className="card-sub">
+            À risque de ruine constant, la bankroll nécessaire est inversement proportionnelle à
+            l'avantage : doubler son ROI divise les caves par deux. Le facteur est borné entre ×0,5
+            et ×3, parce qu'un ROI estimé sur quelques centaines de tournois reste bruyant.
+            {roiMesure == null && " Il faut des mains importées pour mesurer ton CEV."}
+          </span>
+        </span>
+      </label>
+
+      <div className="bases">
+        {BASES.map((b) => (
+          <button
+            key={b.id}
+            className={`base${baseSeuil === b.id ? " actif" : ""}`}
+            onClick={() => setBaseSeuil(b.id)}
+          >
+            <span className="base-nom">{b.nom}</span>
+            <span className="base-aide">{b.aide}</span>
+          </button>
+        ))}
+      </div>
 
       <div className="reglages-proj">
+        {baseSeuil === "ruine" && (
+          <label>
+            Risque de ruine accepté
+            <select value={risqueCible} onChange={(e) => setRisqueCible(+e.target.value)}>
+              {RISQUES.map((r) => (
+                <option key={r} value={r}>{r === 0 ? "0 % (aucune observée)" : `${r * 100} %`}</option>
+              ))}
+            </select>
+            {risqueCible === 0 && (
+              <span className="card-sub">
+                Zéro veut dire « aucune ruine parmi les parcours simulés » — une mesure, pas une
+                garantie.
+              </span>
+            )}
+          </label>
+        )}
+        {baseSeuil === "perso" && (
+          <label>
+            Caves voulues
+            <input type="number" min="1" step="5" value={cavesPerso}
+                   onChange={(e) => setCavesPerso(Math.max(1, +e.target.value || 1))} />
+            <span className="card-sub">le risque encouru s'affichera après calcul</span>
+          </label>
+        )}
+        <label>
+          Horizon
+          <select value={horizon} onChange={(e) => setHorizon(+e.target.value)}>
+            {[500, 1000, 2000, 5000].map((h) => (
+              <option key={h} value={h}>{h.toLocaleString("fr-FR")} tournois</option>
+            ))}
+          </select>
+          <span className="card-sub">sur quelle durée on juge le risque</span>
+        </label>
         <label>
           Bankroll actuelle
           <input type="number" min="0" step="10" value={bankroll}
@@ -261,13 +369,13 @@ export default function GestionBankroll() {
             <section className="card">
               <div className="card-title-row"><h3><Shield size={16} /> Ton échelle de limites</h3></div>
               <p className="card-sub">
-                Pour chaque limite, la réserve sous laquelle le risque de ne plus pouvoir s'inscrire
-                dépasse 5 % sur mille tournois. On monte au seuil plein, on ne redescend qu'en tombant
-                sous le plancher : sans cette bande morte, un seul tournoi suffirait à faire
-                changer de limite.
+                {lance.paliers[0]?.caves ?? "—"} caves par limite, et le risque de ruine
+                que cela laisse réellement sur {lance.horizon.toLocaleString("fr-FR")} tournois.
+                On monte au seuil plein, on ne redescend qu'en tombant sous le plancher : sans cette
+                bande morte, un seul tournoi suffirait à faire changer de limite.
               </p>
               <table className="table-compacte">
-                <thead><tr><th>Limite</th><th>Seuil de montée</th><th>Plancher</th><th>Caves</th></tr></thead>
+                <thead><tr><th>Limite</th><th>Seuil de montée</th><th>Plancher</th><th>Ruine</th></tr></thead>
                 <tbody>
                   {lance.paliers.map((p) => {
                     const courant = Math.abs(p.buyIn - lance.buyIn) < 0.01;
@@ -282,7 +390,9 @@ export default function GestionBankroll() {
                           {p.requis == null ? "hors d'atteinte" : euros(p.requis)}
                         </td>
                         <td className="mono">{p.plancher == null ? "—" : euros(p.plancher)}</td>
-                        <td className="mono">{p.caves ?? "—"}</td>
+                        <td className={`mono ${p.risqueMesure > 0.1 ? "neg" : ""}`}>
+                          {p.risqueMesure == null ? "—" : pct(p.risqueMesure)}
+                        </td>
                       </tr>
                     );
                   })}
@@ -299,12 +409,13 @@ export default function GestionBankroll() {
             <section className="card">
               <div className="card-title-row"><h3><Shield size={16} /> Ce que coute chaque profil</h3></div>
               <p className="card-sub">
-                Pour la limite que tu joues et pour la suivante. C'est ici que le choix se fait :
-                « agressif » ne veut rien dire tant qu'on n'a pas vu combien de caves il demande.
+                Les caves sont une convention lisible ; la colonne « ruine mesurée » dit ce qu'elle
+                protège vraiment sur ton jeu. C'est elle qu'il faut regarder pour choisir, pas
+                l'adjectif.
               </p>
               <table className="table-compacte">
                 <thead>
-                  <tr><th>Profil</th><th>Ta limite</th><th>Caves</th><th>Limite suivante</th></tr>
+                  <tr><th>Profil</th><th>Ta limite</th><th>Ruine mesurée</th><th>Limite suivante</th></tr>
                 </thead>
                 <tbody>
                   {(lance.comparaison || []).map((p) => (
@@ -312,12 +423,17 @@ export default function GestionBankroll() {
                       <td>
                         <strong>{p.nom}</strong>
                         {p.id === lance.profil.id && <span className="carte-n">choisi</span>}
-                        <span className="carte-regle-detail">{pct(p.risqueCible)} de ruine</span>
+                        <span className="carte-regle-detail">
+                          {p.cavesRetenues == null ? "aucune bankroll ne suffit" : `${p.cavesRetenues} caves`}
+                          {p.ajuste?.ajuste && p.cavesRetenues != null && ` (base ${p.caves}, ×${p.ajuste.facteur})`}
+                        </span>
                       </td>
                       <td className={`mono ${lance.bankroll >= (p.requis ?? Infinity) ? "pos" : "neg"}`}>
                         {euros(p.requis)}
                       </td>
-                      <td className="mono">{p.caves ?? "—"}</td>
+                      <td className={`mono ${p.risqueMesure > 0.1 ? "neg" : "pos"}`}>
+                        {p.risqueMesure == null ? "—" : pct(p.risqueMesure)}
+                      </td>
                       <td className="mono">
                         {euros(p.requisSuivant)}
                         {p.tirSuivant && (
