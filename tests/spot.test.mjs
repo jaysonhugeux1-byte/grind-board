@@ -1,4 +1,4 @@
-import { extraireSpot, familleForce, categorieTaille } from "../src/lib/spot.js";
+import { extraireSpot, spotDe, familleForce, categorieTaille } from "../src/lib/spot.js";
 import {
   filtrer, ventiler, agreger, fuites, valeursDisponibles, dimension, nommerTexture,
   MAINS_MINIMUM_CONCLUSION,
@@ -308,6 +308,30 @@ T("pas de bouton, pas de spot",
   extraireSpot({ id: 2, bb: 0.1, raw: "CoinPoker Hand #2\nSeat 1: Hero (₮10.00 in chips)" }) === null);
 T("pas de Hero, pas de spot", extraireSpot({ id: 3, bb: 0.1, raw:
   "Table 'x' Seat #1 is the button\nSeat 1: a (₮1.00 in chips)\nSeat 2: b (₮1.00 in chips)" }) === null);
+
+// ---------------------------------------------------------------------------
+// Le cache ne doit pas figer un echec
+// ---------------------------------------------------------------------------
+//
+// Le texte des mains arrive APRES elles : un ecran rendu entre les deux voit des
+// mains sans texte, dont l'extraction echoue legitimement. Si le cache retenait
+// cet echec, l'historique arriverait et la page continuerait d'afficher « aucune
+// main lisible » sur des donnees parfaitement lisibles. Le defaut a ete pris a
+// l'ecran.
+
+const sansTexte = { id: 987654, ts: 1, bb: 0.1, net: 0 };
+T("une main sans texte ne rend pas de spot", spotDe(sansTexte) === null);
+
+const memeMainAvecTexte = { ...sansTexte, raw: ouvertureBTN.raw, notation: "AKo" };
+T("la meme main, son texte arrive, devient lisible",
+  spotDe(memeMainAvecTexte) !== null);
+T("et elle est correctement lue",
+  spotDe(memeMainAvecTexte).position === "BTN",
+  String(spotDe(memeMainAvecTexte)?.position));
+
+// Le succes, lui, se memorise : c'est tout l'interet du cache.
+T("deux lectures d'une meme main rendent le meme objet",
+  spotDe(memeMainAvecTexte) === spotDe(memeMainAvecTexte));
 
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

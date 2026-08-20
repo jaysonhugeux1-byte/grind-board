@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { Search, Loader2, Users, Eye, Info, ArrowLeft } from "lucide-react";
 import { useData } from "../contexts/DataContext";
@@ -239,9 +239,12 @@ function Fiche({ stats, cash }) {
 }
 
 export default function Adversaires() {
-  const { hands, tournois, loading } = useData();
+  const { hands, tournois, loading, textesCharges, textesEnCours, chargerTextes } = useData();
   const { mode } = useMode();
   const cash = mode === "cash";
+  // En cash game, les fiches se reconstruisent en relisant le texte des mains :
+  // rien n'est relevé à l'import. Il faut donc le demander.
+  useEffect(() => { if (cash && !loading) chargerTextes?.(); }, [cash, loading, chargerTextes]);
   const [requete, setRequete] = useState("");
   const naviguer = useNavigate();
   // Le pseudo vit dans l'adresse plutot que dans un etat local : le retour du
@@ -267,10 +270,11 @@ export default function Adversaires() {
     [fiches, choisi]
   );
 
-  if (loading) {
+  if (loading || (cash && (textesEnCours || !textesCharges))) {
     return (
       <div className="full-page-loader">
-        <Loader2 size={22} className="spin" /> Chargement…
+        <Loader2 size={22} className="spin" />
+        {cash && !textesCharges ? " Lecture de tes mains…" : " Chargement…"}
       </div>
     );
   }

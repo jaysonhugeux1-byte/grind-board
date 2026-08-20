@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "../supabase";
 import {
   getAllHands,
+  getAllHandRaw,
   getAllEntries,
   getAllSpinTournaments,
   getAllSpinHands,
@@ -18,6 +19,15 @@ export function DataProvider({ children }) {
   const [hands, setHands] = useState([]);
   const [tournois, setTournois] = useState([]);
   const [entries, setEntries] = useState([]);
+  // LE TEXTE DES MAINS N'EST PAS CHARGÉ AVEC ELLES, ET C'EST VOLONTAIRE : il
+  // pèse plus que tout le reste, et la plupart des écrans n'en ont aucun besoin.
+  // Trois d'entre eux en ont besoin de TOUT — statistiques par spot, carte
+  // mentale, fiches d'adversaires — parce qu'ils re-dérivent chaque main plutôt
+  // que de dépendre de ce qui a été relevé à l'import.
+  //
+  // On le charge donc à leur demande, une seule fois, et on garde le résultat.
+  const [textes, setTextes] = useState(null);
+  const [textesEnCours, setTextesEnCours] = useState(false);
   const [jeuPret, setJeuPret] = useState(false);
   const [entriesReady, setEntriesReady] = useState(false);
   const reloadTimer = useRef(null);
@@ -110,9 +120,36 @@ export function DataProvider({ children }) {
     await Promise.all([loadJeu(user.uid, mode), loadEntries(user.uid)]);
   }, [user, mode, loadJeu, loadEntries]);
 
+  // Les mains, enrichies de leur texte quand il a été demandé. On rend un
+  // tableau NEUF pour que les mémos des écrans se recalculent : muter les mains
+  // en place les laisserait afficher un écran vide sur des données présentes.
+  const mainsAvecTexte = useMemo(
+    () => (textes ? hands.map((h) => ({ ...h, raw: h.raw ?? textes.get(h.id) ?? null })) : hands),
+    [hands, textes],
+  );
+
+  const chargerTextes = useCallback(async () => {
+    if (textes || textesEnCours || !user) return;
+    setTextesEnCours(true);
+    try {
+      setTextes(await getAllHandRaw(user.uid));
+    } catch (e) {
+      console.error("Lecture du texte des mains impossible :", e);
+      // Une Map vide plutôt que null : sans cela l'écran redemanderait
+      // indéfiniment et rejouerait la requête en boucle.
+      setTextes(new Map());
+    } finally {
+      setTextesEnCours(false);
+    }
+  }, [textes, textesEnCours, user]);
+
   return (
     <DataContext.Provider
-      value={{ hands, tournois, entries, loading: !jeuPret || !entriesReady, refresh }}
+      value={{
+        hands: mainsAvecTexte, tournois, entries,
+        loading: !jeuPret || !entriesReady, refresh,
+        textesCharges: textes != null, textesEnCours, chargerTextes,
+      }}
     >
       {children}
     </DataContext.Provider>

@@ -300,7 +300,12 @@ export function spotDe(main) {
   if (main?.id == null) return extraireSpot(main);
   if (cache.has(main.id)) return cache.get(main.id);
   const s = extraireSpot(main);
-  cache.set(main.id, s);
+  // ON NE MÉMORISE QUE LES SUCCÈS. Le texte des mains arrive après elles : un
+  // écran rendu entre les deux voit des mains sans texte, dont l'extraction
+  // échoue légitimement. Mettre ces échecs en cache les figerait — l'historique
+  // arriverait, et la page continuerait d'afficher « aucune main lisible » sur
+  // des données parfaitement lisibles.
+  if (s) cache.set(main.id, s);
   return s;
 }
 

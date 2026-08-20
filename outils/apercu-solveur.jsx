@@ -66,7 +66,11 @@ function EnCash({ children }) {
   return (
     <ModeContext.Provider value={{ mode: "cash", setMode: () => {}, estSpin: false }}>
       <DataContext.Provider
-        value={{ hands: mains, tournois: [], entries: [], loading: false, refresh: () => {} }}
+        value={{
+          hands: mains, tournois: [], entries: [], loading: false, refresh: () => {},
+          // Les mains factices portent deja leur texte : rien a charger.
+          textesCharges: true, textesEnCours: false, chargerTextes: () => {},
+        }}
       >
         {children}
       </DataContext.Provider>

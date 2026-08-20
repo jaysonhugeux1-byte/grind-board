@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { Loader2, X, ChevronRight, Search, AlertTriangle, Filter, Layers } from "lucide-react";
 import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState, fmtDateTime } from "../components/ui";
@@ -42,7 +42,11 @@ const bb100 = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+"
 const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(0)} %`);
 
 export default function StatsHero() {
-  const { hands, loading } = useData();
+  // LE TEXTE DES MAINS N'EST PAS CHARGÉ AVEC ELLES. Cette page le relit
+  // intégralement — c'est ce qui lui permet de répondre à des questions qui
+  // n'avaient pas été prévues à l'import — donc elle le demande, une fois.
+  const { hands, loading, textesCharges, textesEnCours, chargerTextes } = useData();
+  useEffect(() => { if (!loading) chargerTextes?.(); }, [loading, chargerTextes]);
   const [criteres, setCriteres] = useState({});
   const [axe, setAxe] = useState("role");
   const [ajoutOuvert, setAjoutOuvert] = useState(false);
@@ -76,8 +80,15 @@ export default function StatsHero() {
 
   const actifs = Object.entries(criteres).filter(([, v]) => v?.length);
 
-  if (loading) {
-    return <div className="page"><div className="loading-block"><Loader2 className="spin" size={22} /> Chargement…</div></div>;
+  if (loading || textesEnCours || !textesCharges) {
+    return (
+      <div className="page">
+        <div className="loading-block">
+          <Loader2 className="spin" size={22} />
+          {textesCharges ? "Chargement…" : "Lecture de tes mains…"}
+        </div>
+      </div>
+    );
   }
   if (!spots.length) {
     return (

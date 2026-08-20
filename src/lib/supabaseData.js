@@ -58,6 +58,33 @@ export async function getAllHandIds(uid) {
   return new Set(rows.map((r) => r.hand_id));
 }
 
+/**
+ * Le texte brut de TOUTES les mains, en une lecture.
+ *
+ * POURQUOI CETTE FONCTION EXISTE. Le texte est volontairement rangé à part et
+ * lu main par main : il pèse plus que tout le reste, et le tableau de bord n'en
+ * a aucun besoin. Cette économie est juste — jusqu'au jour où un écran doit
+ * relire TOUT l'historique.
+ *
+ * C'est le cas des statistiques par spot, de la carte mentale et des fiches
+ * d'adversaires : ils re-dérivent chaque main depuis son texte, ce qui permet
+ * de poser une question qu'on n'avait pas prévue à l'import sans réimporter
+ * quoi que ce soit. Sans lecture en masse, ces écrans ne voient rien du tout
+ * une fois la page rechargée — les mains en mémoire ont leur texte, celles qui
+ * reviennent de la base ne l'ont pas.
+ *
+ * L'appel coûte cher : quelques dizaines de mégaoctets sur un gros historique.
+ * Il est donc fait UNE FOIS, à la demande, et jamais au chargement.
+ */
+export async function getAllHandRaw(uid) {
+  const rows = await fetchAllPages(() =>
+    supabase.from("hand_raw").select("hand_id, raw").eq("user_id", uid).order("hand_id")
+  );
+  const parId = new Map();
+  for (const r of rows) if (r.raw) parId.set(r.hand_id, r.raw);
+  return parId;
+}
+
 export async function getHandRaw(uid, handId) {
   const { data, error } = await supabase
     .from("hand_raw")

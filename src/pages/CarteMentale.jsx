@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Loader2, Map as MapIcon, AlertTriangle, TrendingDown, Compass, Info } from "lucide-react";
 import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState } from "../components/ui";
@@ -30,9 +30,11 @@ const carte = (c) => {
 };
 
 export default function CarteMentale() {
-  const { hands, loading } = useData();
+  const { hands, loading, textesCharges, textesEnCours, chargerTextes } = useData();
   const { mode } = useMode();
   const cash = mode === "cash";
+  // En cash game, les décisions se re-dérivent depuis le texte des mains.
+  useEffect(() => { if (cash && !loading) chargerTextes?.(); }, [cash, loading, chargerTextes]);
   const [seuil, setSeuil] = useState(30);
   const [selection, setSelection] = useState(null);
 
@@ -95,10 +97,13 @@ export default function CarteMentale() {
     [stats, seuil],
   );
 
-  if (loading) {
+  if (loading || (cash && (textesEnCours || !textesCharges))) {
     return (
       <div className="page">
-        <div className="loading-block"><Loader2 className="spin" size={22} /> Chargement…</div>
+        <div className="loading-block">
+          <Loader2 className="spin" size={22} />
+          {cash && !textesCharges ? " Lecture de tes mains…" : " Chargement…"}
+        </div>
       </div>
     );
   }
