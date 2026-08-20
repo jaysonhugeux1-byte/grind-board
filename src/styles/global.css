@@ -1038,3 +1038,52 @@ body {
 .base.actif { border-color: var(--gold); background: rgba(201, 162, 39, .07); }
 .base-nom { font-size: 13px; font-weight: 600; }
 .base-aide { font-size: 11px; color: var(--text-muted); }
+
+/* Retour depuis une fiche adversaire. Discret mais toujours au même endroit :
+   on doit pouvoir revenir sans chercher. */
+.retour-fiche {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text-muted); font-size: 12.5px; text-decoration: none;
+  margin-bottom: 10px;
+}
+.retour-fiche:hover { color: var(--gold-soft); }
+
+/* ------------------------------------------------------------------ Solveur
+   La grille 13×13 est la disposition universelle : tout joueur l'a en tête, et
+   une range s'y lit d'un coup d'œil sans rien déchiffrer. */
+
+.grilles { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; }
+.grille-bloc {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px;
+}
+.grille-tete { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.grille-titre { font-family: var(--font-display); font-size: 14px; font-weight: 600; }
+.grille-part { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+.grille {
+  display: grid; grid-template-columns: repeat(13, 1fr);
+  gap: 2px; aspect-ratio: 1; width: 100%;
+}
+.grille-case {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 3px; font-size: 9px; line-height: 1.05;
+  color: var(--text-muted); overflow: hidden; cursor: default;
+}
+.grille-case.active { color: #16110a; font-weight: 600; }
+/* Une case mixte porte un liseré : l'équilibre y joue les deux coups, et
+   l'aplatir à « jouée » ou « pas jouée » effacerait ce qu'il a de plus fin. */
+.grille-case.mixte { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .55); }
+.grille-nom { font-family: var(--font-mono); }
+.grille-freq { font-size: 8px; opacity: .8; }
+.grille-legende { margin: 10px 0 0; }
+
+.adv-choisi { margin-top: 12px; font-size: 13px; }
+.adv-choisi p { margin: 0 0 6px; }
+.adv-choisi a { color: var(--gold-soft); }
+.largeur-adv { display: block; font-size: 13px; margin-top: 10px; }
+.largeur-adv input {
+  width: 70px; margin: 0 6px;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit;
+}
+.largeur-adv .card-sub { display: block; margin-top: 5px; max-width: 76ch; }

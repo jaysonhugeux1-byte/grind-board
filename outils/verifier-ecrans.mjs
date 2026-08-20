@@ -126,30 +126,31 @@ async function main() {
         + "return 0;})()");
       await attendre(2500);
 
-      const liens = await lire("Array.prototype.map.call("
-        + "document.querySelectorAll('a[href]'), function(a){return a.getAttribute('href');})"
-        + ".filter(function(h){return h && h.charAt(0) === '/';}).join(',')");
-      const chemins = [...new Set((liens || "").split(",").filter(Boolean))];
-      if (!chemins.length) {
-        console.log("  ERREUR : aucun lien de navigation trouvé.");
+      // On clique les entrees de menu PAR INDICE, sans passer par leur adresse.
+      // Extraire les href puis reselectionner dessus a echoue de facon opaque ;
+      // l'indice ne depend d'aucun selecteur construit a la volee et survit a un
+      // rerendu entre deux ecrans.
+      const nb = await lire("document.querySelectorAll('.nav-link').length");
+      if (!nb) {
+        console.log("  ERREUR : aucune entree de menu trouvee.");
         code = 1;
       }
 
-      for (const chemin of chemins) {
+      for (let i = 0; i < (nb || 0); i++) {
         const avant = erreurs.length;
-        const clique = await lire("(function(){var a=document.querySelector("
-          + JSON.stringify("a[href='" + chemin + "']") + ");"
-          + "if(!a)return 0;a.click();return 1;})()");
-        if (!clique) continue;
+        const nom = await lire(
+          "(function(){var a=document.querySelectorAll('.nav-link')[" + i + "];"
+          + "if(!a)return '';a.click();return (a.innerText||'').trim();})()");
+        if (!nom) continue;
         await attendre(2200);
 
         const taille = await lire("(" + texteRacine + ").trim().length");
         const nouvelles = erreurs.slice(avant);
-        // Un écran court n'est pas forcément fautif — il peut n'y avoir aucune
-        // donnée — mais un écran court APRÈS une exception l'est toujours.
-        const etat = nouvelles.length ? "ERREUR" : taille < 120 ? "COURT" : "ok";
+        // Un ecran court n'est pas forcement fautif — il peut n'y avoir aucune
+        // donnee — mais un ecran court APRES une exception l'est toujours.
+        const etat = nouvelles.length ? "ERREUR" : taille < 200 ? "COURT" : "ok";
         if (etat === "ERREUR") code = 1;
-        console.log("  " + etat.padEnd(7) + " " + chemin.padEnd(20) + " " + taille + " caractères");
+        console.log("  " + etat.padEnd(7) + " " + nom.padEnd(22) + " " + taille + " caracteres");
         for (const e of nouvelles) console.log("          " + e.texte.split(RETOUR)[0]);
       }
     }

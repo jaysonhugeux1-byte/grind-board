@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Search, Loader2, Users, Eye, Info } from "lucide-react";
+import { useNavigate, useParams, Link } from "react-router-dom";
+import { Search, Loader2, Users, Eye, Info, ArrowLeft } from "lucide-react";
 import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState, fmtDate } from "../components/ui";
 import {
@@ -175,7 +176,12 @@ function Fiche({ stats }) {
 export default function Adversaires() {
   const { hands, tournois, loading } = useData();
   const [requete, setRequete] = useState("");
-  const [choisi, setChoisi] = useState(null);
+  const naviguer = useNavigate();
+  // Le pseudo vit dans l'adresse plutot que dans un etat local : le retour du
+  // navigateur fonctionne, la fiche se partage, et le solveur peut pointer
+  // directement vers un adversaire.
+  const { nom: nomUrl } = useParams();
+  const choisi = nomUrl ? decodeURIComponent(nomUrl) : null;
 
   const fiches = useMemo(() => listerAdversaires(hands, tournois), [hands, tournois]);
   const resultats = useMemo(() => chercherAdversaires(fiches, requete), [fiches, requete]);
@@ -188,6 +194,35 @@ export default function Adversaires() {
     return (
       <div className="full-page-loader">
         <Loader2 size={22} className="spin" /> Chargement…
+      </div>
+    );
+  }
+
+  // Un pseudo dans l'adresse mais aucune fiche : l'adversaire n'a pas ete
+  // recroise depuis le dernier import, ou le pseudo est mal orthographie. On le
+  // dit, plutot que d'afficher une page vide.
+  if (choisi) {
+    return (
+      <div className="section">
+        <Link to="/adversaires" className="retour-fiche">
+          <ArrowLeft size={15} /> Tous les adversaires
+        </Link>
+        {actif ? (
+          <>
+            <PageHeader
+              title={actif.nom}
+              subtitle={`${nombre(actif.mains)} mains vues sur ${nombre(actif.tournois ?? 0)} tournois`}
+            />
+            <Fiche stats={actif} />
+          </>
+        ) : (
+          <>
+            <PageHeader title={choisi} subtitle="Aucune fiche pour ce pseudo" />
+            <div className="card">
+              <EmptyState text="Ce joueur n'apparait dans aucun historique importe. Tu ne l'as peut-etre jamais croise, ou pas depuis le dernier import." />
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -234,8 +269,8 @@ export default function Adversaires() {
                 return (
                   <button
                     key={f.nom}
-                    className={`ligne-adv ${choisi === f.nom ? "active" : ""}`}
-                    onClick={() => setChoisi(f.nom === choisi ? null : f.nom)}
+                    className="ligne-adv"
+                    onClick={() => naviguer(`/adversaires/${encodeURIComponent(f.nom)}`)}
                   >
                     <span className="adv-nom">{f.nom}</span>
                     <span className="adv-mains mono">{nombre(f.mains)} mains</span>
@@ -257,7 +292,6 @@ export default function Adversaires() {
             )}
           </div>
 
-          {actif && <Fiche stats={actif} />}
         </>
       )}
     </div>

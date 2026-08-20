@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor, Waypoints, TrendingUp, Shield } from "lucide-react";
+import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor, Waypoints, TrendingUp, Shield, Scale } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useMode } from "../contexts/ModeContext";
 import { useSubscription } from "../contexts/SubscriptionContext";
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"] },
   { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"] },
   { to: "/adversaires", label: "Adversaires", icon: Users, modes: ["spin"] },
+  { to: "/solveur", label: "Solveur", icon: Scale, modes: ["spin"] },
   { to: "/carte-mentale", label: "Carte mentale", icon: Waypoints, modes: ["spin"] },
   { to: "/projection", label: "Projection", icon: TrendingUp, modes: ["spin"] },
   { to: "/gestion-bankroll", label: "Gestion de bankroll", icon: Shield, modes: ["spin"] },

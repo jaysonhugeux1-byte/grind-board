@@ -1,7 +1,7 @@
 {
   "name": "grand-livre",
   "private": true,
-  "version": "3.8.0",
+  "version": "3.9.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -12,6 +12,7 @@
     "electron:build": "vite build && electron-builder --config electron-builder.config.cjs",
     "electron:dist": "npm run electron:build",
     "lint": "eslint src electron tests",
+    "verifier-ecrans": "node outils/verifier-ecrans.mjs",
     "test": "eslint src electron tests && node tests/vision.test.mjs && node tests/tableReader.test.mjs && node tests/adversaires.test.mjs && node tests/ecranFin.test.mjs && node tests/mainEnDirect.test.mjs && node tests/apprentissageAuto.test.mjs && node tests/forceMain.test.mjs && node tests/carteMentale.test.mjs && node tests/spinShowdown.test.mjs && node tests/spinRentabilite.test.mjs && node tests/winamaxExpresso.test.mjs && node tests/projection.test.mjs && node tests/brm.test.mjs && node tests/nash.test.mjs"
   },
   "dependencies": {
