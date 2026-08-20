@@ -134,30 +134,101 @@ export function buildBankrollChart(tournois, { tauxRake = RAKE_PAR_DEFAUT, tauxR
 /**
  * Tournois dont l'export s'arrete avant la fin.
  *
- * Un tournoi complet se termine forcement sur un tapis a zero — on est elimine —
- * ou sur la totalite des jetons en jeu : on a tout gagne. Toute autre valeur
- * signifie que les dernieres mains manquent dans le fichier.
+ * DEUX PREUVES D'ACHEVEMENT, ET LA PREMIERE VAUT MIEUX QUE LA SECONDE.
  *
- * Ce n'est pas un cas d'ecole. Winamax ecrit l'historique au fil de l'eau : qui
- * exporte pendant qu'il joue, ou juste apres, obtient un dernier tournoi coupe.
- * Ses jetons et son EV sont alors faux, et sur un petit echantillon un seul
- * tournoi tronque suffit a rendre les deux courbes incomprehensibles.
+ *   LA PLACE FINALE. « You finished in 2nd » n'est ecrit que lorsque la place
+ *   est acquise : la connaitre PROUVE que l'export est alle jusqu'au bout. C'est
+ *   la preuve directe, et elle ne demande aucun calcul.
+ *
+ *   LES JETONS, a defaut. Un tournoi complet se termine sur un tapis a zero — on
+ *   est elimine — ou sur la totalite des jetons en jeu : on a tout gagne.
+ *
+ * POURQUOI L'ORDRE COMPTE. La preuve par les jetons repose sur une chaine
+ * fragile : le tapis lu au siege, les mises effectivement engagees, les gains
+ * encaisses, et le total des jetons de la table. Une seule de ces valeurs
+ * approximative — une main a plusieurs pots secondaires, un joueur absent de la
+ * liste des sieges, un format de salle un peu different — et un tournoi
+ * parfaitement complet est signale comme tronque. Reimporter n'y change alors
+ * rien, ce qui est le pire des messages : il accuse le fichier alors que le
+ * defaut est dans la lecture.
+ *
+ * La place finale n'a aucune de ces fragilites. On ne retombe sur les jetons que
+ * lorsqu'elle est absente.
+ *
+ * Le cas reste reel : Winamax ecrit l'historique au fil de l'eau, et qui exporte
+ * pendant qu'il joue obtient un dernier tournoi coupe. Ses jetons et son EV sont
+ * alors faux, et sur un petit echantillon un seul tournoi tronque suffit a
+ * rendre les deux courbes incomprehensibles.
+ *
+ * `details` rend, pour chaque tournoi signale, les nombres qui ont conduit a le
+ * signaler : sans eux, un faux positif est indiscutable a distance.
  */
-export function tournoisIncomplets(hands = []) {
-  const parTournoi = new Map();
+export function tournoisIncomplets(hands = [], tournois = []) {
+  return diagnostiquerTournois(hands, tournois).incomplets;
+}
+
+export function diagnostiquerTournois(hands = [], tournois = []) {
+  // La place finale, d'ou qu'elle vienne : le recapitulatif du tournoi ou la
+  // main ou elle a ete annoncee.
+  const placeConnue = new Map();
+  for (const t of tournois) {
+    const id = t.tourneyId ?? t.id;
+    if (id != null && t.finish != null) placeConnue.set(id, t.finish);
+  }
   for (const h of hands) {
-    if (!h.tourneyId || !(h.chipsInPlay > 0)) continue;
-    const c = parTournoi.get(h.tourneyId);
+    if (h.tourneyId != null && h.finish != null && !placeConnue.has(h.tourneyId)) {
+      placeConnue.set(h.tourneyId, h.finish);
+    }
+  }
+
+  const derniere = new Map();
+  // LE TOTAL DES JETONS SE PREND SUR TOUT LE TOURNOI, PAS SUR LA DERNIERE MAIN.
+  //
+  // « chipsInPlay » est la somme des tapis LISTES AUX SIEGES de cette main-la.
+  // Elle vaut le total du tournoi tant que tout le monde est liste — mais un
+  // joueur absent de la liste, et elle vaut moins. Comparer le tapis final a
+  // cette valeur amputee accuse alors un tournoi GAGNE : le vainqueur a bien
+  // tous les jetons, et le total auquel on le compare en manque.
+  //
+  // Le parseur Betclic prenait deja le maximum sur les mains pour la fiche du
+  // tournoi ; on fait pareil ici, et pour la meme raison.
+  const total = new Map();
+  for (const h of hands) {
+    if (!h.tourneyId) continue;
+    if (h.chipsInPlay > 0) {
+      total.set(h.tourneyId, Math.max(total.get(h.tourneyId) ?? 0, h.chipsInPlay));
+    }
+    const c = derniere.get(h.tourneyId);
     const rang = h.id ? Number(String(h.id).split("-").pop()) : h.ts;
-    if (!c || rang > c.rang) parTournoi.set(h.tourneyId, { rang, h });
+    if (!c || rang > c.rang) derniere.set(h.tourneyId, { rang, h });
   }
 
   const incomplets = new Set();
-  for (const [id, { h }] of parTournoi) {
+  const details = [];
+  for (const [id, { h }] of derniere) {
+    if (placeConnue.has(id)) continue;      // la place est acquise : complet
+    const jetons = total.get(id) ?? 0;
+    if (!(jetons > 0)) continue;            // rien pour juger : on n'accuse pas
+
     const final = h.stack + h.netChips;
-    if (final !== 0 && final !== h.chipsInPlay) incomplets.add(id);
+    if (final === 0 || final === jetons) continue;
+
+    incomplets.add(id);
+    details.push({
+      tourneyId: id,
+      stack: h.stack,
+      netChips: h.netChips,
+      final,
+      chipsInPlay: jetons,
+      ts: h.ts,
+    });
   }
-  return incomplets;
+  return {
+    incomplets,
+    details: details.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0)),
+    avecPlace: placeConnue.size,
+    tournoisVus: derniere.size,
+  };
 }
 
 // Ecart type de la chance sur une main a tapis, mesure sur l'echantillon lui

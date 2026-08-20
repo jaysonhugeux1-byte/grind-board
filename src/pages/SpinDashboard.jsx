@@ -13,7 +13,7 @@ import {
 import {
   aggregateSpin, buildBankrollChart, buildChipsChart, calculerCev, calculerRake,
   rakeObserve, buildMultiplierBreakdown, buildPositionBreakdown, buildDepthBreakdown,
-  tournoisIncomplets, ecartTypeChance, RAKE_PAR_DEFAUT,
+  diagnostiquerTournois, ecartTypeChance, RAKE_PAR_DEFAUT,
 } from "../lib/spinStats";
 import { addSpinTournament } from "../lib/supabaseData";
 
@@ -303,7 +303,13 @@ export default function SpinDashboard() {
   // Un export pris pendant qu'on joue coupe le dernier tournoi en deux : ses
   // jetons et son EV sont alors faux, et sur peu de tournois cela suffit a
   // rendre les deux courbes incoherentes.
-  const incomplets = useMemo(() => tournoisIncomplets(mainsVues), [mainsVues]);
+  // La place finale prouve qu'un tournoi est alle a son terme : on la passe,
+  // pour ne pas accuser un export complet sur une arithmetique de jetons.
+  const diagnostic = useMemo(
+    () => diagnostiquerTournois(mainsVues, tournoisVus),
+    [mainsVues, tournoisVus],
+  );
+  const incomplets = diagnostic.incomplets;
   const courbeCev = useMemo(
     () => buildCevChart(mainsVues, { seuil: seuilCev }),
     [mainsVues, seuilCev]
@@ -367,13 +373,43 @@ export default function SpinDashboard() {
       {incomplets.size > 0 && (
         <div className="carte-avertissement">
           <Info size={15} />
-          <p>
-            <strong>{incomplets.size} tournoi{incomplets.size > 1 ? "s" : ""} incomplet
-            {incomplets.size > 1 ? "s" : ""}</strong> : l'export s'arrête avant la dernière main, donc
-            avant l'élimination. Leurs jetons et leur EV sont faussés — c'est ce qui arrive quand on
-            exporte son historique pendant qu'on joue. Rejoue l'export une fois la session terminée,
-            puis réimporte : les mêmes fichiers seront simplement complétés.
-          </p>
+          <div>
+            <p>
+              <strong>{incomplets.size} tournoi{incomplets.size > 1 ? "s" : ""} incomplet
+              {incomplets.size > 1 ? "s" : ""}</strong> sur {diagnostic.tournoisVus} :
+              leur dernière main ne finit ni sur un tapis à zéro ni sur la totalité des jetons, et
+              leur place finale n'est pas connue. Leurs jetons et leur EV sont donc faussés — c'est
+              ce qui arrive quand on exporte son historique pendant qu'on joue. Rejoue l'export une
+              fois la session terminée, puis réimporte.
+            </p>
+            {/* LES NOMBRES QUI ONT CONDUIT A SIGNALER. Sans eux, un faux positif
+                est indiscutable : on relance l'export, le message revient, et
+                rien ne dit si le fichier est en cause ou la lecture qu'on en
+                fait. Trois exemples suffisent a trancher. */}
+            <p className="card-sub" style={{ marginTop: 8, lineHeight: 1.7 }}>
+              Les trois plus récents, tels qu'ils sont lus —{" "}
+              <em>tapis en début de dernière main + gain net = tapis final, à comparer aux jetons
+              en jeu</em> :
+              {diagnostic.details.slice(0, 3).map((d) => (
+                <span key={d.tourneyId} style={{ display: "block" }} className="mono">
+                  #{d.tourneyId} — {d.stack} {d.netChips >= 0 ? "+" : "−"} {Math.abs(d.netChips)}
+                  {" = "}{d.final} / {d.chipsInPlay}
+                </span>
+              ))}
+              {diagnostic.avecPlace > 0 && (
+                <>
+                  {diagnostic.avecPlace} autre{diagnostic.avecPlace > 1 ? "s" : ""} tournoi
+                  {diagnostic.avecPlace > 1 ? "s" : ""} {diagnostic.avecPlace > 1 ? "sont" : "est"}
+                  {" "}reconnu{diagnostic.avecPlace > 1 ? "s" : ""} complet
+                  {diagnostic.avecPlace > 1 ? "s" : ""} par leur place finale.
+                </>
+              )}
+            </p>
+            <p className="card-sub" style={{ marginTop: 8, lineHeight: 1.7 }}>
+              Si ces nombres te semblent justes — un tapis final cohérent avec ce que tu as vraiment
+              fini — alors c'est la lecture qui se trompe, pas ton export. Montre-les moi.
+            </p>
+          </div>
         </div>
       )}
 
