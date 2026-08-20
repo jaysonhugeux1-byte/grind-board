@@ -191,6 +191,31 @@ function combosDeClasse(rangHaut, rangBas, assortie) {
   return out;
 }
 
+/**
+ * Convertit une range exprimée par CLASSES (les 169 cases de la grille) en poids
+ * par combinaison.
+ *
+ * Le préflop raisonne en classes — « AKs », « 77 » — parce que les couleurs y
+ * sont interchangeables. Le postflop ne le peut plus : sur un tableau à trois
+ * cœurs, AKs de cœur n'a rien à voir avec AKs de pique. La conversion est donc
+ * un passage obligé entre les deux moteurs, et la fréquence de la classe se
+ * reporte telle quelle sur chacune de ses combinaisons.
+ */
+export function classesVersCombos(rangeClasses) {
+  const poids = new Float64Array(NB_COMBOS);
+  for (let i = 0; i < NB_COMBOS; i++) {
+    const [a, b] = COMBOS[i];
+    const ra = a >> 2;
+    const rb = b >> 2;
+    const assortie = (a & 3) === (b & 3);
+    const haut = Math.max(ra, rb);
+    const bas = Math.min(ra, rb);
+    const k = ra === rb ? ra * 13 + ra : (assortie ? bas * 13 + haut : haut * 13 + bas);
+    poids[i] = rangeClasses[k] ?? 0;
+  }
+  return poids;
+}
+
 /** Retire d'une range les combinaisons impossibles sur ce tableau. */
 export function filtrerSurBoard(poids, forces) {
   const out = new Float64Array(NB_COMBOS);

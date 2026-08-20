@@ -121,7 +121,7 @@ export default function Solveur() {
         </button>
       </div>
 
-      {mode === "postflop" && <SolveurPostflop />}
+      {mode === "postflop" && <SolveurPostflop hands={hands} tournois={tournois} />}
 
       {mode === "preflop" && (<>
       <div className="carte-avertissement">

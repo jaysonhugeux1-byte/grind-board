@@ -822,3 +822,58 @@ function parcourirSansRegret(n, ctx, p, atteinteMoi, atteinteAdv, meilleureRepon
   rendre(2);
   return sortie;
 }
+
+/**
+ * Ramène une stratégie du niveau COMBINAISON au niveau CLASSE, pour l'affichage.
+ *
+ * La grille 13×13 que tout joueur sait lire ne connaît que des classes. On y
+ * porte donc la moyenne des combinaisons de chaque classe, pondérée par leur
+ * poids dans la range — sans quoi une classe présente à moitié pèserait autant
+ * qu'une classe entière.
+ *
+ * C'est une PERTE d'information, et il faut la connaître : la solution joue
+ * parfois deux combinaisons d'une même classe différemment, selon les cartes
+ * qu'elles bloquent. La moyenne l'aplatit. La grille sert donc à repérer où
+ * regarder, pas à trancher au combo près.
+ */
+export function strategieParClasse(noeud, ctx, action) {
+  const moy = strategieMoyenne(noeud, ctx);
+  const na = noeud.actions.length;
+  const idx = ctx.indices[noeud.joueur];
+  const poids = ctx.poids[noeud.joueur];
+
+  const somme = new Float64Array(169);
+  const total = new Float64Array(169);
+  for (let h = 0; h < idx.length; h++) {
+    const c = idx[h];
+    const k = classeDe(c);
+    const p = poids[c];
+    somme[k] += p * moy[h * na + action];
+    total[k] += p;
+  }
+  const out = new Float64Array(169);
+  for (let k = 0; k < 169; k++) out[k] = total[k] > 0 ? somme[k] / total[k] : 0;
+  return out;
+}
+
+/** Poids d'une range ramené au niveau classe, pour éteindre ce qui est absent. */
+export function presenceParClasse(ctx, joueur) {
+  const out = new Float64Array(169);
+  for (const c of ctx.indices[joueur]) {
+    const k = classeDe(c);
+    out[k] = Math.max(out[k], ctx.poids[joueur][c]);
+  }
+  return out;
+}
+
+// Classe d'une combinaison, dans la grille 13×13 : paires sur la diagonale,
+// assorties au-dessus, dépareillées en dessous.
+function classeDe(combo) {
+  const [a, b] = COMBOS[combo];
+  const ra = a >> 2;
+  const rb = b >> 2;
+  if (ra === rb) return ra * 13 + ra;
+  const haut = Math.max(ra, rb);
+  const bas = Math.min(ra, rb);
+  return (a & 3) === (b & 3) ? bas * 13 + haut : haut * 13 + bas;
+}
