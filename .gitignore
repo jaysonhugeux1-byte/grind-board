@@ -12,3 +12,6 @@ supabase/.env.*
 
 # Cache Python des outils d'edition
 __pycache__/
+
+# Historiques fabriques pour les essais : regenerables a la demande.
+historiques-essai/
