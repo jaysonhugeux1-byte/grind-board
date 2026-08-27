@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { SALLES, manquesDuProfil } from "../lib/salles";
+import MarqueSalle from "./MarqueSalle";
 
 // Le premier écran, à l'ouverture d'une base encore vierge.
 //
@@ -50,12 +51,7 @@ export default function Bienvenue({ base = 1, onValider, occupe = false }) {
                 onClick={() => setSalle(s.id)}
                 style={salle === s.id ? { borderColor: s.bord } : undefined}
               >
-                <span
-                  className="salle-marque"
-                  style={{ background: s.fond, borderColor: s.bord, color: s.texte }}
-                >
-                  {s.initiale}
-                </span>
+                <MarqueSalle salle={s} className="salle-marque" />
                 <span className="salle-nom">{s.nom}</span>
                 <span className="salle-formats">{s.formats}</span>
               </button>

@@ -5,6 +5,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useMode } from "../contexts/ModeContext";
 import { useProfil } from "../contexts/ProfilContext";
 import { salleDe } from "../lib/salles";
+import MarqueSalle from "./MarqueSalle";
 import { useSubscription } from "../contexts/SubscriptionContext";
 import { DataProvider } from "../contexts/DataContext";
 
@@ -56,13 +57,11 @@ export default function Layout() {
               d'un coup d'œil sur quoi porte l'écran — et sur quelle base, quand
               on en a deux qui suivent deux salles différentes. */}
           {salle ? (
-            <span
-              className="brand-mark salle"
-              style={{ background: salle.fond, borderColor: salle.bord, color: salle.texte }}
+            <MarqueSalle
+              salle={salle}
+              className="brand-mark"
               title={`${salle.nom} — ${salle.formats}`}
-            >
-              {salle.initiale}
-            </span>
+            />
           ) : (
             <span className="brand-mark">₮</span>
           )}

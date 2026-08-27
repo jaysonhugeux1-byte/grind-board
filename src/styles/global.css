@@ -1650,10 +1650,24 @@ tr.cliquable:hover { background: var(--surface-2); }
   width:30px; height:30px; border-radius:8px; border:1px solid;
   font-size:15px; font-weight:700; margin-bottom:3px;
 }
+/* La pastille de salle porte soit une initiale, soit un logo. `overflow:hidden`
+   est indispensable : sans lui, l'image carrée déborderait des coins arrondis
+   et la tuile perdrait sa forme. */
+.marque-salle{ overflow:hidden; }
+.marque-salle-img{
+  display:block; width:100%; height:100%; object-fit:cover;
+  /* Le logo occupe toute la pastille : le fond et le texte de repli ne se
+     voient plus, seule la bordure colorée reste pour marquer la sélection. */
+}
 .salle-nom{ font-size:14px; font-weight:600; color:#d6ded9; }
 .salle-formats{ font-size:11px; color:#5a6663; }
 .bienvenue-montant{ display:flex; align-items:center; gap:9px; }
 .bienvenue-montant .input{ flex:1; font-size:18px; }
 .bienvenue-montant span{ font-size:17px; color:#8b948f; }
 .bienvenue-manque{ margin:-10px 0 0; }
-.brand-mark.salle{ border:1px solid; font-weight:700; }
+/* CE SÉLECTEUR VISAIT `.salle`, ET RAMASSAIT LA TUILE ENTIÈRE. `.salle` est le
+   bouton de la grille d'accueil — padding 13/14, alignement en haut — et la
+   marque de la barre latérale portait la même classe pour une tout autre
+   raison. Le résultat : 38 px moins 28 de padding, une image de 8 px de large.
+   Le nom est désormais celui du composant, qui ne désigne que lui. */
+.brand-mark.marque-salle{ border:1px solid; font-weight:700; }
