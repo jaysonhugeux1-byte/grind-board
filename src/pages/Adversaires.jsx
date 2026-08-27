@@ -4,6 +4,8 @@ import { Search, Loader2, Users, Eye, Info, ArrowLeft } from "lucide-react";
 import { useData } from "../contexts/DataContext";
 import { useMode } from "../contexts/ModeContext";
 import { PageHeader, EmptyState, fmtDate } from "../components/ui";
+import { profilerVilains } from "../lib/profilVilain";
+import MarqueJoueur from "../components/MarqueJoueur";
 import {
   listerAdversaires, chercherAdversaires, rangeMontree, styleAdversaire,
   MAINS_MINIMUM_FIABLE,
@@ -246,6 +248,13 @@ export default function Adversaires() {
   // rien n'est relevé à l'import. Il faut donc le demander.
   useEffect(() => { if (cash && !loading) chargerTextes?.(); }, [cash, loading, chargerTextes]);
   const [requete, setRequete] = useState("");
+  const [page, setPage] = useState(0);
+  // LE PREMIER TRI SE FAIT SUR LE TEXTE BRUT. Le résumé stocké à l'import ne
+  // dit ni le montant d'une relance, ni s'il y avait déjà eu une relance
+  // devant : ni le min-raise ni le limp ne s'en déduisent. On relit donc les
+  // mains, hors du rendu, comme les autres écrans qui posent des questions
+  // qu'on n'avait pas prévues au moment de l'import.
+  const [profils, setProfils] = useState(null);
   const naviguer = useNavigate();
   // Le pseudo vit dans l'adresse plutot que dans un etat local : le retour du
   // navigateur fonctionne, la fiche se partage, et le solveur peut pointer
@@ -264,7 +273,33 @@ export default function Adversaires() {
     () => (cash ? listerAdversairesCash(hands || [], bb) : listerAdversaires(hands, tournois)),
     [cash, hands, tournois, bb],
   );
+  useEffect(() => {
+    let annule = false;
+    setProfils(null);
+    if (cash || !hands?.length) return undefined;
+    const t = setTimeout(() => {
+      const r = profilerVilains(hands);
+      if (!annule) setProfils(new Map(r.profils.map((p) => [p.nom, p])));
+    }, 0);
+    return () => { annule = true; clearTimeout(t); };
+  }, [cash, hands]);
+
   const resultats = useMemo(() => chercherAdversaires(fiches, requete), [fiches, requete]);
+
+  // LA LISTE SE PAGINE AU LIEU DE SE COUPER. Elle s'arrêtait à quarante joueurs
+  // avec « précise ta recherche » : sur des milliers d'adversaires, cela revenait
+  // à dire qu'on ne peut pas les parcourir. Chercher est utile quand on sait qui
+  // l'on cherche — pas quand on veut simplement voir qui l'on croise.
+  const PAR_PAGE = 40;
+  const pages = Math.max(1, Math.ceil(resultats.length / PAR_PAGE));
+  // Changer de recherche remet au début : rester en page sept d'une liste qui
+  // n'en compte plus que deux afficherait un écran vide sans rien expliquer.
+  const pageSure = Math.min(page, pages - 1);
+  useEffect(() => { setPage(0); }, [requete]);
+  const visibles = useMemo(
+    () => resultats.slice(pageSure * PAR_PAGE, (pageSure + 1) * PAR_PAGE),
+    [resultats, pageSure],
+  );
   const actif = useMemo(
     () => (choisi ? fiches.find((f) => f.nom === choisi) : null),
     [fiches, choisi]
@@ -351,8 +386,9 @@ export default function Adversaires() {
             )}
 
             <div className="liste-adv">
-              {resultats.slice(0, 40).map((f) => {
+              {visibles.map((f) => {
                 const style = cash ? styleAdversaireCash(f) : styleAdversaire(f);
+                const profil = profils?.get(f.nom);
                 return (
                   <button
                     key={f.nom}
@@ -366,6 +402,12 @@ export default function Adversaires() {
                         relancées se lit d'un coup d'œil dans la liste : c'est ce
                         qui sépare un joueur solide d'une station passive. */}
                     {cash && <span className="adv-taux mono">{taux(f.tauxRelance)} relancées</span>}
+                    {/* DEUX ÉTIQUETTES, DANS L'ORDRE DU TRI. La première dit
+                        récréatif ou régulier — c'est elle qui décide comment on
+                        joue contre lui. La seconde décrit son style, et n'a de
+                        sens qu'après. Les fondre en une seule ferait passer un
+                        régulier passif pour un récréatif. */}
+                    <MarqueJoueur profil={profil} />
                     {style ? (
                       <span className={`etiquette-style ${style.ton}`}>{style.label}</span>
                     ) : (
@@ -376,10 +418,50 @@ export default function Adversaires() {
               })}
             </div>
 
-            {resultats.length > 40 && (
-              <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-                {nombre(resultats.length - 40)} autres — précise ta recherche.
-              </p>
+            {pages > 1 && (
+              <nav className="pagination" aria-label="Pages d'adversaires">
+                <button
+                  className="page-fleche"
+                  onClick={() => setPage(pageSure - 1)}
+                  disabled={pageSure === 0}
+                >
+                  ← Précédent
+                </button>
+                <span className="page-etat mono">
+                  {nombre(pageSure * PAR_PAGE + 1)}–{nombre(Math.min((pageSure + 1) * PAR_PAGE, resultats.length))}
+                  {" sur "}{nombre(resultats.length)}
+                </span>
+                <span className="page-numeros">
+                  {/* On ne dessine pas cinquante numéros : les premières, les
+                      dernières, et le voisinage de celle où l'on est. */}
+                  {Array.from({ length: pages }, (_, i) => i)
+                    .filter((i) => i < 2 || i > pages - 3 || Math.abs(i - pageSure) <= 1)
+                    .reduce((acc, i) => {
+                      if (acc.length && i - acc[acc.length - 1] > 1) acc.push("…");
+                      acc.push(i);
+                      return acc;
+                    }, [])
+                    .map((i, k) => (i === "…" ? (
+                      <span key={`e${k}`} className="page-ellipse">…</span>
+                    ) : (
+                      <button
+                        key={i}
+                        className={`page-num${i === pageSure ? " active" : ""}`}
+                        onClick={() => setPage(i)}
+                        aria-current={i === pageSure ? "page" : undefined}
+                      >
+                        {i + 1}
+                      </button>
+                    )))}
+                </span>
+                <button
+                  className="page-fleche"
+                  onClick={() => setPage(pageSure + 1)}
+                  disabled={pageSure >= pages - 1}
+                >
+                  Suivant →
+                </button>
+              </nav>
             )}
           </div>
 

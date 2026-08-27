@@ -24,9 +24,15 @@ const azure = process.env.AZURE_SIGN_ACCOUNT && process.env.AZURE_SIGN_PROFILE;
 const jeton = process.env.CSC_LINK || process.env.WIN_CSC_LINK;
 
 const config = {
+  // L'IDENTIFIANT NE SUIT PAS LE RENOMMAGE, et c'est volontaire. NSIS s'en sert
+  // pour reconnaitre l'installation deja presente et la mettre a jour. Le
+  // changer ferait installer une SECONDE application a cote de l'ancienne :
+  // deux entrees au menu Demarrer, deux raccourcis, et la vieille version qui
+  // continue de se mettre a jour dans son coin. Le nom affiche se change sans
+  // toucher a l'identite du produit.
   appId: "com.grandlivre.bankroll",
-  productName: "Grand Livre",
-  directories: { output: "C:/Users/Dylan/grand-livre-release" },
+  productName: "GrindBoard",
+  directories: { output: "C:/Users/Dylan/grindboard-release" },
   publish: {
     provider: "github",
     owner: "jaysonhugeux1-byte",
@@ -39,14 +45,17 @@ const config = {
   // electron-builder écrit dans latest.yml le nom NORMALISÉ de l'installateur,
   // espaces remplacés par des tirets. Si le fichier réellement publié garde ses
   // espaces, GitHub les remplace par des points au dépôt — et la mise à jour
-  // automatique va chercher « Grand-Livre-Setup-3.5.0.exe » là où dort un
-  // « Grand.Livre.Setup.3.5.0.exe ». Elle reçoit un 404 et se tait, sans que
-  // personne ne remarque que plus aucune version ne se propage.
+  // automatique va chercher « X-Setup-3.5.0.exe » là où dort un
+  // « X.Setup.3.5.0.exe ». Elle reçoit un 404 et se tait, sans que personne ne
+  // remarque que plus aucune version ne se propage. C'est ce qui menaçait quand
+  // le produit s'appelait « Grand Livre », en deux mots.
   //
   // En produisant directement un nom sans espace, le fichier bâti, le manifeste
   // et l'objet publié portent tous le même, quelle que soit la façon dont on
-  // publie.
-  artifactName: "Grand-Livre-Setup-${version}.${ext}",
+  // publie. La mise à jour d'une installation existante ne souffre pas du
+  // changement de nom : electron-updater lit le nom du fichier DANS le
+  // manifeste, il ne le devine pas.
+  artifactName: "GrindBoard-Setup-${version}.${ext}",
   win: { target: ["nsis"] },
   nsis: { oneClick: false, allowToChangeInstallationDirectory: true },
 };

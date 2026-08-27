@@ -12,6 +12,7 @@
 // demande. D'où les deux partis pris ci-dessous : un seul appel par tour quel
 // que soit le nombre de tables, et pas d'encodage PNG sur le chemin rapide.
 const { desktopCapturer, screen } = require("electron");
+const { cadresDesFenetres } = require("./fenetres.cjs");
 
 // Betclic Poker fonctionne de deux façons, et il faut savoir les deux.
 //
@@ -119,9 +120,28 @@ async function captureTables(sourceIds = null, { encoderPng = false } = {}) {
   });
 
   const voulus = sourceIds && sourceIds.length ? new Set(sourceIds.map(String)) : null;
-  return sources
-    .filter((s) => (voulus ? voulus.has(s.id) : TABLE_TITLE.test(s.name)))
-    .map((s) => versSortie(s, { encoderPng }));
+  const retenues = sources.filter((s) => (voulus ? voulus.has(s.id) : TABLE_TITLE.test(s.name)));
+
+  // LES COORDONNÉES DE CHAQUE FENÊTRE, sans quoi un affichage superposé ne peut
+  // que deviner. Elles arrivent d'un cache : une fenêtre de poker ne se déplace
+  // pas toute seule, et interroger le système à chaque tour coûterait plus cher
+  // que la capture elle-même.
+  //
+  // Leur absence n'est pas une erreur : hors de Windows, ou si l'interrogation
+  // échoue, on rend les captures sans `cadre` et le lecteur retombe sur ses
+  // approximations. Mieux vaut un HUD approximatif que pas de lecture du tout.
+  let cadres = new Map();
+  try {
+    cadres = await cadresDesFenetres(retenues.map((s) => s.id));
+  } catch {
+    cadres = new Map();
+  }
+
+  return retenues.map((s) => {
+    const sortie = versSortie(s, { encoderPng });
+    const cadre = cadres.get(s.id);
+    return cadre ? { ...sortie, cadre } : sortie;
+  });
 }
 
 // Capture une fenêtre précise et renvoie une image PNG en data URL, directement

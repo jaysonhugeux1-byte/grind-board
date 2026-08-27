@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../supabase";
 
-const AuthContext = createContext(null);
+// Exporté pour le banc d'essai hors ligne : il monte les écrans sans session.
+export const AuthContext = createContext(null);
 
 // Supabase expose l'utilisateur différemment de Firebase (id, user_metadata…).
 // On le remet à la forme attendue par le reste de l'application — uid,

@@ -271,7 +271,7 @@ export function mesurer({ push, call, tapis, ante = 0 }) {
   };
 }
 
-/** Part des mains distribuées que couvre une range, en pourcentage. */
+/** Part des mains distribuées que couvre une range, EN FRACTION de 0 à 1. */
 export function frequence(range) {
   let combos = 0;
   let total = 0;

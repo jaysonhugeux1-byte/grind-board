@@ -1,4 +1,4 @@
--- Schéma Grand Livre pour Supabase (Postgres).
+-- Schéma GrindBoard pour Supabase (Postgres).
 -- À exécuter une fois dans l'éditeur SQL du projet Supabase.
 --
 -- Choix de conception : chaque main est stockée dans une colonne `data` de type

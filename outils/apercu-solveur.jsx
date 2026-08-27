@@ -7,10 +7,12 @@ import Adversaires from "../src/pages/Adversaires";
 import CarteMentale from "../src/pages/CarteMentale";
 import ProjectionCash from "../src/pages/ProjectionCash";
 import GestionBankrollCash from "../src/pages/GestionBankrollCash";
+import SpinImport from "../src/pages/SpinImport";
 import { ModeContext } from "../src/contexts/ModeContext";
 import { SubscriptionContext } from "../src/contexts/SubscriptionContext";
 import RequireOption from "../src/components/RequireOption";
 import { DataContext } from "../src/contexts/DataContext";
+import { AuthContext } from "../src/contexts/AuthContext";
 import { mainsFactices } from "./mainsFactices";
 import "../src/styles/global.css";
 
@@ -45,6 +47,7 @@ const ECRANS = [
   { id: "carte", nom: "Carte mentale" },
   { id: "projection", nom: "Projection" },
   { id: "bankroll", nom: "Bankroll" },
+  { id: "import-spin", nom: "Import spin" },
   { id: "verrou", nom: "Solveur verrouillé" },
 ];
 
@@ -78,6 +81,33 @@ function EnCash({ children }) {
   );
 }
 
+// L'import de spin lit la session et les données par leurs contextes. On lui
+// donne de quoi peupler ses compteurs : c'est le nombre annoncé dans la zone
+// dangereuse qu'on vient vérifier, pas le chemin de suppression lui-même — il
+// touche la base, et le banc n'en a pas.
+const TOURNOIS_FACTICES = Array.from({ length: 137 }, (_, i) => ({
+  id: `SPIN${1000 + i}`, ts: Date.now() - i * 3600000, buyIn: 5, payout: i % 3 ? 0 : 10,
+  multiplier: 2, finish: i % 3 ? 2 : 1, source: "import",
+}));
+
+function EnSpin({ children }) {
+  return (
+    <AuthContext.Provider value={{ user: { uid: "banc" }, loading: false }}>
+      <ModeContext.Provider value={{ mode: "spin", setMode: () => {}, estSpin: true }}>
+        <DataContext.Provider
+          value={{
+            hands: mains.slice(0, 812), tournois: TOURNOIS_FACTICES, entries: [],
+            loading: false, refresh: () => {},
+            textesCharges: true, textesEnCours: false, chargerTextes: () => {},
+          }}
+        >
+          {children}
+        </DataContext.Provider>
+      </ModeContext.Provider>
+    </AuthContext.Provider>
+  );
+}
+
 function Banc() {
   const [ecran, setEcran] = useState("solveur");
   return (
@@ -96,6 +126,7 @@ function Banc() {
       {ecran === "carte" && <EnCash><CarteMentale /></EnCash>}
       {ecran === "projection" && <EnCash><ProjectionCash /></EnCash>}
       {ecran === "bankroll" && <EnCash><GestionBankrollCash /></EnCash>}
+      {ecran === "import-spin" && <EnSpin><SpinImport /></EnSpin>}
       {ecran === "verrou" && (
         <SubscriptionContext.Provider value={ACCES_SANS_OPTION}>
           <RequireOption

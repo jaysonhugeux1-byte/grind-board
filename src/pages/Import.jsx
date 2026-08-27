@@ -3,7 +3,8 @@ import { Upload, Loader2, FileSearch, X, CheckCircle2, AlertTriangle, Trash2 } f
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { parseCoinPokerText } from "../lib/parse";
-import { importHands, resetAllData } from "../lib/supabaseData";
+import { importHands } from "../lib/supabaseData";
+import { minimum, maximum } from "../lib/grandsTableaux";
 import { PageHeader, fmtMoney, fmtDate } from "../components/ui";
 
 export default function Import() {
@@ -18,11 +19,7 @@ export default function Import() {
   const [forceUpdate, setForceUpdate] = useState(false);
   const [summary, setSummary] = useState(null); // fiche récapitulative après un import réussi
   const [error, setError] = useState(null);
-  const [confirmingReset, setConfirmingReset] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [resetProgress, setResetProgress] = useState(0);
   const [importProgress, setImportProgress] = useState(0);
-  const [resetCounts, setResetCounts] = useState(null); // figé à l'ouverture (les compteurs live baissent pendant la suppression)
 
   const existingIds = useMemo(() => new Set(hands.map((h) => h.id)), [hands]);
 
@@ -87,8 +84,8 @@ export default function Import() {
         skipped,
         netImported,
         newCount: newHands.length,
-        periodStart: Math.min(...tsList),
-        periodEnd: Math.max(...tsList),
+        periodStart: minimum(tsList),
+        periodEnd: maximum(tsList),
       });
       setPreview(null);
       await refresh();
@@ -107,23 +104,7 @@ export default function Import() {
     if (file) handleFile(file);
   };
 
-  const handleReset = async () => {
-    setResetting(true);
-    setResetProgress(0);
-    setError(null);
-    try {
-      await resetAllData(user.uid, hands.map((h) => h.id), entries.map((e) => e.id), setResetProgress);
-      setConfirmingReset(false);
-      setPreview(null);
-      setSummary(null);
-      await refresh();
-    } catch (e) {
-      console.error("Erreur lors de la réinitialisation:", e);
-      setError("Erreur lors de la réinitialisation.");
-    } finally {
-      setResetting(false);
-    }
-  };
+
 
   return (
     <div className="section">
@@ -273,55 +254,6 @@ export default function Import() {
         </p>
       </div>
 
-      <div className="card danger-zone">
-        <div className="card-title-row">
-          <h2>Zone dangereuse</h2>
-        </div>
-        <p className="danger-zone-text">
-          Supprime définitivement toutes tes mains, tous tes mouvements (dépôts/retraits/rakeback) et ton
-          objectif de challenge. Cette action est irréversible — tu devras réimporter tes fichiers depuis zéro.
-        </p>
-        <button
-          className="btn-danger"
-          onClick={() => {
-            setResetCounts({ hands: hands.length, entries: entries.length });
-            setConfirmingReset(true);
-          }}
-        >
-          <Trash2 size={14} /> Réinitialiser toutes les données
-        </button>
-      </div>
-
-      {confirmingReset && (
-        <div className="modal-overlay" onClick={() => !resetting && setConfirmingReset(false)}>
-          <div className="modal modal-small" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3><AlertTriangle size={16} className="loss" /> Tout réinitialiser ?</h3>
-              <button className="icon-btn" onClick={() => setConfirmingReset(false)} disabled={resetting}><X size={18} /></button>
-            </div>
-            <p>
-              Ça va supprimer définitivement <strong>{resetCounts?.hands ?? hands.length}</strong> main(s) et{" "}
-              <strong>{resetCounts?.entries ?? entries.length}</strong> mouvement(s) de bankroll, ainsi que ton
-              objectif de challenge. Cette action est irréversible.
-            </p>
-            {resetting && (
-              <div className="progress-bar-wrap">
-                <div className="progress-bar">
-                  <div className="progress-bar-fill" style={{ width: `${resetProgress}%` }} />
-                </div>
-                <span className="progress-bar-label mono">{resetProgress}%</span>
-              </div>
-            )}
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setConfirmingReset(false)} disabled={resetting}>Annuler</button>
-              <button className="btn-danger" onClick={handleReset} disabled={resetting}>
-                {resetting ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
-                {resetting ? `Suppression… ${resetProgress}%` : "Tout supprimer"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

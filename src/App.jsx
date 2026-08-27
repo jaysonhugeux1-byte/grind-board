@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -20,6 +20,10 @@ import GestionBankrollCash from "./pages/GestionBankrollCash";
 import HandSearch from "./pages/HandSearch";
 import Settings from "./pages/Settings";
 import SpinDashboard from "./pages/SpinDashboard";
+import Bienvenue from "./components/Bienvenue";
+import { useProfil } from "./contexts/ProfilContext";
+import { useBase } from "./contexts/BaseContext";
+import LeakFinderSpin from "./pages/LeakFinderSpin";
 import SpinImport from "./pages/SpinImport";
 import LecteurDirect from "./pages/LecteurDirect";
 import Adversaires from "./pages/Adversaires";
@@ -75,11 +79,30 @@ function SolveurProtege() {
       sousTitre="Ce que l'équilibre ferait à ta place, et ce qu'il faut en changer"
       quoi={"Le solveur calcule au lieu de compter : il résout le tour de mises que tu lui "
         + "décris, et te rend la stratégie d'équilibre avec son exploitabilité mesurée. "
-        + "C'est le seul écran de Grand Livre qui fasse ce travail, et la seule formule "
+        + "C'est le seul écran de GrindBoard qui fasse ce travail, et la seule formule "
         + "qui y donne accès est Expert."}
     >
       <Solveur />
     </RequireOption>
+  );
+}
+
+// Demande le profil de la base ouverte s'il manque, et seulement alors.
+function RequireProfil({ children }) {
+  const { aRepondre, enregistrer, pret } = useProfil() || {};
+  const { base } = useBase() || { base: 1 };
+  const [occupe, setOccupe] = useState(false);
+  if (!pret) return null;
+  if (!aRepondre) return children;
+  return (
+    <Bienvenue
+      base={base}
+      occupe={occupe}
+      onValider={async (p) => {
+        setOccupe(true);
+        try { await enregistrer(p); } finally { setOccupe(false); }
+      }}
+    />
   );
 }
 
@@ -99,7 +122,12 @@ export default function App() {
         element={
           <ProtectedRoute>
             <RequireSubscription>
-              <Layout />
+              {/* L'accueil passe AVANT la mise en page : on ne montre pas un
+                  tableau de bord vide en arrière-plan pendant qu'on demande le
+                  capital de départ. */}
+              <RequireProfil>
+                <Layout />
+              </RequireProfil>
             </RequireSubscription>
           </ProtectedRoute>
         }
@@ -115,6 +143,7 @@ export default function App() {
         <Route path="/solveur" element={<SolveurProtege />} />
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/ranges" element={<Ranges />} />
+        <Route path="/fuites" element={<LeakFinderSpin />} />
         <Route path="/ev" element={<EvByPosition />} />
         <Route path="/top-hands" element={<TopHands />} />
         <Route path="/table-tendencies" element={<TableTendencies />} />

@@ -90,9 +90,14 @@ export function resultatsParTournoi(mains = []) {
     const id = h.tourneyId;
     if (!id) continue;
     const ev = Number.isFinite(h.evChips) ? h.evChips : h.netChips || 0;
-    const c = parId.get(id) || { id, ts: h.ts, jetons: 0, ev: 0, mains: 0 };
+    // La troisième référence : l'EV contre la range de l'équilibre. Elle n'est
+    // posée que par `setups.js`, et retombe sur l'EV all-in ailleurs — les deux
+    // courbes se superposent donc là où le modèle n'a rien à dire.
+    const evGto = Number.isFinite(h.evGtoChips) ? h.evGtoChips : ev;
+    const c = parId.get(id) || { id, ts: h.ts, jetons: 0, ev: 0, evGto: 0, mains: 0 };
     c.jetons += h.netChips || 0;
     c.ev += ev;
+    c.evGto += evGto;
     c.mains++;
     if (h.ts < c.ts) c.ts = h.ts;
     parId.set(id, c);
@@ -124,12 +129,14 @@ export function buildCevChart(mains = [], options = {}) {
   let moyenne = 0;
   let m2 = 0;
   let gagnes = 0;
+  let moyenneGto = 0;
 
   return tournois.map((t) => {
     n++;
     const ecart = t.ev - moyenne;
     moyenne += ecart / n;
     m2 += ecart * (t.ev - moyenne);
+    moyenneGto += (t.evGto - moyenneGto) / n;
     if (gagnesPar?.has(t.id)) gagnes++;
 
     // Une seule observation n'a pas de variance : l'intervalle reste indéfini
@@ -141,6 +148,7 @@ export function buildCevChart(mains = [], options = {}) {
       index: n,
       ts: t.ts,
       cev: Math.round(moyenne * 10) / 10,
+      cevGto: Math.round(moyenneGto * 10) / 10,
       cevBas: marge == null ? null : Math.round((moyenne - marge) * 10) / 10,
       cevHaut: marge == null ? null : Math.round((moyenne + marge) * 10) / 10,
       seuil: seuil == null ? null : Math.round(seuil * 10) / 10,

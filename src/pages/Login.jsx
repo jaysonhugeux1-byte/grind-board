@@ -21,7 +21,7 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <span className="brand-mark large">₮</span>
-        <h1>Grand Livre</h1>
+        <h1>GrindBoard</h1>
         <p>Suivi de bankroll pour le cash game — importe tes mains, suis ton évolution, garde tes données sur tous tes appareils.</p>
         <button className="btn-google" onClick={handleLogin}>
           <GoogleIcon />

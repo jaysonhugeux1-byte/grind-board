@@ -31,6 +31,7 @@
 //
 // Usage :
 //   node outils/generer-spins.mjs --spins 10000 --buyin 50 --cev 40
+//   node outils/generer-spins.mjs --hero 1Dobbermann
 
 import fs from "fs";
 import path from "path";
@@ -106,11 +107,21 @@ const dateUTC = (ts) => new Date(ts).toISOString().slice(0, 19).replace("T", " "
 // ---------------------------------------------------------------------------
 // Un tournoi
 // ---------------------------------------------------------------------------
+//
+// LES JETONS BOUGENT VRAIMENT. Une première version enchaînait des vols de
+// blindes jusqu'à ce que le condamné soit court, puis l'éliminait : les tapis ne
+// s'écartaient jamais de cinq cents, et la courbe de jetons d'un tournoi était
+// une ligne droite. Un spin réel double, se fait doubler, remonte de trois
+// blindes et repart.
+//
+// On simule donc des pots de tailles variées, et seule l'ISSUE est imposée : le
+// joueur désigné perd les confrontations décisives. Entre les deux, les jetons
+// circulent librement — et se conservent, ce qui est vérifié à l'arrivée.
 
-function tournoi({ rnd, no, buyIn, heroGagne, ts }) {
+function tournoi({ rnd, no, buyIn, heroGagne, ts, hero }) {
   const multiplicateur = tirerMultiplicateur(rnd);
-  const dotation = buyIn * multiplicateur;
-  const noms = ["Hero", `bot${Math.floor(rnd() * 1e6).toString(36)}`,
+  const dotation = Math.round(buyIn * multiplicateur * 100) / 100;
+  const noms = [hero, `bot${Math.floor(rnd() * 1e6).toString(36)}`,
     `bot${Math.floor(rnd() * 1e6).toString(36)}`];
 
   // L'ordre d'élimination découle de l'issue décidée. Hero gagnant finit
@@ -126,22 +137,17 @@ function tournoi({ rnd, no, buyIn, heroGagne, ts }) {
   let horloge = ts;
   const gameId = `SPIN${String(1000000 + no)}`;
 
-  // Les joueurs encore en lice, dans l'ordre inverse d'élimination : le dernier
-  // du classement part le premier.
   let enJeu = [...noms];
-  const sortirLe = [...classement].reverse();   // 3e, 2e, 1er
-
   let bouton = Math.floor(rnd() * 3);
 
-  for (let securite = 0; securite < 200 && enJeu.length > 1; securite++) {
-    const niveau = NIVEAUX[Math.min(NIVEAUX.length - 1, Math.floor(noMain / 4))];
-    const [sb, bb] = niveau;
+  for (let securite = 0; securite < 250 && enJeu.length > 1; securite++) {
+    const [sb, bb] = NIVEAUX[Math.min(NIVEAUX.length - 1, Math.floor(noMain / 5))];
     noMain++;
-    horloge += 25000 + Math.floor(rnd() * 20000);
+    horloge += 22000 + Math.floor(rnd() * 25000);
 
     const n = enJeu.length;
     bouton = (bouton + 1) % n;
-    // À trois : bouton, petite, grosse. En duel : le bouton EST la petite.
+    // À trois : bouton, petite, grosse. En duel, le bouton EST la petite blinde.
     const places = n === 3
       ? { [enJeu[bouton]]: "BTN", [enJeu[(bouton + 1) % n]]: "SB", [enJeu[(bouton + 2) % n]]: "BB" }
       : { [enJeu[bouton]]: "SB", [enJeu[(bouton + 1) % n]]: "BB" };
@@ -156,118 +162,250 @@ function tournoi({ rnd, no, buyIn, heroGagne, ts }) {
     for (const nom of enJeu) cartes[nom] = [paquet.pop(), paquet.pop()];
     const board = [paquet.pop(), paquet.pop(), paquet.pop(), paquet.pop(), paquet.pop()];
 
-    // Le prochain à sortir, et s'il doit sortir sur CETTE main.
-    const condamne = sortirLe[0];
-    const tapisCondamne = tapis[condamne];
-    // On élimine quand son tapis est devenu court, ou de temps en temps pour
-    // que toutes les mains ne se ressemblent pas.
-    const eliminerMaintenant = tapisCondamne <= bb * 12 || rnd() < 0.22;
-
-    const lignes = [];
+    // LE CONDAMNÉ SE RECALCULE À CHAQUE MAIN. Les jetons circulant librement,
+    // se fier à une file préparée d'avance la désynchronisait du jeu : le
+    // « prochain à sortir » pouvait désigner quelqu'un de déjà éliminé.
+    const condamne = classement.filter((x) => enJeu.includes(x)).pop();
     const engage = Object.fromEntries(enJeu.map((x) => [x, 0]));
     const miser = (nom, montant) => {
-      const mis = Math.min(montant, tapis[nom] - engage[nom]);
+      const mis = Math.max(0, Math.min(montant, tapis[nom] - engage[nom]));
       engage[nom] += mis;
       return mis;
     };
+    // Un joueur qui n'est pas condamné garde toujours un jeton en payant ses
+    // blindes : il ne peut donc pas s'éteindre tout seul et doubler la place
+    // de quelqu'un d'autre. Un tapis payé reste, lui, sans plancher — c'est
+    // par là, et seulement par là, qu'on sort du tournoi.
+    const miserBlinde = (nom, montant) =>
+      miser(nom, nom === condamne ? montant : Math.min(montant, tapis[nom] - 1));
 
-    lignes.push("*** PLAYERS ***");
+    const lignes = ["*** PLAYERS ***"];
     for (let i = 0; i < enJeu.length; i++) {
       const nom = enJeu[i];
       const tags = [places[nom]];
-      if (nom === "Hero") tags.push("Hero");
-      // LES ÉTIQUETTES VONT DANS UN SEUL CROCHET, séparées par un espace :
-      // « [BB Hero] ». Le parseur n'en lit qu'un — écrire « [BB] [Hero] » lui
-      // fait rejeter le siège, donc la main, donc le tournoi entier, et sans
-      // le moindre message puisqu'une main illisible est simplement ignorée.
+      if (nom === hero) tags.push("Hero");
       lignes.push(`Seat ${i + 1}: ${nom} (${tapis[nom]}) [${tags.join(" ")}]`);
     }
     lignes.push("*** HOLE CARDS ***");
-    lignes.push(`Hero: [${cartes.Hero.join(" ")}]`);
+    lignes.push(`${hero}: [${cartes[hero].join(" ")}]`);
     lignes.push("*** PRE-FLOP ***");
 
     const nomSB = enJeu.find((x) => places[x] === "SB");
     const nomBB = enJeu.find((x) => places[x] === "BB");
-    lignes.push(`${hhmmss(horloge)} - ${nomSB}: Posts SB ${miser(nomSB, sb)}`);
-    lignes.push(`${hhmmss(horloge + 1000)} - ${nomBB}: Posts BB ${miser(nomBB, bb)}`);
+    lignes.push(`${hhmmss(horloge)} - ${nomSB}: Posts SB ${miserBlinde(nomSB, sb)}`);
+    lignes.push(`${hhmmss(horloge + 1000)} - ${nomBB}: Posts BB ${miserBlinde(nomBB, bb)}`);
 
     let t = 2000;
+    const dire = (nom, texte) => {
+      lignes.push(`${hhmmss(horloge + t)} - ${nom}: ${texte}`);
+      t += 1400 + Math.floor(rnd() * 2600);
+    };
     const parole = n === 3
       ? [enJeu[bouton], nomSB, nomBB]
       : [enJeu[bouton], nomBB];
 
-    if (eliminerMaintenant) {
-      // ---------------------------------------------------- une élimination
+    // UNE SEULE RÈGLE GOUVERNE TOUT L'ORDRE D'ARRIVÉE : quand le condamné est
+    // dans un tapis, il le perd. Couvert, il sort — c'est l'élimination.
+    // Couvrant, il paie le tapis d'en face et rétrécit : il sortira plus tard.
+    //
+    // Ce second cas manquait, et c'est ce qui inversait les tournois. Un
+    // condamné devenu chip leader ne trouvait plus personne pour le couvrir,
+    // la confrontation n'avait donc pas lieu, et c'est son adversaire qui
+    // finissait par se vider : Hero gagnait 69 % des spins au lieu de 36 %.
+    //
+    // Le reste du temps, un autre joueur court pousse et GAGNE — un doublement.
+    // Sans ces mains-là, aucun tapis ne ferait de saut et la courbe de jetons
+    // d'un tournoi resterait une ligne droite.
+    //
+    // Et un joueur qui n'est pas condamné ne doit JAMAIS s'éteindre tout seul.
+    // Les blindes montent vite ; sans la ligne « critiques » ci-dessous, un
+    // bot descendait à zéro en payant sa grosse blinde, sortait avant le
+    // condamné, et l'ordre d'arrivée était encore faussé. Dès qu'il n'a plus
+    // de quoi tenir un tour de table, on lui donne son doublement.
+    // Passé un certain nombre de mains, on ne laisse plus les jetons tourner
+    // en rond : le condamné part au tapis, sinon le tournoi ne finirait pas.
+    const court = tapis[condamne] <= bb * 11 || securite >= 80;
+    const autresCourts = enJeu.filter((x) => x !== condamne && tapis[x] <= bb * 14)
+      .sort((a, b) => tapis[a] - tapis[b]);
+    const critiques = autresCourts.filter((x) => tapis[x] <= bb * 6)
+      .filter((x) => enJeu.some((y) => y !== x && tapis[y] >= tapis[x]));
+    // Un joueur critique PASSE DEVANT l'élimination du condamné : sinon il
+    // payait sa blinde pendant que les deux autres s'expliquaient, tombait à
+    // zéro et sortait avant son tour. C'est ce qui restait fauté 5 fois sur
+    // 4000. Le condamné, lui, peut s'éteindre sur sa blinde sans dommage :
+    // c'est de toute façon lui qui devait sortir.
+    const doublement = critiques.length > 0
+      || (!court && autresCourts.length > 0 && rnd() < 0.30);
+    const confrontation = court || doublement;
+
+    let gagnantMain = null;
+    let abattage = false;
+    let joueursAbattage = [];
+    let rueMax = 0;   // 0 préflop, 3 flop, 4 turn, 5 river
+
+    if (confrontation) {
+      // ------------------------------------------------- un tapis payé
       //
-      // Le condamné part au tapis, un seul adversaire paie — celui qui doit le
-      // dépasser. Les jetons du perdant vont donc exactement à ce joueur, ce
-      // qui garde la table à quinze cents jetons.
-      const bourreau = enJeu.find((x) => x !== condamne && tapis[x] > tapisCondamne)
-        ?? enJeu.find((x) => x !== condamne);
+      // Le duel se joue toujours entre deux joueurs, et le PLUS COURT pousse :
+      // celui qui couvre paie, personne ne mise plus que ce qu'on peut lui
+      // payer, et il n'y a donc jamais de mise à rendre.
+      let duel;
+      let perdant;
+      if (doublement) {
+        // Un joueur court double. On le fait payer par le condamné en
+        // priorité — c'est ce qui l'use — sinon par n'importe qui le couvre.
+        const gagnant = critiques[0] ?? autresCourts[0];
+        const couvrants = enJeu.filter((x) => x !== gagnant && tapis[x] >= tapis[gagnant]);
+        const autre = couvrants.includes(condamne) ? condamne : couvrants[0];
+        if (!autre) break;
+        duel = [gagnant, autre];
+        perdant = autre;
+      } else {
+        // Le condamné affronte le plus gros tapis de la table, et il perd.
+        const autre = enJeu.filter((x) => x !== condamne)
+          .sort((a, b) => tapis[b] - tapis[a])[0];
+        duel = [condamne, autre];
+        perdant = condamne;
+      }
+
+      const [pousseur, payeur] = duel[0] === undefined || duel[1] === undefined
+        ? [null, null]
+        : (tapis[duel[0]] <= tapis[duel[1]] ? duel : [duel[1], duel[0]]);
+      if (!pousseur || !payeur) break;   // table incohérente : on arrête là
+
       for (const nom of parole) {
-        if (nom === condamne) {
-          const tout = tapis[nom] - engage[nom];
-          miser(nom, tout);
-          lignes.push(`${hhmmss(horloge + t)} - ${nom}: Raises to ${engage[nom]} and is all-in`);
-        } else if (nom === bourreau) {
+        if (nom === pousseur) {
+          miser(nom, tapis[nom] - engage[nom]);
+          dire(nom, `Raises to ${engage[nom]} and is all-in`);
+        } else if (nom === payeur) {
           const aPayer = Math.max(...enJeu.map((x) => engage[x])) - engage[nom];
           const mis = miser(nom, aPayer);
-          lignes.push(`${hhmmss(horloge + t)} - ${nom}: Calls ${mis}`);
+          dire(nom, mis >= tapis[nom] - (engage[nom] - mis) ? `Calls ${mis} and is all-in` : `Calls ${mis}`);
         } else {
-          lignes.push(`${hhmmss(horloge + t)} - ${nom}: Folds`);
+          dire(nom, "Folds");
         }
-        t += 1500;
       }
+
       lignes.push(`*** FLOP *** [${board.slice(0, 3).join(" ")}]`);
       lignes.push(`*** TURN *** [${board.slice(0, 4).join(" ")}]`);
       lignes.push(`*** RIVER *** [${board.join(" ")}]`);
       lignes.push("*** SHOWDOWN ***");
-      // Les cartes de tous ceux qui vont à l'abattage : c'est ce qui permet au
-      // logiciel de calculer l'EV all-in, et sans elles la main n'y sert à rien.
-      for (const nom of [condamne, bourreau]) {
-        if (nom !== "Hero") lignes.push(`${nom}: [${cartes[nom].join(" ")}]`);
+      joueursAbattage = [pousseur, payeur];
+      for (const nom of joueursAbattage) {
+        if (nom !== hero) dire(nom, `Shows [${cartes[nom].join(" ")}]`);
       }
-      lignes.push("*** SUMMARY ***");
-      const pot = enJeu.reduce((s, x) => s + engage[x], 0);
-      lignes.push(`Total Pot: ${pot}`);
-      lignes.push(`${bourreau} wins main pot of ${pot}`);
+      abattage = true;
+      rueMax = 5;
 
-      tapis[condamne] -= engage[condamne];
-      tapis[bourreau] += pot - engage[bourreau];
-      for (const nom of enJeu) if (nom !== condamne && nom !== bourreau) tapis[nom] -= engage[nom];
-
-      const place = enJeu.length;
-      const prix = place === 1 ? dotation : 0;
-      lignes.push(`${condamne} finished ${place}${place === 1 ? "st" : place === 2 ? "nd" : "rd"}`);
-      enJeu = enJeu.filter((x) => x !== condamne);
-      sortirLe.shift();
-
-      if (enJeu.length === 1) {
-        lignes.push(`${enJeu[0]} finished 1st and wins ${dotation.toFixed(2)} EUR`);
-      }
-      void prix;
+      // L'issue est imposée : le perdant est celui que l'ordre d'arrivée
+      // désigne. C'est le prix à payer pour que le CEV tombe juste.
+      gagnantMain = pousseur === perdant ? payeur : pousseur;
     } else {
-      // --------------------------------------- une main sans élimination
-      // Quelqu'un ouvre, les autres se couchent : les blindes changent de main
-      // sans qu'aucun tapis ne soit menacé.
-      const ouvreur = parole.find((x) => x !== condamne) ?? parole[0];
+      // ------------------------------------------- une main sans tapis
+      // Trois formes, pour que la courbe de jetons bouge par petits pas comme
+      // dans un vrai tournoi : un vol de blindes, un pot joué au flop, ou un
+      // pot qui va plus loin.
+      const forme = rnd();
+      const ouvreur = parole.find((x) => tapis[x] > bb * 6) ?? parole[0];
+      const suiveur = enJeu.find((x) => x !== ouvreur && tapis[x] > bb * 6);
+
+      // Personne ne se ruine sur une main sans tapis : on laisse toujours de
+      // quoi jouer la suivante à qui n'est pas censé sortir maintenant.
+      const plafondDe = (nom) => (nom === condamne ? tapis[nom] : Math.max(0, tapis[nom] - bb));
+      const ouverture = Math.min(plafondDe(ouvreur), bb * (2 + Math.floor(rnd() * 2)));
       for (const nom of parole) {
-        if (nom === ouvreur) {
-          const cible = Math.min(tapis[nom], bb * 2 + Math.floor(rnd() * bb));
-          miser(nom, cible - engage[nom]);
-          const suffixe = engage[nom] >= tapis[nom] ? " and is all-in" : "";
-          lignes.push(`${hhmmss(horloge + t)} - ${nom}: Raises to ${engage[nom]}${suffixe}`);
-        } else {
-          lignes.push(`${hhmmss(horloge + t)} - ${nom}: Folds`);
-        }
-        t += 1500;
+        if (nom === ouvreur) { miser(nom, ouverture - engage[nom]); dire(nom, `Raises to ${engage[nom]}`); }
+        else if (nom === suiveur && forme > 0.45) { dire(nom, `Calls ${miser(nom, ouverture - engage[nom])}`); }
+        else dire(nom, "Folds");
       }
-      lignes.push("*** SUMMARY ***");
-      const pot = enJeu.reduce((s, x) => s + engage[x], 0);
-      lignes.push(`Total Pot: ${pot}`);
-      lignes.push(`${ouvreur} wins main pot of ${pot}`);
-      for (const nom of enJeu) tapis[nom] -= engage[nom];
-      tapis[ouvreur] += pot;
+
+      if (forme <= 0.45 || !suiveur) {
+        gagnantMain = ouvreur;                       // vol de blindes
+      } else {
+        // Un pot joué : flop, parfois turn et river.
+        const rues = forme > 0.85 ? 3 : forme > 0.65 ? 2 : 1;
+        const noms3 = ["FLOP", "TURN", "RIVER"];
+        for (let k = 0; k < rues; k++) {
+          const combien = k + 3;
+          rueMax = combien;
+          lignes.push(`*** ${noms3[k]} *** [${board.slice(0, combien).join(" ")}]`);
+          const mise = Math.max(0, Math.min(
+            plafondDe(ouvreur) - engage[ouvreur],
+            plafondDe(suiveur) - engage[suiveur],
+            Math.round((engage[ouvreur] + engage[suiveur]) * (rnd() < 0.5 ? 0.5 : 0.75)),
+          ));
+          if (mise > 0 && k < rues - 1) {
+            dire(ouvreur, `Bets ${miser(ouvreur, mise)}`);
+            dire(suiveur, `Calls ${miser(suiveur, mise)}`);
+          } else if (mise > 0) {
+            dire(ouvreur, `Bets ${miser(ouvreur, mise)}`);
+            if (rnd() < 0.5) {
+              dire(suiveur, `Calls ${miser(suiveur, mise)}`);
+              lignes.push("*** SHOWDOWN ***");
+              abattage = true;
+              joueursAbattage = [ouvreur, suiveur];
+              if (suiveur !== hero) dire(suiveur, `Shows [${cartes[suiveur].join(" ")}]`);
+              if (ouvreur !== hero) dire(ouvreur, `Shows [${cartes[ouvreur].join(" ")}]`);
+            } else {
+              dire(suiveur, "Folds");
+            }
+          } else {
+            dire(ouvreur, "Checks");
+            dire(suiveur, "Checks");
+          }
+        }
+        if (abattage) {
+          let meilleur = -1;
+          for (const nom of joueursAbattage) {
+            const sept = [...cartes[nom].map(cardToInt), ...board.slice(0, rueMax).map(cardToInt)];
+            const f = evaluate7(sept, sept.length);
+            if (f > meilleur) { meilleur = f; gagnantMain = nom; }
+          }
+        } else {
+          gagnantMain = ouvreur;
+        }
+      }
+    }
+
+    // ------------------------------------------------------------- résumé
+    //
+    // LE POT ANNONCÉ EXCLUT LA MISE NON SUIVIE. PokerTracker calculait 50 là où
+    // j'annonçais 70 sur une ouverture que tout le monde couche : l'écart valait
+    // exactement le surplus rendu au relanceur. On annonce donc le pot
+    // réellement disputé, et le gagnant ramasse celui-là.
+    //
+    // IL N'Y A DE MISE À RENDRE QUE S'IL N'Y A QU'UN SEUL JOUEUR AU PLAFOND.
+    // Écrit sans cette condition, un tapis payé — où les deux engagements sont
+    // égaux — n'avait plus personne « en dessous », le second niveau tombait à
+    // zéro, et on rendait au poussseur la totalité de son tapis. Le condamné
+    // ressortait donc intact de son élimination : deux tournois sur quatre
+    // mille tournaient en rond jusqu'à la limite de sécurité, et Hero les
+    // gagnait tous les deux.
+    const engages = enJeu.map((x) => engage[x]);
+    const plafond = Math.max(...engages);
+    const auPlafond = enJeu.filter((x) => engage[x] === plafond);
+    const second = Math.max(0, ...engages.filter((v) => v < plafond));
+    const rendu = auPlafond.length === 1 ? plafond - second : 0;
+    if (rendu > 0) engage[auPlafond[0]] -= rendu;
+
+    const pot = enJeu.reduce((s, x) => s + engage[x], 0);
+    for (const nom of enJeu) tapis[nom] -= engage[nom];
+    tapis[gagnantMain] += pot;
+
+    lignes.push("*** SUMMARY ***");
+    lignes.push(`Total Pot: ${pot}`);
+    lignes.push(`${gagnantMain} wins main pot of ${pot}`);
+    void abattage; void rueMax;
+
+    // ---------------------------------------------------------- éliminations
+    const sortis = enJeu.filter((x) => tapis[x] <= 0);
+    for (const nom of sortis) {
+      const place = enJeu.length;
+      lignes.push(`${nom} finished ${place}${place === 2 ? "nd" : "rd"}`);
+    }
+    enJeu = enJeu.filter((x) => tapis[x] > 0);
+    if (enJeu.length === 1) {
+      lignes.push(`${enJeu[0]} finished 1st and wins ${dotation.toFixed(2)} EUR`);
     }
 
     const entete = [
@@ -283,15 +421,16 @@ function tournoi({ rnd, no, buyIn, heroGagne, ts }) {
       `Blinds: ${sb}/${bb}`,
     ];
     blocs.push([...entete, ...lignes].join("\n"));
+
     // BETCLIC N'EXPORTE QUE LES MAINS DE HERO. Une fois qu'il est éliminé, la
     // partie continue entre les deux autres mais son historique s'arrête là.
-    // Continuer à écrire produirait des mains où il n'est pas assis — et le
-    // logiciel, qui cherche le siège de Hero dans chaque main, les rejetterait
-    // toutes.
-    if (!enJeu.includes("Hero") || enJeu.length <= 1) break;
+    if (!enJeu.includes(hero) || enJeu.length <= 1) break;
   }
 
-  return { blocs, gagnant: enJeu[0], tapis, horloge };
+  return {
+    blocs, gagnant: enJeu[0], tapis, horloge, mains: noMain, classement, gameId,
+    restants: enJeu.length, heroDedans: enJeu.includes(hero),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +445,10 @@ const nSpins = lire("--spins", 1000);
 const buyIn = lire("--buyin", 50);
 const cevVise = lire("--cev", 40);
 const graine = lire("--graine", 20260824);
+// Le pseudo du joueur suivi. C'est lui qui apparaît aux sièges et dans les
+// résumés ; le logiciel, lui, repère Hero par son étiquette et non par son nom.
+const iHero = args.indexOf("--hero");
+const hero = iHero === -1 ? "1Dobbermann" : args[iHero + 1];
 
 // CEV = 1500 p − 500, donc p = (CEV + 500) / 1500.
 const pVictoire = (cevVise + 500) / 1500;
@@ -320,6 +463,8 @@ const blocs = [];
 let ts = Date.UTC(2026, 0, 5, 17, 0, 0);
 let victoires = 0;
 let ecartsJetons = 0;
+let inacheves = 0;
+let desaccords = 0;
 
 // LE NOMBRE DE VICTOIRES EST POSÉ, PAS TIRÉ.
 //
@@ -337,8 +482,13 @@ for (let i = issues.length - 1; i > 0; i--) {
 
 for (let i = 0; i < nSpins; i++) {
   const heroGagne = issues[i];
-  const t = tournoi({ rnd, no: i, buyIn, heroGagne, ts });
-  if (t.gagnant === "Hero") victoires++;
+  const t = tournoi({ rnd, no: i, buyIn, heroGagne, ts, hero });
+  if (t.gagnant === hero) victoires++;
+  if (t.restants > 1 && t.heroDedans) inacheves++;
+  // L'ordre d'arrivée décidé doit être celui qui sort du jeu. Ce contrôle a
+  // attrapé quatre défauts successifs — et sans lui Hero gagnait 69 % des
+  // spins au lieu de 36 %, avec des jetons pourtant parfaitement conservés.
+  if ((t.gagnant === hero) !== heroGagne) desaccords++;
   // Les jetons se conservent : le vainqueur doit détenir les 1500 de la table.
   const total = Object.values(t.tapis).reduce((s, v) => s + v, 0);
   if (total !== 3 * TAPIS_DEPART) ecartsJetons++;
@@ -358,7 +508,7 @@ fs.mkdirSync(dossier, { recursive: true });
 const fichier = path.join(dossier, `spin-betclic-${nSpins}-tournois-${buyIn}eur.txt`);
 
 const enTete = [
-  "# ATTENTION : tournois FABRIQUÉS pour essayer Grand Livre.",
+  "# ATTENTION : tournois FABRIQUÉS pour essayer GrindBoard.",
   "# Ils n'ont jamais été joués. Ne les importe pas dans le compte où tu suis",
   "# ton vrai jeu : ils fausseraient tes statistiques durablement.",
   "# Les adversaires s'appellent tous « bot… » pour les repérer.",

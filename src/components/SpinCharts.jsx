@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, ReferenceDot, Label,
+  BarChart, Bar, Cell, Legend, LabelList, ErrorBar,
 } from "recharts";
 import { trouverDownswings, trouverExtremes, reduireCourbe } from "../lib/spinStats";
 
@@ -37,6 +38,10 @@ export const SERIES_PROJECTION = [
 
 export const SERIES_CEV = [
   { cle: "cev", label: "CEV mesuré", couleur: "#e0c25f", defaut: true, epais: true },
+  // La référence GTO. Elle ne s'écarte du CEV mesuré que sur les tapis payés
+  // préflop en tête-à-tête ; ailleurs les deux se superposent, et c'est la
+  // lecture honnête — le modèle n'a rien à dire du reste.
+  { cle: "cevGto", label: "CEV contre range GTO", couleur: "#7fb3d4", defaut: true },
   { cle: "cevHaut", label: "Borne haute (95 %)", couleur: "#5f7f6a", defaut: true, pointille: true },
   { cle: "cevBas", label: "Borne basse (95 %)", couleur: "#5f7f6a", defaut: true, pointille: true },
   { cle: "seuil", label: "Seuil de rentabilité", couleur: "#c15c4d", defaut: true },
@@ -231,5 +236,160 @@ export function CourbeSpin({
         ))}
       </div>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Barres
+// ---------------------------------------------------------------------------
+
+/**
+ * Un histogramme, ou deux séries côte à côte.
+ *
+ * CE QUI DISTINGUE CE COMPOSANT D'UN GRAPHIQUE ORDINAIRE : il refuse de
+ * colorer une barre construite sur trop peu d'observations. Un ROI de +180 %
+ * sur six tournois et sur six cents se dessinent à la même hauteur, et le
+ * premier ne veut rien dire. Les barres sous le seuil passent en gris et le
+ * survol annonce l'effectif — on ne peut donc pas lire une tendance qui
+ * n'existe pas sans en être averti.
+ */
+export function BarresSpin({
+  donnees = [], barres = [], cleX = "label", unite = "", note = null,
+  cleEffectif = "tournois", seuilEffectif = 0, hauteur = 260, formatValeur = null,
+  cleMarge = null,
+}) {
+  if (!donnees.length) return null;
+  const fmt = formatValeur || ((v) => (v == null ? "—" : `${Math.round(v * 10) / 10}${unite}`));
+  const maigre = (d) => seuilEffectif > 0 && (d[cleEffectif] ?? Infinity) < seuilEffectif;
+
+  return (
+    <div className="graphique-barres">
+      <div style={{ width: "100%", height: hauteur }}>
+        <ResponsiveContainer>
+          <BarChart data={donnees} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+            <CartesianGrid stroke="#2a3538" strokeDasharray="2 4" vertical={false} />
+            <XAxis dataKey={cleX} stroke="#8b948f" tick={{ fontSize: 11 }} interval={0}
+              angle={donnees.length > 8 ? -35 : 0} textAnchor={donnees.length > 8 ? "end" : "middle"}
+              height={donnees.length > 8 ? 52 : 24} />
+            <YAxis stroke="#8b948f" tick={{ fontSize: 11 }} />
+            <ReferenceLine y={0} stroke="#8b948f" strokeWidth={1} />
+            <Tooltip
+              contentStyle={{ background: "#141b1d", border: "1px solid #2a3538", borderRadius: 8 }}
+              labelStyle={{ color: "#d6ded9" }}
+              formatter={(v, nom, o) => {
+                const n = o?.payload?.[cleEffectif];
+                const eff = n == null ? "" : ` · ${n.toLocaleString("fr-FR")} tournoi(s)`;
+                return [`${fmt(v)}${eff}`, nom];
+              }}
+            />
+            {barres.length > 1 && (
+              <Legend wrapperStyle={{ fontSize: 11.5, paddingTop: 6 }} />
+            )}
+            {barres.map((b) => (
+              <Bar key={b.cle} dataKey={b.cle} name={b.label} fill={b.couleur} radius={[3, 3, 0, 0]}>
+                {barres.length === 1 && donnees.map((d, i) => (
+                  <Cell key={i} fill={maigre(d) ? "#3d4a4d" : b.couleur} />
+                ))}
+                {/* LA VALEUR EST ÉCRITE SUR LA BARRE. Obliger à survoler pour
+                    lire un chiffre transforme un graphique en devinette : on
+                    compare des hauteurs au lieu de lire des nombres, et sur un
+                    écran tactile le survol n'existe même pas. */}
+                <LabelList
+                  dataKey={b.cle}
+                  position="top"
+                  offset={7}
+                  fill="#b9c4bf"
+                  fontSize={11}
+                  formatter={(v) => (v == null ? "" : fmt(v))}
+                />
+                {/* La moustache d'incertitude, quand la donnée la porte. Deux
+                    barres dont les moustaches se chevauchent ne se départagent
+                    pas : le graphique doit le montrer plutôt que de laisser
+                    croire à un écart. */}
+                {cleMarge && donnees.some((d) => d[cleMarge] != null) && (
+                  <ErrorBar dataKey={cleMarge} width={5} strokeWidth={1.4} stroke="#8b948f" />
+                )}
+              </Bar>
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      {seuilEffectif > 0 && donnees.some(maigre) && (
+        <p className="card-sub" style={{ marginTop: 2 }}>
+          Les barres grises reposent sur moins de {seuilEffectif} tournois : à cet effectif, l'écart
+          est du bruit et non une tendance.
+        </p>
+      )}
+      {note && <p className="card-sub" style={{ marginTop: 4 }}>{note}</p>}
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Anneaux
+// ---------------------------------------------------------------------------
+
+/**
+ * Une rangée d'anneaux, un par créneau.
+ *
+ * POURQUOI UN ANNEAU ET NON UNE BARRE. Une part de cent se lit mieux en
+ * fraction de tour qu'en hauteur : l'œil compare des angles sans avoir besoin
+ * d'un axe, et sept jours côte à côte tiennent sur une ligne au lieu d'un
+ * graphique entier. C'est aussi la seule forme où le nombre peut vivre AU
+ * CENTRE de la figure plutôt qu'à côté.
+ *
+ * Un anneau dont l'effectif est trop faible reste creux : il montre son
+ * contour et son compte, jamais un pourcentage. Un cercle bien rempli sur six
+ * observations est exactement le genre de figure qui fait changer d'horaire
+ * pour rien.
+ */
+export function AnneauxSpin({
+  donnees = [], cleValeur = "qualite", cleEffectif = "tournois",
+  seuilEffectif = 0, unite = " %", titre = null, note = null, couleur = "#c96f9e",
+}) {
+  if (!donnees.length) return null;
+  const R = 26;
+  const C = 2 * Math.PI * R;
+  return (
+    <div className="anneaux-bloc">
+      {titre && <h4 className="anneaux-titre">{titre}</h4>}
+      <div className="anneaux">
+        {donnees.map((d) => {
+          const v = d[cleValeur];
+          const n = d[cleEffectif] ?? 0;
+          const assez = n >= seuilEffectif && v != null;
+          const part = assez ? Math.max(0, Math.min(100, v)) : 0;
+          return (
+            <div className="anneau" key={d.cle ?? d.label}>
+              <svg viewBox="0 0 64 64" width="64" height="64" role="img"
+                aria-label={`${d.label} : ${assez ? `${Math.round(v)}${unite}` : "trop peu de tournois"}`}>
+                <circle cx="32" cy="32" r={R} fill="none" stroke="#232b2d" strokeWidth="7" />
+                {assez && (
+                  <circle
+                    cx="32" cy="32" r={R} fill="none" stroke={couleur} strokeWidth="7"
+                    strokeLinecap="round" strokeDasharray={`${(part / 100) * C} ${C}`}
+                    transform="rotate(-90 32 32)"
+                  />
+                )}
+                <text x="32" y="33" textAnchor="middle" dominantBaseline="middle"
+                  fill={assez ? "#e6ede9" : "#5a6663"} fontSize="13" fontFamily="inherit">
+                  {assez ? Math.round(v) : "—"}
+                </text>
+              </svg>
+              <span className="anneau-label">{d.label}</span>
+              <span className="anneau-n">{n.toLocaleString("fr-FR")}</span>
+            </div>
+          );
+        })}
+      </div>
+      {seuilEffectif > 0 && donnees.some((d) => (d[cleEffectif] ?? 0) < seuilEffectif) && (
+        <p className="card-sub">
+          Les anneaux creux reposent sur moins de {seuilEffectif} tournois : le chiffre
+          existe, mais il ne veut encore rien dire.
+        </p>
+      )}
+      {note && <p className="card-sub">{note}</p>}
+    </div>
   );
 }

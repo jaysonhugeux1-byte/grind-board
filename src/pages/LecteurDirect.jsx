@@ -221,6 +221,14 @@ export default function LecteurDirect() {
 
   const [tables, setTables] = useState([]);
   const [tableChoisie, setTableChoisie] = useState(null);
+  // Un décalage par fenêtre, mémorisé sous son identifiant. Sert tant que les
+  // vraies coordonnées ne sont pas disponibles ; deviendra inutile ensuite.
+  const [decalagesParFenetre, setDecalagesParFenetre] = useState(
+    () => lireLocal("gl_lecteur_decalages", {}),
+  );
+  useEffect(() => {
+    localStorage.setItem("gl_lecteur_decalages", JSON.stringify(decalagesParFenetre));
+  }, [decalagesParFenetre]);
   const [image, setImage] = useState(null);
   const [zones, setZones] = useState(() => lireLocal(CLE_ZONES, ZONES_PAR_DEFAUT));
   // Betclic dessine toutes ses tables dans une seule fenetre : c'est
@@ -338,16 +346,35 @@ export default function LecteurDirect() {
   // Electron sait capturer une fenetre mais pas dire ou elle se trouve. On part
   // donc d'une fenetre centree sur l'ecran — ce qui tombe juste quand elle est
   // agrandie, le cas courant — et le decalage manuel corrige le reste.
+  // OÙ SE TROUVE CETTE FENÊTRE SUR L'ÉCRAN ? Trois réponses, de la meilleure à
+  // la moins bonne, et l'ordre est tout le sujet.
+  //
+  //   1. `capture.cadre` — les vraies coordonnées de la fenêtre. C'est la seule
+  //      réponse juste, et la seule qui marche avec plusieurs tables posées
+  //      n'importe où. Elle demande un appel système que `desktopCapturer` ne
+  //      fournit pas : c'est le chantier qui reste.
+  //   2. Un décalage réglé à la main, PAR FENÊTRE. Un décalage unique ne peut
+  //      pas servir deux tables à des endroits différents.
+  //   3. La fenêtre supposée centrée sur l'écran. Vrai d'une fenêtre
+  //      maximisée, faux dès qu'il y en a deux — chaque pastille tombe alors à
+  //      côté de son siège, ce qui est pire que pas de pastille du tout.
+  //
+  // La fonction est écrite dans cet ordre pour que le jour où les coordonnées
+  // arrivent, rien d'autre ne bouge.
   const versEcran = useCallback((zoneAbsolue, capture) => {
     const e = ecranRef.current;
     if (!e || !capture) return null;
-    const dx = decalage?.x ?? Math.round((e.largeur - capture.largeur) / 2);
-    const dy = decalage?.y ?? Math.round((e.hauteur - capture.hauteur) / 2);
+    const cadre = capture.cadre;
+    const propre = decalagesParFenetre?.[capture.id];
+    const dx = cadre ? cadre.x
+      : propre?.x ?? decalage?.x ?? Math.round((e.largeur - capture.largeur) / 2);
+    const dy = cadre ? cadre.y
+      : propre?.y ?? decalage?.y ?? Math.round((e.hauteur - capture.hauteur) / 2);
     return {
       x: Math.round((zoneAbsolue.x + zoneAbsolue.l / 2) * capture.largeur) + dx,
       y: Math.round(zoneAbsolue.y * capture.hauteur) + dy,
     };
-  }, [decalage]);
+  }, [decalage, decalagesParFenetre]);
 
   // Calibrage prepare a l'avance sur une capture reelle de la fenetre Betclic :
   // decoupe des quatre tables, position du bouton « Rejouer », et gabarits du

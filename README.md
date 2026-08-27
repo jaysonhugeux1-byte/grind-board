@@ -1,4 +1,4 @@
-# Grand Livre — Bankroll Tracker
+# GrindBoard — Bankroll Tracker
 
 Site web (React + Firebase) pour suivre ta bankroll de cash game, avec connexion
 Google et une base de données accessible depuis n'importe quel appareil.

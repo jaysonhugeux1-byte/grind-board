@@ -35,11 +35,19 @@
 // Usage : node outils/verifier-ecrans.mjs [chemin/vers/l/executable]
 
 import { spawn } from "child_process";
+import fs from "fs";
 import path from "path";
 import process from "process";
 
-const EXE = process.argv[2]
-  || path.join(process.env.LOCALAPPDATA || "", "Programs", "Grand Livre", "Grand Livre.exe");
+// Le produit s'appelait « Grand Livre » jusqu'a la 5.9 : une machine mise a
+// jour depuis cette version-la garde l'ancien dossier d'installation. On essaie
+// donc les deux, le nouveau d'abord.
+const programmes = path.join(process.env.LOCALAPPDATA || "", "Programs");
+const CANDIDATS = [
+  path.join(programmes, "GrindBoard", "GrindBoard.exe"),
+  path.join(programmes, "Grand Livre", "Grand Livre.exe"),
+];
+const EXE = process.argv[2] || CANDIDATS.find((c) => fs.existsSync(c)) || CANDIDATS[0];
 const PORT = 9222;
 const RETOUR = String.fromCharCode(10);
 

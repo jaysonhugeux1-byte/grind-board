@@ -105,6 +105,41 @@ function parseBlock(block) {
     if (p) p.cards = m[2].trim().split(/\s+/);
   }
 
+  // LES CARTES DE L'ABATTAGE. Betclic ne montre que celles de Hero en début de
+  // main ; celles des adversaires n'apparaissent qu'ici, sur une ligne d'action
+  // horodatée. Elles n'étaient pas lues du tout, et le silence coûtait cher :
+  // sans la main du vilain, l'EV all-in ne peut pas se calculer, la fonction
+  // renonçait sur CHAQUE main, et `evChips` retombait sur le résultat réel.
+  // La courbe d'EV du logiciel doublait donc exactement la courbe des gains,
+  // sans que rien ne le signale. Les fiches d'adversaires, qui recensent les
+  // mains montrées, restaient vides pour la même raison.
+  const showSection = block.split(/^\*\*\* SHOWDOWN \*\*\*$/m)[1] || "";
+  const showEnd = showSection.search(/^\*\*\* /m);
+  const showText = showEnd >= 0 ? showSection.slice(0, showEnd) : showSection;
+  // LE FORMAT RÉEL, RELEVÉ SUR UN EXPORT BETCLIC :
+  //
+  //   Akrobat shows [Ad 3s] (Two Pair) [Ts Tc 8h 8d Ad]
+  //
+  // Pas de deux-points après le nom, « shows » en minuscules, et du texte
+  // APRÈS le crochet — la main formée, puis les cinq cartes retenues. La
+  // première version de cette ligne exigeait « Nom: Shows [..] » en fin de
+  // ligne : elle ne reconnaissait aucune des 1525 lignes d'abattage d'un
+  // export réel. Le fixture du projet encodait le même format inventé, si bien
+  // que les tests passaient sur une grammaire qui n'existe pas.
+  //
+  // On accepte donc les deux-points en option, l'une ou l'autre casse, et on
+  // ne s'ancre PAS sur la fin de ligne.
+  // L'horodatage reste TOLÉRÉ en tête : Betclic n'en met pas sur ces lignes,
+  // mais sans ce préfixe optionnel il se retrouverait aspiré dans le nom du
+  // joueur, qu'aucune table ne reconnaîtrait alors.
+  for (const m of showText.matchAll(/^(?:\d\d:\d\d:\d\d - )?(.+?):? (?:shows|mucks) \[([^\]]+)\]/gim)) {
+    const p = byName.get(m[1]);
+    const cartes = m[2].trim().split(/\s+/);
+    // On n'écrase jamais les cartes de Hero : elles sont déjà connues, et une
+    // ligne d'abattage mal formée ne doit pas pouvoir les corrompre.
+    if (p && !p.cards && cartes.length === 2) p.cards = cartes;
+  }
+
   // --------------------------------------------------------------- board
   let board = [];
   for (const street of ["FLOP", "TURN", "RIVER"]) {
@@ -391,10 +426,21 @@ export function buildPots(players) {
  */
 export function computeSpinHandEV(hand) {
   hand.evChips = hand.netChips;
-  if (!hand.sawShowdown || !hand.heroLastStreet) return false;
+  if (!hand.sawShowdown) return false;
 
-  // Combien de cartes étaient connues quand Hero a agi pour la dernière fois.
-  const knownLen = BOARD_LEN[hand.heroLastStreet];
+  // ÊTRE AU TAPIS SANS AVOIR AGI. Un joueur dont la blinde emporte tout son
+  // tapis ne prend aucune décision : `heroLastStreet` reste vide, faute
+  // d'action volontaire. La première version renonçait donc à ajuster ces
+  // mains — alors que ce sont les plus pures qui soient, un pile ou face
+  // décidé dès le préflop, avec cinq cartes encore à venir. Sur deux jours de
+  // jeu, quatorze coups passaient ainsi à travers.
+  const rue = hand.heroLastStreet
+    ?? ((hand.actions || []).some((a) => a.hero && a.type === "post" && a.allIn)
+      ? "Preflop" : null);
+  if (!rue) return false;
+
+  // Combien de cartes étaient connues quand Hero a engagé son tapis.
+  const knownLen = BOARD_LEN[rue];
   if (knownLen == null || knownLen >= 5) return false;
   if (hand.board.length !== 5) return false;
 
@@ -424,11 +470,39 @@ export function computeSpinHandEV(hand) {
   const playersCards = cards.map((c) => c || [0, 1]);
   const shares = expectedPotShares(playersCards, knownBoard, pots, hand.id);
 
-  hand.equity = pots.reduce((s, pot) => s + pot.amount, 0)
-    ? shares[heroIdx] / pots.reduce((s, pot) => s + pot.amount, 0)
-    : null;
+  // L'ÉQUITÉ AFFICHÉE EST CELLE DES POTS QUE HERO PEUT GAGNER. La rapporter au
+  // total de tous les pots la faisait paraître plus basse qu'elle n'est : sur
+  // un coup à trois où Hero est au tapis pour moins cher, le pot annexe que les
+  // deux autres se disputent entrait au dénominateur alors qu'il ne lui est pas
+  // accessible. Une main à 36 % s'affichait ainsi à 29 %.
+  const eligibles = pots.filter((pot) => pot.eligible.includes(heroIdx));
+  const potAccessible = eligibles.reduce((s, pot) => s + pot.amount, 0);
+  hand.equity = potAccessible ? shares[heroIdx] / potAccessible : null;
   hand.evChips = Math.round((shares[heroIdx] - hand.invested) * 100) / 100;
-  hand.allInStreet = hand.heroLastStreet;
+  hand.allInStreet = rue;
+
+  // A-T-ON AJUSTÉ UN COUP À POT ANNEXE ? C'est la seule chose sur laquelle
+  // GrindBoard et PokerTracker divergent, et il vaut mieux la montrer que la
+  // taire. Quand Hero part au tapis pour moins cher et que les deux autres
+  // continuent à miser entre eux, PokerTracker N'AJUSTE PAS la main : il garde
+  // le résultat réel. Nous l'ajustons, parce que le pot principal s'est bel et
+  // bien joué à l'équité — gagner à 36 % relève de la chance, pas du jeu.
+  //
+  // Sur deux jours, l'écart tenait à vingt-sept mains de ce type et valait
+  // 1 461 jetons, soit dix points de CEV. Les 354 autres mains ajustées ne
+  // séparaient les deux logiciels que de 306 jetons.
+  // LE SEUL POINT OÙ GRINDBOARD ET POKERTRACKER DIVERGENT, et il vaut mieux
+  // le nommer que le taire : le tapis contesté par PLUS D'UN adversaire.
+  //
+  // Quand Hero pousse et que deux joueurs paient, PokerTracker renonce à
+  // calculer une équité — sa colonne reste vide et il garde le résultat réel.
+  // Nous l'ajustons : le pot principal s'est bel et bien joué à l'équité, et
+  // gagner un pot à trois avec 36 % relève de la chance, pas du jeu.
+  //
+  // Mesuré sur un export réel de 159 tournois : douze mains de ce genre, 1 679
+  // jetons, dix points de CEV à elles seules. Les 369 autres tapis ajustés ne
+  // séparaient les deux logiciels que d'un dixième de point d'équité.
+  hand.multiway = eligibles.some((pot) => pot.eligible.length > 2);
   return true;
 }
 

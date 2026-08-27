@@ -40,7 +40,7 @@ let fenetrePrincipale = null;
 // contient aucun jeton : le code d'autorisation a deja ete transmis a
 // l'application, et il ne sert qu'une fois.
 const pageRetour = (erreur) => `<!doctype html><html lang="fr"><head><meta charset="utf-8">
-<title>Grand Livre</title><style>
+<title>GrindBoard</title><style>
  body{margin:0;height:100vh;display:grid;place-items:center;background:#12191b;
       color:#ede9dc;font-family:system-ui,sans-serif;text-align:center;padding:24px}
  h1{font-size:20px;margin:0 0 8px} p{color:#8b948f;margin:0;font-size:14px;max-width:36em}
@@ -48,9 +48,9 @@ const pageRetour = (erreur) => `<!doctype html><html lang="fr"><head><meta chars
 </style></head><body><div>${
   erreur
     ? `<h1 class="ko">Connexion refusee</h1><p>${String(erreur).replace(/[<>&]/g, "")}</p>
-       <p>Ferme cet onglet et reessaie depuis Grand Livre.</p>`
+       <p>Ferme cet onglet et reessaie depuis GrindBoard.</p>`
     : `<h1>Connexion reussie</h1>
-       <p>Tu peux fermer cet onglet et revenir a Grand Livre.</p>`
+       <p>Tu peux fermer cet onglet et revenir a GrindBoard.</p>`
 }</div></body></html>`;
 
 function startStaticServer(rootDir) {
@@ -224,7 +224,7 @@ function setupAutoUpdate(win) {
       .showMessageBox(win, {
         type: "info",
         title: "Mise à jour disponible",
-        message: "Une nouvelle version de Grand Livre a été téléchargée.",
+        message: "Une nouvelle version de GrindBoard a été téléchargée.",
         detail: "Redémarre l'application pour l'installer.",
         buttons: ["Redémarrer maintenant", "Plus tard"],
         defaultId: 0,

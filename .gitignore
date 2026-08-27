@@ -15,3 +15,6 @@ __pycache__/
 
 # Historiques fabriques pour les essais : regenerables a la demande.
 historiques-essai/
+
+# Apercus generes par les outils outils/apercu-*.jsx : refaits a la demande.
+apercu-*.html

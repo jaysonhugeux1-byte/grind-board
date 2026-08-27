@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Upload, Loader2, CheckCircle2, AlertTriangle, Trash2, Calculator } from "lucide-react";
+import { Upload, Loader2, CheckCircle2, AlertTriangle, Trash2, Calculator, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { PageHeader, fmtDate } from "../components/ui";
@@ -11,6 +11,7 @@ import {
   parseBetclicSpin, groupTournaments, computeSpinHandEV, looksLikeBetclicSpin,
 } from "../lib/betclicSpin";
 import { importSpinData, deleteSpinTournaments } from "../lib/supabaseData";
+import { ajouterTout, minimum, maximum } from "../lib/grandsTableaux";
 import { apprendreDepuisHistorique, contexteDepuisMains } from "../lib/apprentissageAuto";
 
 const euros = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)} €`;
@@ -69,7 +70,7 @@ export default function SpinImport() {
       for (const f of fichiers) {
         if (f.name.toLowerCase().endsWith(".zip")) {
           const extraits = await lireZip(await f.arrayBuffer(), (n) => n.toLowerCase().endsWith(".txt"));
-          textes.push(...extraits.map((e) => e.texte));
+          ajouterTout(textes, extraits.map((e) => e.texte));
         } else {
           textes.push(await f.text());
         }
@@ -87,9 +88,9 @@ export default function SpinImport() {
           const r = parseResumeExpresso(t);
           if (r) resumes.push(r);
         } else if (looksLikeWinamaxExpresso(t)) {
-          mains.push(...parseWinamaxExpresso(t));
+          ajouterTout(mains, parseWinamaxExpresso(t));
         } else if (looksLikeBetclicSpin(t)) {
-          mains.push(...parseBetclicSpin(t));
+          ajouterTout(mains, parseBetclicSpin(t));
         }
       }
       associerResumes(mains, resumes);
@@ -154,8 +155,8 @@ export default function SpinImport() {
         nouveauxT,
         nouvellesM,
         avecEv,
-        debut: Math.min(...tournoisLus.map((t) => t.ts)),
-        fin: Math.max(...tournoisLus.map((t) => t.ts)),
+        debut: minimum(tournoisLus.map((t) => t.ts)),
+        fin: maximum(tournoisLus.map((t) => t.ts)),
         net: tournoisLus.reduce((s, t) => s + t.net, 0),
         evNet: tournoisLus.reduce((s, t) => s + t.evNet, 0),
       });
@@ -212,6 +213,8 @@ export default function SpinImport() {
       setNettoyage(false);
     }
   }
+
+
 
   const occupe = etape !== null;
   const libelleEtape =
@@ -399,6 +402,7 @@ export default function SpinImport() {
           jour — d'ici là, la saisie éclair du tableau de bord garde ta courbe à jour.
         </p>
       </div>
+
     </div>
   );
 }

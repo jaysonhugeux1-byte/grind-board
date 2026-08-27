@@ -4,7 +4,78 @@
 // Modèle : chaque main est une ligne (user_id, hand_id, ts, data), où `data`
 // contient l'objet main tel que l'application le manipule. Le texte brut vit
 // dans une table séparée, chargée à la demande.
-import { supabase } from "../supabase";
+// Extension explicite : sans elle, Node ne sait pas résoudre ce chemin et ce
+// module reste intestable hors du navigateur. Vite accepte les deux formes.
+import { supabase } from "../supabase.js";
+
+// ---------------------------------------------------------------------------
+// LA BASE ACTIVE
+// ---------------------------------------------------------------------------
+//
+// Un compte peut disposer de deux bases de données : la sienne, et une seconde
+// payante. Toutes les tables de données portent une colonne `base`, et chaque
+// requête doit la filtrer — sans quoi les deux bases se mélangeraient sans que
+// rien ne le signale, ce qui est la pire des façons de perdre des données.
+//
+// POURQUOI UNE VARIABLE DE MODULE ET NON UN ARGUMENT. Il y a une trentaine de
+// requêtes ici. Ajouter un paramètre à chacune, c'est trente occasions de
+// l'oublier, et un oubli ne se voit pas : la requête réussit et rend les
+// mauvaises lignes. Une seule valeur, posée au changement de base, ne peut pas
+// se désynchroniser d'une requête à l'autre.
+//
+// La sécurité, elle, ne repose PAS là-dessus : la politique RLS refuse la base
+// 2 sans abonnement en cours, quoi que le client demande.
+let BASE_ACTIVE = 1;
+
+// LA COLONNE EXISTE-T-ELLE ? Elle est ajoutée par une migration SQL qu'il faut
+// exécuter à la main. Tant qu'elle ne l'est pas, la moindre requête qui la
+// filtre échoue et l'application ne montre plus rien — c'est arrivé, et c'est
+// une faute : une version publiée ne doit pas dépendre d'un geste manuel sur
+// une base partagée pour seulement démarrer.
+//
+// On part donc du principe qu'elle N'EXISTE PAS, et on ne s'en sert qu'une fois
+// la preuve faite. Sur une base non migrée, l'application fonctionne comme
+// avant, avec une seule base — ce qui est exactement le comportement voulu.
+let COLONNE_BASE = false;
+
+/**
+ * Vérifie une fois pour toutes si la colonne `base` est là.
+ *
+ * À appeler au démarrage. Silencieuse : une base non migrée n'est pas une
+ * erreur, c'est un état.
+ */
+export async function verifierColonneBase() {
+  try {
+    const { error } = await supabase.from("spin_tournaments").select("base").limit(1);
+    COLONNE_BASE = !error;
+  } catch {
+    COLONNE_BASE = false;
+  }
+  return COLONNE_BASE;
+}
+
+export const colonneBaseDisponible = () => COLONNE_BASE;
+
+/**
+ * Les arguments du filtre de base.
+ *
+ * Un `.eq()` ne peut pas s'annuler au milieu d'une chaîne. Quand la colonne
+ * n'est pas là, on repose donc le filtre sur l'utilisateur — il est déjà
+ * appliqué juste avant, donc c'est sans effet — plutôt que d'écrire chaque
+ * requête en deux versions.
+ */
+function filtreBase(uid) {
+  return COLONNE_BASE ? ["base", BASE_ACTIVE] : ["user_id", uid];
+}
+
+/** Change la base que toutes les requêtes suivantes viseront. */
+export function setBaseActive(n) {
+  BASE_ACTIVE = n === 2 ? 2 : 1;
+}
+
+export function baseActive() {
+  return BASE_ACTIVE;
+}
 
 // PostgREST plafonne toute réponse à 1000 lignes. Avec plusieurs milliers de
 // mains, une lecture naïve en renverrait silencieusement une partie seulement —
@@ -46,14 +117,14 @@ function chunk(arr, size) {
 
 export async function getAllHands(uid) {
   const rows = await fetchAllPages(() =>
-    supabase.from("hands").select("data").eq("user_id", uid).order("ts", { ascending: true })
+    supabase.from("hands").select("data").eq("user_id", uid).eq(...filtreBase(uid)).order("ts", { ascending: true })
   );
   return rows.map((r) => r.data);
 }
 
 export async function getAllHandIds(uid) {
   const rows = await fetchAllPages(() =>
-    supabase.from("hands").select("hand_id").eq("user_id", uid).order("hand_id")
+    supabase.from("hands").select("hand_id").eq("user_id", uid).eq(...filtreBase(uid)).order("hand_id")
   );
   return new Set(rows.map((r) => r.hand_id));
 }
@@ -78,7 +149,7 @@ export async function getAllHandIds(uid) {
  */
 export async function getAllHandRaw(uid) {
   const rows = await fetchAllPages(() =>
-    supabase.from("hand_raw").select("hand_id, raw").eq("user_id", uid).order("hand_id")
+    supabase.from("hand_raw").select("hand_id, raw").eq("user_id", uid).eq(...filtreBase(uid)).order("hand_id")
   );
   const parId = new Map();
   for (const r of rows) if (r.raw) parId.set(r.hand_id, r.raw);
@@ -89,7 +160,7 @@ export async function getHandRaw(uid, handId) {
   const { data, error } = await supabase
     .from("hand_raw")
     .select("raw")
-    .eq("user_id", uid)
+    .eq("user_id", uid).eq(...filtreBase(uid))
     .eq("hand_id", handId)
     .maybeSingle();
   if (error) throw error;
@@ -120,11 +191,13 @@ export async function importHands(uid, parsedHands, { forceUpdate = false, exist
           const { raw, ...light } = h;
           hands.push({
             user_id: uid,
+    ...(COLONNE_BASE ? { base: BASE_ACTIVE } : {}),
             hand_id: h.id,
             ts: new Date(h.ts).toISOString(),
             data: light,
           });
-          raws.push({ user_id: uid, hand_id: h.id, raw: raw ?? "" });
+          raws.push({ user_id: uid,
+    ...(COLONNE_BASE ? { base: BASE_ACTIVE } : {}), hand_id: h.id, raw: raw ?? "" });
         }
         // upsert plutôt qu'insert : rejouer un import ne doit jamais échouer sur
         // une main déjà connue, et forceUpdate doit pouvoir réécrire.
@@ -151,8 +224,8 @@ export async function importHands(uid, parsedHands, { forceUpdate = false, exist
 
 export async function deleteHand(uid, handId) {
   const [a, b] = await Promise.all([
-    supabase.from("hands").delete().eq("user_id", uid).eq("hand_id", handId),
-    supabase.from("hand_raw").delete().eq("user_id", uid).eq("hand_id", handId),
+    supabase.from("hands").delete().eq("user_id", uid).eq(...filtreBase(uid)).eq("hand_id", handId),
+    supabase.from("hand_raw").delete().eq("user_id", uid).eq(...filtreBase(uid)).eq("hand_id", handId),
   ]);
   if (a.error) throw a.error;
   if (b.error) throw b.error;
@@ -164,8 +237,8 @@ export async function deleteHands(uid, handIds, onChunkDone) {
     chunks.length,
     async (i) => {
       const [a, b] = await Promise.all([
-        supabase.from("hands").delete().eq("user_id", uid).in("hand_id", chunks[i]),
-        supabase.from("hand_raw").delete().eq("user_id", uid).in("hand_id", chunks[i]),
+        supabase.from("hands").delete().eq("user_id", uid).eq(...filtreBase(uid)).in("hand_id", chunks[i]),
+        supabase.from("hand_raw").delete().eq("user_id", uid).eq(...filtreBase(uid)).in("hand_id", chunks[i]),
       ]);
       if (a.error) throw a.error;
       if (b.error) throw b.error;
@@ -178,7 +251,7 @@ export async function deleteHands(uid, handIds, onChunkDone) {
 
 export async function getAllEntries(uid) {
   const rows = await fetchAllPages(() =>
-    supabase.from("entries").select("id, data").eq("user_id", uid).order("ts", { ascending: true })
+    supabase.from("entries").select("id, data").eq("user_id", uid).eq(...filtreBase(uid)).order("ts", { ascending: true })
   );
   return rows.map((r) => ({ id: r.id, ...r.data }));
 }
@@ -186,6 +259,7 @@ export async function getAllEntries(uid) {
 export async function addEntry(uid, entry) {
   const { error } = await supabase.from("entries").insert({
     user_id: uid,
+    ...(COLONNE_BASE ? { base: BASE_ACTIVE } : {}),
     ts: new Date(entry.ts).toISOString(),
     data: entry,
   });
@@ -193,7 +267,7 @@ export async function addEntry(uid, entry) {
 }
 
 export async function deleteEntry(uid, entryId) {
-  const { error } = await supabase.from("entries").delete().eq("user_id", uid).eq("id", entryId);
+  const { error } = await supabase.from("entries").delete().eq("user_id", uid).eq(...filtreBase(uid)).eq("id", entryId);
   if (error) throw error;
 }
 
@@ -235,9 +309,40 @@ export function subscribeChallenge(uid, onData, onError) {
   };
 }
 
+/**
+ * Le profil d'une base : bankroll de départ et salle jouée.
+ *
+ * LA CLÉ PORTE LA BASE, et c'est voulu. Les autres réglages sont communs aux
+ * deux bases — le rake, le challenge, les préférences ne changent pas selon la
+ * base ouverte. Le profil, si : une seconde base sert justement à suivre autre
+ * chose, souvent ailleurs et avec un autre capital. On l'écrit donc sous
+ * « profil:1 » et « profil:2 », ce qui n'exige aucune colonne supplémentaire.
+ */
+export async function getProfil(uid, base = 1) {
+  const { data, error } = await supabase
+    .from("settings")
+    .select("data")
+    .eq("user_id", uid)
+    .eq("key", `profil:${base}`)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.data ?? null;
+}
+
+export async function setProfil(uid, base, profil) {
+  const { error } = await supabase
+    .from("settings")
+    .upsert({ user_id: uid, key: `profil:${base}`, data: profil }, { onConflict: "user_id,key" });
+  if (error) throw error;
+}
+
 export async function setChallenge(uid, challenge) {
   const { error } = await supabase
     .from("settings")
+    // Les réglages sont COMMUNS aux deux bases : le challenge, le rake, les
+    // préférences d'affichage ne changent pas selon la base ouverte. Ils n'ont
+    // donc pas de colonne `base`, et lui en demander une ferait échouer la
+    // requête à chaque enregistrement.
     .upsert({ user_id: uid, key: "challenge", data: challenge }, { onConflict: "user_id,key" });
   if (error) throw error;
 }
@@ -252,7 +357,7 @@ export async function getAllSpinTournaments(uid) {
     supabase
       .from("spin_tournaments")
       .select("tourney_id, ts, buy_in, multiplier, prize_pool, finish, payout, net, data")
-      .eq("user_id", uid)
+      .eq("user_id", uid).eq(...filtreBase(uid))
       .order("ts", { ascending: true })
   );
   return rows.map((r) => ({
@@ -283,7 +388,7 @@ export async function getAllSpinHands(uid) {
     supabase
       .from("spin_hands")
       .select("hand_id, tourney_id, ts, bb_depth, data")
-      .eq("user_id", uid)
+      .eq("user_id", uid).eq(...filtreBase(uid))
       .order("ts", { ascending: true })
   );
   return rows.map((r) => ({
@@ -297,16 +402,30 @@ export async function getAllSpinHands(uid) {
 
 export async function getAllSpinHandIds(uid) {
   const rows = await fetchAllPages(() =>
-    supabase.from("spin_hands").select("hand_id").eq("user_id", uid).order("hand_id")
+    supabase.from("spin_hands").select("hand_id").eq("user_id", uid).eq(...filtreBase(uid)).order("hand_id")
   );
   return new Set(rows.map((r) => r.hand_id));
+}
+
+// Le texte brut de toutes les mains de spin, en une fois.
+//
+// Il pèse plus que tout le reste réuni, donc il ne se charge qu'à la demande.
+// Mais il est INDISPENSABLE : la base ne garde de chaque main qu'un résumé,
+// sans le détail des joueurs ni la suite des actions. Tout ce qui n'avait pas
+// été prévu à l'import — l'analyse des set-ups, par exemple — se re-dérive
+// depuis ce texte, et de nulle part ailleurs.
+export async function getAllSpinHandRaw(uid) {
+  const rows = await fetchAllPages(() =>
+    supabase.from("spin_hand_raw").select("hand_id, raw").eq("user_id", uid).eq(...filtreBase(uid)).order("hand_id")
+  );
+  return new Map(rows.map((r) => [r.hand_id, r.raw]));
 }
 
 export async function getSpinHandRaw(uid, handId) {
   const { data, error } = await supabase
     .from("spin_hand_raw")
     .select("raw")
-    .eq("user_id", uid)
+    .eq("user_id", uid).eq(...filtreBase(uid))
     .eq("hand_id", handId)
     .maybeSingle();
   if (error) throw error;
@@ -323,6 +442,7 @@ export async function getSpinHandRaw(uid, handId) {
 export async function importSpinData(uid, tournaments, hands, { onProgress } = {}) {
   const lignesTournois = tournaments.map((t) => ({
     user_id: uid,
+    ...(COLONNE_BASE ? { base: BASE_ACTIVE } : {}),
     tourney_id: t.id,
     ts: new Date(t.ts).toISOString(),
     buy_in: t.buyIn ?? 0,
@@ -344,6 +464,7 @@ export async function importSpinData(uid, tournaments, hands, { onProgress } = {
 
   const lignesMains = hands.map((h) => ({
     user_id: uid,
+    ...(COLONNE_BASE ? { base: BASE_ACTIVE } : {}),
     hand_id: h.id,
     tourney_id: h.tourneyId,
     ts: new Date(h.ts).toISOString(),
@@ -384,7 +505,8 @@ export async function importSpinData(uid, tournaments, hands, { onProgress } = {
   const lotsT = chunk(lignesTournois, 200);
   const lotsM = chunk(lignesMains, 200);
   const lotsR = chunk(
-    hands.filter((h) => h.raw).map((h) => ({ user_id: uid, hand_id: h.id, raw: h.raw })),
+    hands.filter((h) => h.raw).map((h) => ({ user_id: uid,
+    ...(COLONNE_BASE ? { base: BASE_ACTIVE } : {}), hand_id: h.id, raw: h.raw })),
     100
   );
   const total = lotsT.length + lotsM.length + lotsR.length;
@@ -443,6 +565,7 @@ export async function enregistrerMainsLecteur(uid, mains) {
   if (!mains.length) return 0;
   const lignes = mains.map((m) => ({
     user_id: uid,
+    ...(COLONNE_BASE ? { base: BASE_ACTIVE } : {}),
     hand_id: m.id,
     tourney_id: m.tourneyId,
     ts: new Date(m.ts).toISOString(),
@@ -481,7 +604,7 @@ export async function deleteSpinTournaments(uid, tourneyIds, onChunkDone) {
       const { error } = await supabase
         .from("spin_tournaments")
         .delete()
-        .eq("user_id", uid)
+        .eq("user_id", uid).eq(...filtreBase(uid))
         .in("tourney_id", lots[i]);
       if (error) throw error;
     },
@@ -497,6 +620,7 @@ export async function addSpinTournament(uid, t) {
 
   const { error } = await supabase.from("spin_tournaments").insert({
     user_id: uid,
+    ...(COLONNE_BASE ? { base: BASE_ACTIVE } : {}),
     tourney_id: t.id,
     ts: new Date(t.ts).toISOString(),
     buy_in: buyIn,
@@ -514,14 +638,165 @@ export async function deleteSpinTournament(uid, tourneyId) {
   const { error } = await supabase
     .from("spin_tournaments")
     .delete()
-    .eq("user_id", uid)
+    .eq("user_id", uid).eq(...filtreBase(uid))
     .eq("tourney_id", tourneyId);
   if (error) throw error;
 }
 
 // ------------------------------------------------------------ suppression
 
-// Supprime toutes les données de l'utilisateur. Irréversible — à n'appeler
+// Compte les lignes d'une table pour cet utilisateur, sans les rapatrier.
+async function compter(table, uid) {
+  const { count, error } = await supabase
+    .from(table)
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", uid).eq(...filtreBase(uid));
+  if (error) throw error;
+  return count ?? 0;
+}
+
+async function resteDeSpin(uid) {
+  const [mains, tournois, textes] = await Promise.all([
+    compter("spin_hands", uid),
+    compter("spin_tournaments", uid),
+    compter("spin_hand_raw", uid),
+  ]);
+  return { mains, tournois, textes, total: mains + tournois + textes };
+}
+
+async function getAllSpinTournamentIds(uid) {
+  const rows = await fetchAllPages(() =>
+    supabase.from("spin_tournaments").select("tourney_id").eq("user_id", uid).eq(...filtreBase(uid)).order("tourney_id")
+  );
+  return rows.map((r) => r.tourney_id);
+}
+
+// Efface toutes les données de spin : les textes bruts, les mains, puis les
+// tournois. Irréversible — à n'appeler qu'après confirmation explicite.
+//
+// EN TOURS SUCCESSIFS, ET C'EST LA CORRECTION QUI COMPTE. La liste des lignes
+// à effacer se lit AVANT de les effacer, et PostgREST plafonne toute réponse à
+// 1000 lignes. Une lecture naïve ne rendait donc que les 1000 premiers
+// tournois : sur dix mille, il en restait plus de neuf mille, et le contrôle
+// final accusait un droit manquant là où c'était ma pagination qui manquait.
+//
+// On recommence donc tant qu'il reste des lignes. Un tour qui n'en efface
+// AUCUNE alors qu'il en reste n'est plus une affaire de volume : c'est un
+// refus, et là seulement on peut l'affirmer.
+//
+// Vérifié à la fin, parce que c'est le piège de PostgREST : une suppression
+// que la sécurité refuse ne lève aucune erreur, elle efface zéro ligne en
+// silence. L'écran annonçait « supprimé » sur un échec complet.
+//
+// Les tournois partent après les mains : si un tour échoue, la liste des
+// tournois est encore là et l'écran montre honnêtement que rien n'a abouti.
+/**
+ * Efface TOUT ce que contient la base ouverte.
+ *
+ * Pas seulement les mains : les tournois, les textes bruts, les mouvements de
+ * bankroll et le profil de la base. « Supprimer mes mains » ne suffisait pas —
+ * on repartait avec une courbe qui commençait à un solde hérité d'avant, sans
+ * une seule main pour l'expliquer.
+ *
+ * L'AUTRE BASE N'EST JAMAIS TOUCHÉE : chaque suppression porte le filtre de la
+ * base active, comme toutes les autres requêtes. C'est la promesse que fait
+ * l'écran des paramètres, et c'est la seule qu'on ne pourrait pas rattraper.
+ *
+ * Comme `resetSpinData`, la fonction se RECOMPTE à la fin : une suppression
+ * refusée par la sécurité ne lève aucune erreur, elle efface zéro ligne en
+ * silence.
+ */
+export async function resetBase(uid, onProgress) {
+  const etapes = [
+    () => resetSpinData(uid),
+    async () => {
+      const ids = [...(await getAllHandIds(uid))];
+      await deleteHands(uid, ids);
+    },
+    async () => {
+      const { error } = await supabase.from("entries").delete()
+        .eq("user_id", uid).eq(...filtreBase(uid));
+      if (error) throw error;
+    },
+    async () => {
+      // Le profil part avec le reste : garder « bankroll de départ : 400 € »
+      // sur une base vide ferait redémarrer la courbe sur un chiffre que plus
+      // rien ne justifie. L'écran d'accueil le redemandera.
+      const { error } = await supabase.from("settings").delete()
+        .eq("user_id", uid).eq("key", `profil:${BASE_ACTIVE}`);
+      if (error) throw error;
+    },
+  ];
+
+  for (let i = 0; i < etapes.length; i++) {
+    await etapes[i]();
+    onProgress?.(Math.round(((i + 1) / (etapes.length + 1)) * 100));
+  }
+
+  const [mains, tournois, mouvements] = await Promise.all([
+    compter("hands", uid), compter("spin_tournaments", uid), compter("entries", uid),
+  ]);
+  const reste = mains + tournois + mouvements;
+  if (reste > 0) {
+    const e = new Error(
+      `${tournois} tournoi(s), ${mains} main(s) et ${mouvements} mouvement(s) `
+      + "n'ont pas pu être supprimés.",
+    );
+    e.code = "SUPPRESSION_INCOMPLETE";
+    e.reste = { mains, tournois, mouvements };
+    throw e;
+  }
+  onProgress?.(100);
+}
+
+export async function resetSpinData(uid, onProgress) {
+  const depart = await resteDeSpin(uid);
+  if (depart.total === 0) { onProgress?.(100); return; }
+
+  let reste = depart;
+  for (let tour = 0; tour < 40 && reste.total > 0; tour++) {
+    const avant = reste.total;
+
+    const idsMains = [...(await getAllSpinHandIds(uid))];
+    const lotsM = chunk(idsMains, 200);
+    await runChunkedBatches(lotsM.length, async (i) => {
+      const [a, b] = await Promise.all([
+        supabase.from("spin_hand_raw").delete().eq("user_id", uid).eq(...filtreBase(uid)).in("hand_id", lotsM[i]),
+        supabase.from("spin_hands").delete().eq("user_id", uid).eq(...filtreBase(uid)).in("hand_id", lotsM[i]),
+      ]);
+      if (a.error) throw a.error;
+      if (b.error) throw b.error;
+    });
+
+    const lotsT = chunk(await getAllSpinTournamentIds(uid), 200);
+    await runChunkedBatches(lotsT.length, async (i) => {
+      const { error } = await supabase
+        .from("spin_tournaments").delete().eq("user_id", uid).eq(...filtreBase(uid)).in("tourney_id", lotsT[i]);
+      if (error) throw error;
+    });
+
+    reste = await resteDeSpin(uid);
+    onProgress?.(Math.min(99, Math.round(((depart.total - reste.total) / depart.total) * 100)));
+
+    if (reste.total > 0 && reste.total >= avant) {
+      const e = new Error(
+        `${reste.tournois} tournoi(s) et ${reste.mains} main(s) résistent à la suppression : `
+        + "la base en efface zéro sans renvoyer d'erreur.",
+      );
+      e.code = "SUPPRESSION_REFUSEE";
+      e.reste = reste;
+      throw e;
+    }
+  }
+
+  if (reste.total > 0) {
+    const e = new Error(`Il reste ${reste.tournois} tournoi(s) et ${reste.mains} main(s).`);
+    e.code = "SUPPRESSION_INCOMPLETE";
+    e.reste = reste;
+    throw e;
+  }
+  onProgress?.(100);
+}// Supprime toutes les données de l'utilisateur. Irréversible — à n'appeler
 // qu'après confirmation explicite côté interface.
 export async function resetAllData(uid, handIds, entryIds, onProgress) {
   const handChunks = Math.ceil(handIds.length / 200);
@@ -534,7 +809,7 @@ export async function resetAllData(uid, handIds, entryIds, onProgress) {
 
   await Promise.all([
     deleteHands(uid, handIds, tick),
-    supabase.from("entries").delete().eq("user_id", uid).then(tick),
+    supabase.from("entries").delete().eq("user_id", uid).eq(...filtreBase(uid)).then(tick),
     supabase.from("settings").delete().eq("user_id", uid).then(tick),
   ]);
 }

@@ -395,7 +395,7 @@ const fichier = path.join(dossier, `cash-coinpoker-${nMains}-mains.txt`);
 // L'en-tête voyage AVEC le fichier : celui qui le retrouve dans six mois doit
 // savoir tout de suite que ces mains sont inventées.
 const enTete = [
-  "# ATTENTION : mains FABRIQUÉES pour essayer Grand Livre.",
+  "# ATTENTION : mains FABRIQUÉES pour essayer GrindBoard.",
   "# Elles n'ont jamais été jouées. Ne les importe pas dans le compte où tu",
   "# suis ton vrai jeu : elles fausseraient tes statistiques durablement.",
   "# Les pseudos adverses commencent tous par « bot » pour les repérer.",

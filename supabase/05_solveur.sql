@@ -7,7 +7,7 @@
 -- paiement — c'est-à-dire au pire moment possible, une fois l'argent parti.
 --
 -- L'OPTION N'OUVRE PAS L'APPLICATION. « solveur » donne accès au solveur, pas à
--- Grand Livre : l'entrée reste conditionnée à « cash » ou « spin ». C'est
+-- GrindBoard : l'entrée reste conditionnée à « cash » ou « spin ». C'est
 -- garanti côté application (isActive n'en tient pas compte) et il n'y a rien à
 -- faire ici pour cela — mais autant l'écrire, parce que la tentation de traiter
 -- tous les produits de la même façon viendra.
@@ -90,23 +90,17 @@ alter table public.crypto_orders
   );
 
 -- ------------------------------------------------------------------------
--- OPTIONNEL : offrir le solveur aux abonnés déjà en cours
+-- DÉCISION PRISE : ON N'OFFRE PAS LE SOLVEUR AUX ABONNÉS D'AVANT
 -- ------------------------------------------------------------------------
 --
--- Sans cette requête, quelqu'un qui a payé un abonnement hier perd l'accès au
--- solveur aujourd'hui — il ne l'a jamais acheté, mais il en disposait. C'est
--- une décision commerciale, pas technique : la retirer d'un coup à des clients
--- en cours d'abonnement est le genre de chose qui se remarque.
+-- Ce fichier proposait une requête pour créditer le solveur aux abonnements
+-- en cours au moment où il est passé dans la formule Expert. Elle a été
+-- ABANDONNÉE le 27 août 2026, sur décision du propriétaire.
 --
--- La requête ci-dessous leur crédite le solveur jusqu'à la fin de leur
--- abonnement en cours. Décommente-la si tu veux la jouer.
+-- On l'écrit ici plutôt que de supprimer le paragraphe : sans trace, la même
+-- question reviendrait au prochain changement de formule, et personne ne
+-- saurait qu'elle a déjà été tranchée.
 --
--- insert into public.access (user_id, product, access_until, provider, updated_at)
--- select user_id, 'solveur', max(access_until), 'offert', now()
---   from public.access
---  where product in ('cash', 'spin')
---    and access_until > now()
---  group by user_id
---     on conflict (user_id, product) do update
---        set access_until = greatest(public.access.access_until, excluded.access_until),
---            updated_at   = now();
+-- La requête elle-même n'a pas à survivre : la reconstruire prendrait cinq
+-- minutes, alors qu'une requête destructrice qui traîne, commentée, dans un
+-- fichier de migration finit toujours par être exécutée par distraction.

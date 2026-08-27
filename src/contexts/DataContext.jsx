@@ -3,18 +3,24 @@ import { supabase } from "../supabase";
 import {
   getAllHands,
   getAllHandRaw,
+  getAllSpinHandRaw,
   getAllEntries,
   getAllSpinTournaments,
   getAllSpinHands,
 } from "../lib/supabaseData";
 import { useAuth } from "./AuthContext";
 import { useMode } from "./ModeContext";
+import { useBase } from "./BaseContext";
 
 export const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
   const { user } = useAuth();
   const { mode } = useMode();
+  // Changer de base change TOUTES les données : on recharge comme on le fait
+  // pour un changement de mode. Sans cette dépendance, l'écran garderait les
+  // lignes de l'autre base jusqu'au prochain rafraîchissement.
+  const { base } = useBase() || { base: 1 };
 
   const [hands, setHands] = useState([]);
   const [tournois, setTournois] = useState([]);
@@ -77,6 +83,10 @@ export function DataProvider({ children }) {
     const uid = user.uid;
     setJeuPret(false);
     setEntriesReady(false);
+    // Changer de mode change de table : les textes déjà chargés sont ceux de
+    // l'autre format, et les garder ferait analyser des mains de cash game
+    // comme des spins.
+    setTextes(null);
     loadJeu(uid, mode);
     loadEntries(uid);
 
@@ -111,14 +121,14 @@ export function DataProvider({ children }) {
       clearTimeout(reloadTimer.current);
       supabase.removeChannel(channel);
     };
-  }, [user, mode, loadJeu, loadEntries]);
+  }, [user, mode, base, loadJeu, loadEntries]);
 
   // Rechargement explicite, utilisé après un import ou une saisie : plus
   // immédiat que d'attendre la temporisation du temps réel.
   const refresh = useCallback(async () => {
     if (!user) return;
     await Promise.all([loadJeu(user.uid, mode), loadEntries(user.uid)]);
-  }, [user, mode, loadJeu, loadEntries]);
+  }, [user, mode, base, loadJeu, loadEntries]);
 
   // Les mains, enrichies de leur texte quand il a été demandé. On rend un
   // tableau NEUF pour que les mémos des écrans se recalculent : muter les mains
@@ -132,7 +142,10 @@ export function DataProvider({ children }) {
     if (textes || textesEnCours || !user) return;
     setTextesEnCours(true);
     try {
-      setTextes(await getAllHandRaw(user.uid));
+      // Les deux modes ne partagent aucune table : lire celle du cash game en
+      // mode spin rendrait une Map vide, et l'écran conclurait à tort qu'il
+      // n'y a rien à analyser.
+      setTextes(await (mode === "spin" ? getAllSpinHandRaw : getAllHandRaw)(user.uid));
     } catch (e) {
       console.error("Lecture du texte des mains impossible :", e);
       // Une Map vide plutôt que null : sans cela l'écran redemanderait
@@ -141,7 +154,7 @@ export function DataProvider({ children }) {
     } finally {
       setTextesEnCours(false);
     }
-  }, [textes, textesEnCours, user]);
+  }, [textes, textesEnCours, user, mode]);
 
   return (
     <DataContext.Provider

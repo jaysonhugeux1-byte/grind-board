@@ -3,7 +3,9 @@ import { Loader2, Plus, Zap, Trophy, X, Info } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { EmptyState, PageHeader } from "../components/ui";
-import { CourbeSpin, SERIES_JETONS, SERIES_BANKROLL, SERIES_CEV } from "../components/SpinCharts";
+import {
+  CourbeSpin, BarresSpin, AnneauxSpin, SERIES_JETONS, SERIES_BANKROLL, SERIES_CEV,
+} from "../components/SpinCharts";
 import BarreFiltres from "../components/BarreFiltres";
 import { FILTRES_DEFAUT, appliquerFiltres } from "../lib/spinFiltres";
 import {
@@ -13,9 +15,17 @@ import {
 import {
   aggregateSpin, buildBankrollChart, buildChipsChart, calculerCev, calculerRake,
   rakeObserve, buildMultiplierBreakdown, buildPositionBreakdown, buildDepthBreakdown,
-  diagnostiquerTournois, ecartTypeChance, RAKE_PAR_DEFAUT,
+  diagnostiquerTournois, ecartTypeChance, ecartPokerTracker, RAKE_PAR_DEFAUT,
 } from "../lib/spinStats";
 import { addSpinTournament } from "../lib/supabaseData";
+import { analyserSetups } from "../lib/setups";
+import {
+  repartitionPlaces, distributionResultats, parHeure, parJour, series, pushParProfondeur,
+} from "../lib/statsSpin";
+import { gainParNombreDeTables } from "../lib/tablesSpin";
+import { carteQualite, qualiteParCreneau } from "../lib/qualiteTables";
+import { classerFuites } from "../lib/classementFuites";
+import CarteChaleur from "../components/CarteChaleur";
 
 // Multiplicateurs proposés en raccourci. Le ×2 domine largement : c'est lui qui
 // finance à la fois la marge de la salle et les rares gros tirages.
@@ -211,6 +221,138 @@ function Tableau({ colonnes, lignes }) {
   );
 }
 
+// CE QU'IL FAUT TRAVAILLER — et pourquoi ce bloc ouvre la page.
+//
+// Tous les autres écrans répondent à une question qu'il faut déjà avoir. On
+// peut passer devant sa plus grosse fuite sans la voir, parce qu'elle occupe la
+// même place et la même couleur que dix autres blocs. Celui-ci pose la question
+// à la place du joueur, et il la chiffre en JETONS : « tu pousses 21 % au lieu
+// de 53 » ne dit pas si cela coûte dix jetons ou mille.
+//
+// Il ne montre que ce qu'il peut conclure, et dit ce qu'il laisse dehors. Un
+// classement qui range trois observations à côté de trois cents ne classe rien.
+function ATravailler({ fuites }) {
+  if (!fuites) {
+    return (
+      <div className="card a-travailler">
+        <p className="card-sub">
+          <Loader2 size={13} className="spin" style={{ verticalAlign: -2 }} />{" "}
+          Chiffrage de tes décisions…
+        </p>
+      </div>
+    );
+  }
+  const top = fuites.classees.slice(0, 3);
+  return (
+    <div className="card a-travailler">
+      <div className="card-title-row">
+        <h2>Ce qu'il faut travailler</h2>
+        <span className="card-sub">{nombre(fuites.spotsLus)} décisions chiffrées</span>
+      </div>
+
+      {top.length === 0 ? (
+        <p className="card-sub">
+          Aucune fuite mesurable pour l'instant. Il faut au moins{" "}
+          {fuites.spotsPourConclure} décisions d'un même type pour trancher, et aucune catégorie
+          n'y arrive encore sur cette sélection.
+        </p>
+      ) : (
+        <ol className="fuites">
+          {top.map((l, i) => (
+            <li key={l.cle}>
+              <span className="fuite-rang mono">{i + 1}</span>
+              <span className="fuite-titre">{l.titre}</span>
+              <span className="fuite-cout mono loss">−{nombre(l.perteJetons)} jetons</span>
+              <span className="fuite-effectif mono">{nombre(l.spots)} spots</span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <p className="muted" style={{ fontSize: 11.5, marginTop: 12, lineHeight: 1.7 }}>
+        <Info size={12} style={{ verticalAlign: -2 }} /> Le prix d'une décision est l'écart entre
+        l'espérance de ce que tu as fait et celle de la meilleure action, <strong>pour la main
+        exacte que tu tenais</strong>, à la profondeur exacte où tu l'as jouée. Rien n'y est estimé.
+        {fuites.ecartees.length > 0 && (
+          <> {nombre(fuites.ecartees.length)} catégorie(s) ne sont pas classées faute d'assez de
+          spots — elles peuvent cacher davantage.</>
+        )}
+        {" "}Ne sont chiffrés que les tapis en tête-à-tête sous 30 bb : le postflop, les coups à
+        trois et les tapis profonds n'ont pas de référence défendable, et ne sont donc pas comptés.
+      </p>
+    </div>
+  );
+}
+
+// AI-JE PRIS DES SET-UPS ?
+//
+// Un set-up, ce n'est PAS « j'ai perdu un gros pot ». C'est deux choses à la
+// fois : être largement devant la RANGE que le vilain devrait avoir, et être
+// derrière la MAIN qu'il avait. La courbe d'EV all-in ne peut pas le voir —
+// elle compare déjà à sa main réelle. Il fallait une seconde référence.
+//
+// Et la troisième condition, celle qu'on oublie : l'action devait être la
+// bonne. Un gros pot perdu sur une décision fautive n'est pas un set-up, c'est
+// une faute. Les deux nombres sont donc séparés ici, parce que l'un se corrige
+// et l'autre non.
+function VerdictSetups({ bilan, calcul }) {
+  if (calcul) return <p className="card-sub">Résolution des équilibres push/fold…</p>;
+  if (!bilan) return null;
+  if (!bilan.spots.length) {
+    return (
+      <p className="card-sub">
+        Aucun tapis payé préflop en tête-à-tête dans cette sélection : le modèle push/fold
+        n'a rien à dire ici.
+      </p>
+    );
+  }
+  const { soldeSetups, coutSetups, gainCoups, nbSubis, nbOfferts, nbFautes, coutFautesBB } = bilan;
+  const ton = soldeSetups > 0 ? "loss" : soldeSetups < 0 ? "win" : "";
+  return (
+    <div className={`verdict verdict-${soldeSetups > 0 ? "perdant" : "gagnant"}`}>
+      <div className="verdict-ligne">
+        <span className="verdict-etiquette">Solde des set-ups</span>
+        <span className={`mono ${ton}`}>
+          {soldeSetups > 0 ? "−" : soldeSetups < 0 ? "+" : ""}{nombre(Math.abs(soldeSetups), 0)} jetons
+        </span>
+        <span className="card-sub">sur {bilan.spots.length} tapis payés préflop en duel</span>
+      </div>
+      <div className="verdict-ligne">
+        <span className="verdict-etiquette">Set-ups subis</span>
+        <span className="mono loss">{nombre(coutSetups, 0)} jetons</span>
+        <span className="card-sub">{nbSubis} main(s) où tu étais devant sa range et derrière sa main</span>
+      </div>
+      <div className="verdict-ligne">
+        <span className="verdict-etiquette">Set-ups offerts</span>
+        <span className="mono win">{nombre(gainCoups, 0)} jetons</span>
+        <span className="card-sub">{nbOfferts} main(s) où il t'a payé avec le bas de sa range</span>
+      </div>
+      <p className="verdict-phrase">
+        {soldeSetups > 0
+          ? <>Tu es tombé sur le haut des ranges plus souvent que l'inverse : <strong>{nombre(soldeSetups, 0)} jetons</strong> de
+            résultat que le jeu ne t'a pas repris pour une faute. C'est de la variance de distribution — elle ne se corrige pas,
+            elle s'attend.</>
+          : soldeSetups < 0
+            ? <>Tu as été servi : <strong>{nombre(-soldeSetups, 0)} jetons</strong> encaissés parce que tes adversaires
+              t'ont payé avec le bas de leur range. Ce sont des jetons qu'un échantillon plus long ne te redonnera pas.</>
+            : <>Les set-ups subis et offerts s'annulent sur cette sélection.</>}
+      </p>
+      <p className="card-sub">
+        {nbFautes > 0
+          ? <>À ne pas confondre : <strong>{nbFautes} décision(s)</strong> de cet échantillon étaient fautives selon
+            l'équilibre, pour <strong>{nombre(Math.abs(coutFautesBB), 1)} grosses blindes</strong>. Celles-là se corrigent,
+            et elles ne comptent pas comme des set-ups.</>
+          : <>Aucune décision fautive selon l'équilibre sur cet échantillon.</>}
+        {bilan.exploitabiliteMaxMbb != null && (
+          <> Référence : équilibre de Nash push/fold, exploitabilité au pire de{" "}
+            {nombre(bilan.exploitabiliteMaxMbb, 2)} millième(s) de bb. Les coups à trois joueurs,
+            au-delà de 30 bb, ou payés après le flop restent hors du modèle ({bilan.horsModele} main(s)).</>
+        )}
+      </p>
+    </div>
+  );
+}
+
 // Ce que l'echantillon permet — ou non — d'affirmer.
 function VerdictConfiance({ verdict, seuil, tapis }) {
   const { statut, tournois, cev, marge, requis } = verdict;
@@ -250,8 +392,9 @@ function VerdictConfiance({ verdict, seuil, tapis }) {
 }
 
 export default function SpinDashboard() {
-  const { tournois, hands, loading, refresh } = useData();
+  const { tournois, hands, loading, refresh, chargerTextes } = useData();
   const [onglet, setOnglet] = useState("jetons");
+  const [sousOnglet, setSousOnglet] = useState("resultats");
   const [filtres, setFiltres] = useState(FILTRES_DEFAUT);
   const [tauxRake, setTauxRake] = useState(() => lireReglage(CLE_RAKE, RAKE_PAR_DEFAUT));
   const [tauxRakeback, setTauxRakeback] = useState(() => lireReglage(CLE_RAKEBACK, 0));
@@ -280,6 +423,26 @@ export default function SpinDashboard() {
   const mainsVues = vue.mains;
 
   const agg = useMemo(() => aggregateSpin(tournoisVus), [tournoisVus]);
+  const places = useMemo(() => repartitionPlaces(tournoisVus), [tournoisVus]);
+  const distribution = useMemo(() => distributionResultats(tournoisVus), [tournoisVus]);
+  const heures = useMemo(() => parHeure(tournoisVus), [tournoisVus]);
+  const jours = useMemo(() => parJour(tournoisVus), [tournoisVus]);
+  const suites = useMemo(() => series(tournoisVus), [tournoisVus]);
+  // De quoi expliquer l'écart avec PokerTracker plutôt que de le laisser
+  // troubler. Voir `ecartPokerTracker` : c'est le seul point de divergence.
+  const ecartPT = useMemo(
+    () => ecartPokerTracker(mainsVues, tournoisVus.length),
+    [mainsVues, tournoisVus.length],
+  );
+  const parTables = useMemo(
+    () => gainParNombreDeTables(tournoisVus, mainsVues),
+    [tournoisVus, mainsVues],
+  );
+  // La qualité des tables se lit sur le résumé des adversaires écrit à
+  // l'import : aucun texte brut à relire, aucun pseudo à reconnaître.
+  const qualite = useMemo(() => carteQualite(mainsVues), [mainsVues]);
+  const qualiteJours = useMemo(() => qualiteParCreneau(mainsVues, { par: "jour" }), [mainsVues]);
+  const qualiteCreneaux = useMemo(() => qualiteParCreneau(mainsVues, { par: "heure" }), [mainsVues]);
   const rake = useMemo(() => calculerRake(tournoisVus, tauxRake), [tournoisVus, tauxRake]);
   const rakeback = Math.round(rake * (Math.max(0, Math.min(100, tauxRakeback)) / 100) * 100) / 100;
   const cev = useMemo(() => calculerCev(mainsVues, agg.total), [mainsVues, agg.total]);
@@ -310,9 +473,50 @@ export default function SpinDashboard() {
     [mainsVues, tournoisVus],
   );
   const incomplets = diagnostic.incomplets;
+  // LA RÉFÉRENCE GTO. Résoudre les équilibres coûte une poignée de secondes —
+  // une seule fois, car ils se mémorisent par profondeur de tapis et non par
+  // main. On la calcule donc hors du rendu, et la troisième courbe n'apparaît
+  // qu'une fois prête plutôt que de figer la fenêtre.
+  const [bilanSetups, setBilanSetups] = useState(null);
+  const [calculGto, setCalculGto] = useState(false);
+  // Le texte brut est indispensable : la base ne garde de chaque main qu'un
+  // résumé, sans le détail des joueurs ni la suite des actions. Sans lui, le
+  // bilan serait vide sans que rien ne l'explique.
+  useEffect(() => { chargerTextes?.(); }, [chargerTextes]);
+  // CE QU'IL FAUT TRAVAILLER. Le calcul relit les mains et résout des
+  // équilibres : hors du rendu, comme les autres.
+  const [fuites, setFuites] = useState(null);
+  useEffect(() => {
+    let annule = false;
+    setFuites(null);
+    if (!mainsVues.length) return undefined;
+    const t = setTimeout(() => {
+      const r = classerFuites(mainsVues);
+      if (!annule) setFuites(r);
+    }, 0);
+    return () => { annule = true; clearTimeout(t); };
+  }, [mainsVues]);
+
+  useEffect(() => {
+    let annule = false;
+    setBilanSetups(null);
+    if (!mainsVues.length) return undefined;
+    setCalculGto(true);
+    const t = setTimeout(() => {
+      // Les deux analyses partagent le cache d'équilibres : les enchaîner ici
+      // ne coûte presque rien de plus que la première seule.
+      const bilan = analyserSetups(mainsVues);
+      const push = pushParProfondeur(mainsVues);
+      if (!annule) { setBilanSetups({ ...bilan, push }); setCalculGto(false); }
+    }, 0);
+    return () => { annule = true; clearTimeout(t); setCalculGto(false); };
+  }, [mainsVues]);
+
   const courbeCev = useMemo(
+    // `bilanSetups` ne sert pas au calcul : il pose `evGtoChips` sur les mains.
+    // Le citer ici est ce qui fait recalculer la courbe quand il arrive.
     () => buildCevChart(mainsVues, { seuil: seuilCev }),
-    [mainsVues, seuilCev]
+    [mainsVues, seuilCev, bilanSetups]
   );
   const verdict = useMemo(() => verdictCev(courbeCev, seuilCev), [courbeCev, seuilCev]);
 
@@ -369,6 +573,8 @@ export default function SpinDashboard() {
   return (
     <div className="section">
       <PageHeader title="Spin" subtitle="ROI, multiplicateurs, et ce que ton jeu vaut réellement" />
+
+      <ATravailler fuites={fuites} />
 
       {incomplets.size > 0 && (
         <div className="carte-avertissement">
@@ -507,6 +713,24 @@ export default function SpinDashboard() {
           courbeCev.length > 1 ? (
             <>
               <VerdictConfiance verdict={verdict} seuil={seuilCev} tapis={tapis} />
+              {ecartPT.mains > 0 && (
+                <p className="muted" style={{ fontSize: 11.5, lineHeight: 1.7, margin: "-6px 0 18px" }}>
+                  <Info size={12} style={{ verticalAlign: -2 }} />{" "}
+                  <strong>Si tu compares à PokerTracker</strong>, il t'annoncera environ{" "}
+                  <strong className="mono">
+                    {nombre(verdict.cev + ecartPT.pointsDeCev, 1)}
+                  </strong>{" "}
+                  au lieu de <strong className="mono">{nombre(verdict.cev, 1)}</strong>. Les deux
+                  logiciels comptent les jetons à l'identique et calculent l'équité d'un tapis de la
+                  même façon ; ils divergent sur un seul point, le tapis contesté par <em>deux</em>{" "}
+                  adversaires. PokerTracker garde alors le résultat réel, GrindBoard l'ajuste — parce
+                  que gagner un pot à trois avec 36 % d'équité relève de la chance, pas du jeu. Sur
+                  cette sélection : <strong className="mono">{nombre(ecartPT.mains)}</strong> main(s),{" "}
+                  <strong className="mono">{nombre(ecartPT.jetons)}</strong> jetons,{" "}
+                  <strong className="mono">{nombre(ecartPT.pointsDeCev, 2)}</strong> points de CEV.
+                </p>
+              )}
+              <VerdictSetups bilan={bilanSetups} calcul={calculGto} />
               <CourbeSpin
                 points={courbeCev}
                 series={SERIES_CEV}
@@ -522,8 +746,271 @@ export default function SpinDashboard() {
         )}
 
         {onglet === "stats" && (
-          <div className="stats-grille">
-            <section>
+          <>
+          {/* LA PAGE ÉTAIT DEVENUE TROP LONGUE POUR ÊTRE LUE. Douze blocs à la
+              suite, on ne trouve plus rien et on ne revient jamais en bas. On
+              les range en quatre vues, et l'on ne montre que celle qu'on
+              regarde. */}
+          <div className="onglets onglets-secondaires">
+            {[["resultats", "Résultats"], ["jeu", "Mon jeu"],
+              ["tables", "Mes tables"], ["temps", "Le temps"]].map(([cle, label]) => (
+              <button key={cle} className={sousOnglet === cle ? "active" : ""}
+                onClick={() => setSousOnglet(cle)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className={`stats-grille vue-${sousOnglet}`}>
+            <section className="groupe-resultats pleine-largeur">
+              <h3>Où tu finis</h3>
+              <BarresSpin
+                donnees={places.places}
+                barres={[{ cle: "part", label: "Part des tournois", couleur: "#e0c25f" }]}
+                cleEffectif="tournois"
+                unite=" %"
+                note={
+                  <>
+                    À trois joueurs de force égale, chaque place vaut 33,3 %. Ce qui compte n'est pas
+                    seulement la première : monter de la 3<sup>e</sup> à la 2<sup>e</sup> se joue à trois,
+                    monter de la 2<sup>e</sup> à la 1<sup>re</sup> se joue en tête-à-tête. Ce sont deux
+                    jeux différents, et deux corrections différentes.
+                    {places.inconnus > 0 && (
+                      <> {places.inconnus} tournoi(s) sans place lisible ne sont pas comptés ici.</>
+                    )}
+                  </>
+                }
+              />
+            </section>
+
+            <section className="groupe-resultats pleine-largeur">
+              <h3>La forme de ta variance</h3>
+              <BarresSpin
+                donnees={distribution}
+                barres={[{ cle: "tournois", label: "Tournois", couleur: "#7fb3d4" }]}
+                cleEffectif="tournois"
+                formatValeur={(v) => `${Number(v).toLocaleString("fr-FR")}`}
+                note={
+                  <>
+                    Un ROI moyen ne dit rien de la FORME de la variance, et en spin elle est tout sauf
+                    ordinaire : on perd un buy-in la plupart du temps, on en gagne un ou deux souvent,
+                    et très rarement des centaines. C'est cette asymétrie qui décide de ta bankroll,
+                    pas la moyenne.
+                  </>
+                }
+              />
+            </section>
+
+            <section className="groupe-jeu pleine-largeur">
+              <h3>Ton push/fold contre l'équilibre</h3>
+              {calculGto && <p className="card-sub">Résolution des équilibres…</p>}
+              {!calculGto && bilanSetups?.push?.length > 0 && (
+                <BarresSpin
+                  donnees={bilanSetups.push}
+                  barres={[
+                    { cle: "pushHero", label: "Toi", couleur: "#e0c25f" },
+                    { cle: "pushEquilibre", label: "Équilibre", couleur: "#7fb3d4" },
+                  ]}
+                  cleEffectif="spots"
+                  unite=" %"
+                  note={
+                    <>
+                      La référence n'est ni une moyenne de population ni une table recopiée : c'est
+                      l'équilibre push/fold résolu à chaque profondeur, comparé main par main à celle que
+                      tu tenais. Ne sont retenus que les spots où le modèle s'applique vraiment —
+                      tête-à-tête, toi premier de parole, ta première décision du coup.
+                    </>
+                  }
+                />
+              )}
+              {!calculGto && !bilanSetups?.push?.length && (
+                <p className="card-sub">
+                  Aucun spot de tête-à-tête où tu parles en premier dans cette sélection.
+                </p>
+              )}
+            </section>
+
+            <section className="groupe-temps pleine-largeur">
+              <h3>Quand tu joues</h3>
+              <BarresSpin
+                donnees={jours}
+                barres={[{ cle: "roi", label: "ROI", couleur: "#5fae79" }]}
+                cleEffectif="tournois"
+                seuilEffectif={100}
+                unite=" %"
+              />
+              <BarresSpin
+                donnees={heures.filter((h) => h.tournois > 0)}
+                barres={[{ cle: "roi", label: "ROI", couleur: "#5fae79" }]}
+                cleEffectif="tournois"
+                seuilEffectif={100}
+                unite=" %"
+                note={
+                  <>
+                    Le ROI d'une case se lit AVEC son effectif, jamais sans. En spin l'écart-type est tel
+                    qu'un seul gros multiplicateur retourne une soirée entière : cent tournois ne suffisent
+                    pas à juger une tranche horaire, ils suffisent tout juste à la regarder.
+                  </>
+                }
+              />
+            </section>
+
+            <section className="groupe-tables pleine-largeur">
+              <h3>La qualité de tes tables</h3>
+              {qualite.moyenne == null ? (
+                <p className="card-sub">
+                  Pas encore assez de mains vues de tes adversaires pour les juger.
+                </p>
+              ) : (
+                <>
+                  <div className="leak-kpis">
+                    <div>
+                      <span className="leak-kpi-valeur mono">
+                        {nombre(qualite.moyenne, 1)} %{qualite.marge != null && (
+                          <span className="card-sub"> ± {nombre(qualite.marge, 1)}</span>
+                        )}
+                      </span>
+                      <span className="card-sub">adversaires passifs</span>
+                    </div>
+                    <div>
+                      <span className="leak-kpi-valeur mono">{nombre(qualite.classes)}</span>
+                      <span className="card-sub">tournois jugés</span>
+                    </div>
+                    <div>
+                      <span className="leak-kpi-valeur mono">{nombre(qualite.nonClasses)}</span>
+                      <span className="card-sub">trop courts pour juger</span>
+                    </div>
+                  </div>
+                  <CarteChaleur
+                    cases={qualite.grille}
+                    jours={qualite.jours}
+                    titre="Jour × heure"
+                    note={
+                      <>
+                        Ce qu'on mesure est <strong>nommé, pas noté</strong> : la part de tes adversaires
+                        qui mettent de l'argent au milieu sans jamais prendre l'initiative. On n'appelle
+                        pas ça un limp — le résumé stocké ne sait pas s'il y avait une relance devant, et
+                        confondre limper avec payer une ouverture diagnostiquerait une fuite qui n'existe
+                        pas. Chaque adversaire est jugé à l'intérieur de son tournoi, sur les dix à
+                        vingt-cinq mains que tu as jouées contre lui : aucun pseudo n'a besoin d'être
+                        reconnu d'un tournoi à l'autre.
+                      </>
+                    }
+                  />
+                  <AnneauxSpin
+                    donnees={qualiteJours}
+                    titre="Par jour"
+                    seuilEffectif={20}
+                  />
+                  <AnneauxSpin
+                    donnees={qualiteCreneaux}
+                    titre="Par tranche de trois heures"
+                    seuilEffectif={20}
+                    note={
+                      <>
+                        Le créneau le plus tendre ne vaut d'être choisi que si l'écart dépasse la
+                        marge annoncée plus haut. Deux anneaux à 82 et 85 % sur une marge de ±3
+                        désignent le même créneau.
+                      </>
+                    }
+                  />
+                </>
+              )}
+            </section>
+
+            <section className="groupe-tables pleine-largeur">
+              <h3>Combien de tables jouer</h3>
+              {parTables.lignes.length > 1 ? (
+                <BarresSpin
+                  donnees={parTables.lignes}
+                  barres={[{ cle: "parHeure", label: "Gain horaire", couleur: "#5fae79" }]}
+                  cleEffectif="heures"
+                  unite=" €/h"
+                  formatValeur={(v) => `${Math.round(v * 10) / 10} €/h`}
+                  note={
+                    <>
+                      Le taux par tournoi baisse forcément quand on ajoute une table — on décide moins
+                      bien — mais le nombre de tournois à l'heure monte. Le produit des deux passe par un
+                      maximum, et ce maximum est personnel : c'est lui qu'on cherche ici.
+                      {" "}Les heures comptées sont celles réellement passées à jouer : à trois tables
+                      ouvertes pendant une heure, tu as joué UNE heure, pas trois.
+                      {parTables.forfaits > 0 && (
+                        <> {parTables.forfaits} tournoi(s) sans mains lisibles ont reçu une durée
+                        forfaitaire de cinq minutes.</>
+                      )}
+                    </>
+                  }
+                />
+              ) : (
+                <p className="card-sub">
+                  Tu n'as jamais joué plus d'une table à la fois sur cette sélection — il n'y a rien à
+                  comparer. ({parTables.heuresTotales} heures de jeu au total.)
+                </p>
+              )}
+            </section>
+
+            <section className="groupe-jeu pleine-largeur">
+              <h3>EV par position</h3>
+              <BarresSpin
+                donnees={parPosition}
+                barres={[{ cle: "chipsParMain", label: "Jetons par main", couleur: "#e0c25f" }]}
+                cleEffectif="mains"
+                cleMarge="marge"
+                formatValeur={(v) => `${Math.round(v * 10) / 10}`}
+                note={
+                  <>
+                    La barre donne le résultat par main depuis chaque position ; la moustache donne
+                    l'intervalle à 95 %. <strong>Deux positions dont les moustaches se chevauchent ne
+                    se départagent pas encore</strong> — c'est le seul moyen de ne pas lire une
+                    tendance dans un échantillon qui n'en contient pas.
+                  </>
+                }
+              />
+              <BarresSpin
+                donnees={parPosition}
+                barres={[{ cle: "evParMain", label: "Sans la chance des tapis", couleur: "#7fb3d4" }]}
+                cleEffectif="mains"
+                formatValeur={(v) => `${Math.round(v * 10) / 10}`}
+                note="Le même résultat, une fois retirée la chance des tapis payés."
+              />
+            </section>
+
+            <section className="groupe-temps pleine-largeur">
+              <h3>Tes séries</h3>
+              <table className="table">
+                <tbody>
+                  <tr>
+                    <td>Série en cours</td>
+                    <td className={suites.enCoursGagnante ? "win" : "loss"}>
+                      {suites.enCours} {suites.enCoursGagnante ? "victoire(s)" : "défaite(s)"}
+                    </td>
+                    <td className="muted">sur les derniers tournois joués</td>
+                  </tr>
+                  <tr>
+                    <td>Plus longue série de défaites</td>
+                    <td className="loss">{suites.pireDefaites}</td>
+                    <td className="muted">
+                      {suites.defaitesAttendues != null && (
+                        <>
+                          à ton taux de victoire, on doit s'attendre à environ{" "}
+                          <strong>{suites.defaitesAttendues}</strong> sur {suites.joues} tournois
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Plus longue série de victoires</td>
+                    <td className="win">{suites.meilleureVictoires}</td>
+                    <td className="muted">le hasard en produit aussi</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.65 }}>
+                <Info size={12} style={{ verticalAlign: -2 }} /> Une série de défaites plus COURTE que
+                l'attendu ne prouve rien de bon, et une série plus longue ne prouve rien de mauvais : c'est
+                un ordre de grandeur, pas un seuil. Il sert seulement à ne pas corriger un jeu qui n'a rien.
+              </p>
+            </section>
+            <section className="groupe-resultats">
               <h3>Ce que dit le résultat</h3>
               <table className="table">
                 <tbody>
@@ -572,7 +1059,7 @@ export default function SpinDashboard() {
               </p>
             </section>
 
-            <section>
+            <section className="groupe-resultats">
               <h3>Par multiplicateur</h3>
               <Tableau
                 colonnes={[
@@ -612,7 +1099,7 @@ export default function SpinDashboard() {
             </section>
 
             {parPosition.length > 0 && (
-              <section>
+              <section className="groupe-jeu">
                 <h3>Par position</h3>
                 <Tableau
                   colonnes={[
@@ -644,7 +1131,7 @@ export default function SpinDashboard() {
             )}
 
             {parProfondeur.some((p) => p.mains > 0) && (
-              <section>
+              <section className="groupe-jeu">
                 <h3>Par profondeur de tapis</h3>
                 <Tableau
                   colonnes={[
@@ -667,6 +1154,7 @@ export default function SpinDashboard() {
               </section>
             )}
           </div>
+          </>
         )}
 
         {onglet !== "stats" && (

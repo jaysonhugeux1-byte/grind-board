@@ -3,6 +3,8 @@ import { NavLink, Outlet } from "react-router-dom";
 import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor, Waypoints, TrendingUp, Shield, Scale, Layers } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useMode } from "../contexts/ModeContext";
+import { useProfil } from "../contexts/ProfilContext";
+import { salleDe } from "../lib/salles";
 import { useSubscription } from "../contexts/SubscriptionContext";
 import { DataProvider } from "../contexts/DataContext";
 
@@ -22,6 +24,10 @@ const NAV_ITEMS = [
   { to: "/gestion-bankroll", label: "Gestion de bankroll", icon: Shield, modes: ["cash", "spin"] },
   { to: "/sessions", label: "Sessions", icon: ListOrdered, modes: ["cash"] },
   { to: "/ranges", label: "Ranges", icon: Grid3x3, modes: ["cash"] },
+  // L'équivalent spin des ranges, mais il fait plus : il JUGE, parce qu'à
+  // tapis court il existe une référence calculable — ce qui n'est pas le cas
+  // du cash game profond.
+  { to: "/fuites", label: "Chercheur de fuites", icon: Grid3x3, modes: ["spin"] },
   { to: "/ev", label: "EV par position", icon: BarChart3, modes: ["cash"] },
   { to: "/statistics", label: "Statistiques", icon: LineChart, modes: ["cash"] },
   { to: "/stats-hero", label: "Mes spots", icon: Layers, modes: ["cash"] },
@@ -35,6 +41,8 @@ const NAV_ITEMS = [
 export default function Layout() {
   const { user, signOutUser } = useAuth();
   const { mode, setMode } = useMode();
+  const { profil } = useProfil() || {};
+  const salle = salleDe(profil?.salle);
   const { aAcces } = useSubscription();
 
   const items = NAV_ITEMS.filter((item) => item.modes.includes(mode));
@@ -43,10 +51,24 @@ export default function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-mark">₮</span>
+          {/* LA MARQUE DE LA SALLE REMPLACE CELLE DU LOGICIEL. C'est la salle
+              qu'on regarde toute la journée : la voir en haut à gauche dit
+              d'un coup d'œil sur quoi porte l'écran — et sur quelle base, quand
+              on en a deux qui suivent deux salles différentes. */}
+          {salle ? (
+            <span
+              className="brand-mark salle"
+              style={{ background: salle.fond, borderColor: salle.bord, color: salle.texte }}
+              title={`${salle.nom} — ${salle.formats}`}
+            >
+              {salle.initiale}
+            </span>
+          ) : (
+            <span className="brand-mark">₮</span>
+          )}
           <div>
-            <h1>Grand Livre</h1>
-            <p>Bankroll tracker</p>
+            <h1>{salle ? salle.nom : "GrindBoard"}</h1>
+            <p>{salle ? "GrindBoard" : "Bankroll tracker"}</p>
           </div>
         </div>
 
@@ -103,7 +125,7 @@ export default function Layout() {
             <LogOut size={16} />
           </button>
         </div>
-        <p className="sidebar-version">Grand Livre v{__APP_VERSION__}</p>
+        <p className="sidebar-version">GrindBoard v{__APP_VERSION__}</p>
       </aside>
 
       <main className="main-content">

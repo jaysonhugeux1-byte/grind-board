@@ -295,6 +295,35 @@ export function buildChipsChart(hands, { seuilParTournoi = null, ecartChance = n
 
 // EV en jetons par tournoi — l'équivalent spin du bb/100 : combien de jetons on
 // gagne en moyenne au-delà de son tapis de départ, chance mise à part.
+/**
+ * De quoi rapprocher notre CEV de celui de PokerTracker.
+ *
+ * Les deux logiciels calculent l'ajustement d'un tapis de la même façon —
+ * vérifié main par main sur un export réel : sur 369 tapis ajustés des deux
+ * côtés, leurs équités ne différaient que d'un dixième de point, et le résultat
+ * en jetons était identique sur les 2 259 mains. Ils divergent sur UN SEUL
+ * POINT : le tapis contesté par PLUS D'UN adversaire. PokerTracker renonce
+ * alors à calculer une équité et garde le résultat réel ; nous l'ajustons.
+ *
+ * On rend donc le nombre de mains concernées et ce qu'elles pèsent, pour que
+ * l'écart entre les deux chiffres soit explicable plutôt que troublant.
+ */
+export function ecartPokerTracker(hands = [], nbTournois = 0) {
+  let mains = 0;
+  let jetons = 0;
+  for (const h of hands) {
+    if (!h.multiway || !Number.isFinite(h.evChips)) continue;
+    mains++;
+    jetons += (h.netChips || 0) - h.evChips;
+  }
+  return {
+    mains,
+    jetons: Math.round(jetons),
+    // Ce qu'il faudrait ajouter à notre CEV pour retrouver celui de PokerTracker.
+    pointsDeCev: nbTournois ? Math.round((jetons / nbTournois) * 100) / 100 : null,
+  };
+}
+
 export function calculerCev(hands, nbTournois) {
   if (!nbTournois) return null;
   const ev = hands.reduce((s, h) => s + (Number.isFinite(h.evChips) ? h.evChips : h.netChips || 0), 0);
@@ -432,7 +461,7 @@ export function buildPositionBreakdown(hands) {
     { cle: "hu-BB", table: 2, position: "BB", label: "BB (tête-à-tête)" },
   ];
   const map = new Map(
-    cases.map((c) => [c.cle, { ...c, mains: 0, chips: 0, evChips: 0, vpip: 0 }])
+    cases.map((c) => [c.cle, { ...c, mains: 0, chips: 0, evChips: 0, vpip: 0, carres: 0 }])
   );
 
   for (const h of hands) {
@@ -441,6 +470,11 @@ export function buildPositionBreakdown(hands) {
     if (!e) continue;
     e.mains++;
     e.chips += h.netChips || 0;
+    // Somme des carrés : elle sert à mesurer la DISPERSION du résultat par
+    // main, donc l'incertitude sur la moyenne. Sans elle, deux positions
+    // s'affichent à la même hauteur alors que l'une repose sur trois mille
+    // mains régulières et l'autre sur deux cents mains en dents de scie.
+    e.carres += (h.netChips || 0) ** 2;
     e.evChips += Number.isFinite(h.evChips) ? h.evChips : h.netChips || 0;
     // Volontaire = avoir mis plus que la blinde imposée. On se sert du montant
     // réellement posté et non de la position : en tête-à-tête le bouton est
@@ -455,6 +489,17 @@ export function buildPositionBreakdown(hands) {
       ...e,
       chipsParMain: e.mains ? e.chips / e.mains : 0,
       evParMain: e.mains ? e.evChips / e.mains : 0,
+      // Demi-largeur de l'intervalle à 95 % autour du résultat par main.
+      // On la rend pour que le graphique puisse la DESSINER : une barre sans
+      // sa moustache invite à comparer deux positions que l'échantillon ne
+      // permet pas encore de départager.
+      marge: (() => {
+        if (e.mains < 2) return null;
+        const moyenne = e.chips / e.mains;
+        const variance = Math.max(0, e.carres / e.mains - moyenne * moyenne)
+          * (e.mains / (e.mains - 1));
+        return 1.959964 * Math.sqrt(variance / e.mains);
+      })(),
       tauxVpip: e.mains ? (e.vpip / e.mains) * 100 : null,
     }));
 }
