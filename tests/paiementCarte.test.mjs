@@ -40,8 +40,14 @@ T("le client n'envoie qu'un identifiant",
   !/req\.json\(\)[\s\S]{0,200}amount/.test(creation));
 T("Stripe compte en centimes et on le convertit",
   /Math\.round\(plan\.amount \* 100\)/.test(creation));
-T("l'adresse de retour est codée en dur, pas choisie par le client",
-  /const SITE_URL = "https:/.test(creation) && !/success_url.*req\./.test(creation));
+// L'ADRESSE VIENT DU SERVEUR, ET C'EST LA SEULE GARANTIE QUI COMPTE. Elle
+// était « codée en dur » ; elle est désormais lue dans une variable
+// d'environnement pour permettre un changement de domaine. Ce qui ne doit
+// jamais changer, c'est qu'elle ne vienne pas de la requête : une adresse de
+// retour choisie par l'appelant ferait de la fonction une redirection ouverte.
+T("l'adresse de retour vient du serveur, pas du client",
+  /import \{ SITE_URL \} from "\.\.\/_shared\/site\.ts"/.test(creation)
+  && !/success_url.*req\./.test(creation));
 
 // ---------------------------------------------------------------------------
 // LA FONCTION EST DORMANTE SANS CLÉ.
@@ -207,6 +213,35 @@ T("IL EST LU AVANT L'EFFACEMENT",
 T("les libellés des deux boutons ne s'écrasent pas",
   /dataset\.libelle/.test(site),
   "les remettre tous à « Payer » effacerait la distinction carte/crypto");
+
+// ---------------------------------------------------------------------------
+// L'ADRESSE DU SITE N'EXISTE QU'À UN SEUL ENDROIT.
+//
+// Elle était écrite en dur dans les trois fonctions de paiement. Changer de
+// domaine imposait de penser aux trois — dont celle de Stripe, dormante, qu'on
+// oublierait. Une seule oubliée, et le client atterrit après paiement sur une
+// adresse morte : il a payé, il ne le sait pas.
+// ---------------------------------------------------------------------------
+const site_ = lire("../supabase/functions/_shared/site.ts");
+
+T("l'adresse du site est partagée", /export const SITE_URL/.test(site_));
+for (const [nom, src] of [["SumUp", sumup], ["crypto", crypto_], ["Stripe", creation]]) {
+  T(`le paiement ${nom} l'importe au lieu d'en avoir une copie`,
+    /from "\.\.\/_shared\/site\.ts"/.test(src) && !/const SITE_URL = "http/.test(src));
+}
+T("elle se change par variable d'environnement, sans toucher au code",
+  /Deno\.env\.get\("SITE_URL"\)/.test(site_),
+  "sinon un changement de domaine impose de rééditer et redéployer trois fichiers");
+T("ELLE NE VIENT JAMAIS DE LA REQUÊTE",
+  !/req\.json\(\)[\s\S]{0,300}(site|return_?url|redirect)/i.test(sumup),
+  "une adresse de retour choisie par le client ferait une redirection ouverte");
+T("une saisie en http est refusée", /u\.protocol !== "https:"/.test(site_),
+  "un retour de paiement en clair n'a pas à exister");
+T("une saisie invalide retombe sur l'adresse connue", /catch \{[\s\S]{0,160}return DEFAUT/.test(site_),
+  "une faute de frappe ne doit pas casser le paiement");
+T("la barre finale est retirée",
+  site_.includes(String.raw`replace(/\/+$/, "")`),
+  "les appelants ecrivent deja SITE_URL suivi de /?paye=1");
 
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

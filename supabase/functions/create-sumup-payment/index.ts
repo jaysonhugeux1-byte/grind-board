@@ -13,13 +13,9 @@
 // s'il envoyait le prix, on s'achèterait un an pour un centime.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { PLANS, DEVISE } from "../_shared/plans.ts";
+import { SITE_URL } from "../_shared/site.ts";
 
 const SUMUP_API = "https://api.sumup.com/v0.1";
-
-// Page vitrine, codée en dur : laisser le client choisir l'adresse de retour
-// ferait de cette fonction une redirection ouverte, exploitable pour de
-// l'hameçonnage.
-const SITE_URL = "https://jaysonhugeux1-byte.github.io/grind-board";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

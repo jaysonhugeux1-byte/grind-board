@@ -18,11 +18,7 @@
 // pour un centime.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { PLANS, DEVISE } from "../_shared/plans.ts";
-
-// Page vitrine, codée en dur : laisser le client choisir l'adresse de retour
-// ferait de cette fonction une redirection ouverte, exploitable pour de
-// l'hameçonnage.
-const SITE_URL = "https://jaysonhugeux1-byte.github.io/grind-board";
+import { SITE_URL } from "../_shared/site.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

@@ -10,17 +10,13 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const NOWPAYMENTS_API = "https://api.nowpayments.io/v1";
 
-// Page vitrine, codée en dur : laisser le client choisir l'adresse de retour
-// ferait de cette fonction une redirection ouverte, exploitable pour de
-// l'hameçonnage.
-const SITE_URL = "https://jaysonhugeux1-byte.github.io/grind-board";
-
 import { PLANS, DEVISE } from "../_shared/plans.ts";
+import { SITE_URL } from "../_shared/site.ts";
 
 
 
 // L'application de bureau sert son interface sur un port local tiré au hasard
-// à chaque lancement, et la page vitrine vit sur github.io : les origines
+// à chaque lancement, et la page vitrine peut changer de domaine : les origines
 // légitimes ne sont pas énumérables. Ouvrir l'origine ne relâche rien, le
 // contrôle réel étant l'authentification vérifiée plus bas.
 const CORS = {
