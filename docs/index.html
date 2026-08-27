@@ -240,6 +240,9 @@
   .offre-liste li.avec { color: var(--gold-soft, #e0c25f); }
 
   .offre-choisir, .offre-payer { width: 100%; margin-top: auto; }
+  .liens-legaux { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
+  .liens-legaux a { color: var(--text-muted); text-decoration: none; font-size: 13px; }
+  .liens-legaux a:hover { color: var(--gold-soft); text-decoration: underline; }
   /* Deux moyens de paiement : le second ne prend pas la marge automatique,
      sinon il se collerait en bas et laisserait un trou sous le premier. */
   .offre-payer + .offre-payer { margin-top: 8px; }
@@ -837,10 +840,16 @@
   <div class="wrap footer-inner">
     <div>
       <p><strong>GrindBoard</strong> — suivi de bankroll pour le cash game.</p>
-      <!-- À COMPLÉTER avant la revue du processeur de paiement : statut (micro-entreprise,
-           société…), numéro d'immatriculation et adresse professionnelle. Ces mentions sont
-           obligatoires pour de la vente en ligne. -->
       <p>Éditeur : Jayson Hugeux — jayson.hugeux1@gmail.com</p>
+      <!-- LES TROIS PAGES SONT DES BROUILLONS. Elles portent chacune un encadré le
+           disant, et surlignent en rouge ce qui reste à remplir : statut, numéro
+           d'immatriculation, adresse, médiateur de la consommation. Elles ne doivent
+           pas rester en l'état le jour de la première vente. -->
+      <p class="liens-legaux">
+        <a href="mentions-legales.html">Mentions légales</a>
+        <a href="cgv.html">Conditions générales de vente</a>
+        <a href="confidentialite.html">Confidentialité</a>
+      </p>
     </div>
     <div>
       <p>GrindBoard est un outil d'analyse. Ce n'est pas un site de jeu et il ne permet pas de miser.</p>

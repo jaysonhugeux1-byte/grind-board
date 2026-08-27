@@ -1,0 +1,113 @@
+/* Feuille commune aux pages légales.
+ *
+ * SÉPARÉE DE index.html À DESSEIN. Le site tient dans un seul fichier avec son
+ * style en ligne ; recopier ce style dans trois pages de plus garantirait
+ * qu'elles divergent à la première retouche. Ici, un seul fichier sert les
+ * trois, et il ne reprend que ce dont un document texte a besoin.
+ */
+:root {
+  --bg: #12191b;
+  --surface: #1a2325;
+  --gold: #c9a227;
+  --gold-soft: #e0c25f;
+  --text: #ede9dc;
+  --text-muted: #8b948f;
+  --border: #2a3538;
+  --alerte: #c15c4d;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.enveloppe {
+  /* Environ 70 caractères par ligne : au-delà, l'œil perd la ligne suivante,
+     et un document légal est déjà assez pénible à lire. */
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 48px 22px 96px;
+}
+
+.retour {
+  display: inline-block;
+  margin-bottom: 34px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13.5px;
+}
+.retour:hover { color: var(--gold-soft); }
+
+h1 {
+  font-family: var(--font-display);
+  font-size: 30px;
+  margin: 0 0 6px;
+  text-wrap: balance;
+}
+.maj { color: var(--text-muted); font-size: 13px; margin: 0 0 34px; }
+
+h2 {
+  font-family: var(--font-display);
+  font-size: 19px;
+  margin: 40px 0 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  text-wrap: balance;
+}
+h3 { font-family: var(--font-display); font-size: 15.5px; margin: 26px 0 8px; }
+
+p, li { margin: 0 0 12px; }
+ul, ol { padding-left: 22px; margin: 0 0 16px; }
+strong { color: #fff; }
+a { color: var(--gold-soft); }
+
+dl { margin: 0 0 16px; }
+dt { color: var(--text-muted); font-size: 13px; margin-top: 12px; }
+dd { margin: 2px 0 0; }
+
+/* CE QUI RESTE À REMPLIR DOIT SE VOIR DE LOIN. Une mention légale incomplète
+   publiée par inadvertance est pire qu'une page absente : elle a l'air
+   officielle. */
+.trou {
+  background: rgba(193, 92, 77, .16);
+  border-bottom: 1px dashed var(--alerte);
+  color: #eda99d;
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.avis {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--alerte);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin: 0 0 34px;
+}
+.avis p:last-child { margin-bottom: 0; }
+.avis strong { color: #eda99d; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+th { color: var(--text-muted); font-weight: 600; font-size: 12.5px; }
+td.prix { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.enrobage { overflow-x: auto; }
+
+footer.bas {
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+footer.bas a { margin-right: 16px; }
