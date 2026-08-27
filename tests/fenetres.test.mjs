@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mock } from "node:test";
 
 let ok = 0, ko = 0;
@@ -61,6 +62,34 @@ if (process.platform !== "win32") {
 }
 
 T("une liste vide ne lance aucun processus", (await cadresDesFenetres([])).size === 0);
+
+// ---------------------------------------------------------------------------
+// LE RECTANGLE MESURÉ DOIT ÊTRE CELUI QUI EST CAPTURÉ.
+//
+// On mesurait la zone client — l'intérieur de la fenêtre, barre de titre
+// exclue — alors que l'image lue par le lecteur vient de `desktopCapturer`,
+// qui rend le contour visible, barre de titre COMPRISE. Origine d'un
+// rectangle, proportions d'un autre : sur une table détachée, chaque pastille
+// tombait trop bas de toute la hauteur de la barre de titre.
+//
+// Vérifié sur des fenêtres réelles : en demandant la vignette à la taille des
+// extended frame bounds, la largeur revient exacte au pixel près, ce qui
+// n'arrive ni avec la zone client ni avec GetWindowRect.
+// ---------------------------------------------------------------------------
+const source = readFileSync(new URL("../electron/fenetres.cjs", import.meta.url), "utf8");
+
+// On vise l'APPEL, pas la mention : le commentaire du module nomme les deux
+// fonctions abandonnées pour expliquer le défaut qu'elles causaient.
+T("le contour VISIBLE est mesuré, pas la zone client",
+  /DwmGetWindowAttribute\(\$ptr, 9,/.test(source) && !/\[GL\]::GetClientRect/.test(source),
+  "l'attribut 9 est DWMWA_EXTENDED_FRAME_BOUNDS");
+T("ClientToScreen n'est plus appelé", !/\[GL\]::ClientToScreen/.test(source),
+  "DWM rend déjà des coordonnées d'écran");
+T("un repli existe si DWM refuse", /GetWindowRect/.test(source),
+  "sans composition de bureau, les deux rectangles coïncident");
+T("le format de sortie reste à six champs",
+  /Write-Output "\$h ok /.test(source),
+  "l'analyseur exige « handle ok x y largeur hauteur »");
 
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

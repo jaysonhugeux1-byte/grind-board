@@ -34,17 +34,39 @@ function handleDe(sourceId) {
   return m ? m[1] : null;
 }
 
+// LE RECTANGLE MESURÉ DOIT ÊTRE CELUI QUI EST CAPTURÉ. C'est toute la
+// difficulté, et elle a coûté une version.
+//
+// On mesurait la ZONE CLIENT (GetClientRect + ClientToScreen), c'est-à-dire
+// l'intérieur de la fenêtre, barre de titre exclue. Mais l'image que lit le
+// lecteur vient de `desktopCapturer`, qui rend le CONTOUR VISIBLE de la
+// fenêtre — barre de titre comprise. Les pastilles étaient donc placées avec
+// l'origine d'un rectangle et les proportions d'un autre : sur une fenêtre à
+// barre de titre standard, comme une table détachée, chacune tombait trop bas
+// de toute la hauteur de cette barre.
+//
+// Mesuré, pas supposé. En demandant la vignette à la taille des « extended
+// frame bounds », la largeur revient exacte au pixel près sur toutes les
+// fenêtres essayées, ce qui n'arrive ni avec la zone client ni avec
+// GetWindowRect.
+//
+// GetWindowRect ne convient pas non plus : depuis Windows 10 il inclut une
+// bordure de redimensionnement INVISIBLE de quelques pixels de chaque côté.
+// DWMWA_EXTENDED_FRAME_BOUNDS (attribut 9) rend exactement ce que l'œil voit,
+// et déjà en coordonnées d'écran — ClientToScreen devient inutile.
+//
+// Repli sur GetWindowRect si DWM refuse : sans composition de bureau les deux
+// coïncident, et une fenêtre mal placée vaut mieux qu'aucune fenêtre.
 const ENTETE = `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public struct RECT { public int Left, Top, Right, Bottom; }
-public struct POINT { public int X, Y; }
 public class GL {
-  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
-  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
 }
 "@
 foreach ($h in @(__HANDLES__)) {
@@ -52,10 +74,9 @@ foreach ($h in @(__HANDLES__)) {
   if (-not [GL]::IsWindow($ptr)) { Write-Output "$h ferme"; continue }
   if ([GL]::IsIconic($ptr))      { Write-Output "$h reduite"; continue }
   $r = New-Object RECT
-  [void][GL]::GetClientRect($ptr, [ref]$r)
-  $p = New-Object POINT
-  [void][GL]::ClientToScreen($ptr, [ref]$p)
-  Write-Output "$h ok $($p.X) $($p.Y) $($r.Right) $($r.Bottom)"
+  $ok = [GL]::DwmGetWindowAttribute($ptr, 9, [ref]$r, 16)
+  if ($ok -ne 0) { [void][GL]::GetWindowRect($ptr, [ref]$r) }
+  Write-Output "$h ok $($r.Left) $($r.Top) $($r.Right - $r.Left) $($r.Bottom - $r.Top)"
 }
 `;
 
