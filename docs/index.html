@@ -240,6 +240,12 @@
   .offre-liste li.avec { color: var(--gold-soft, #e0c25f); }
 
   .offre-choisir, .offre-payer { width: 100%; margin-top: auto; }
+  /* Deux moyens de paiement : le second ne prend pas la marge automatique,
+     sinon il se collerait en bas et laisserait un trou sous le premier. */
+  .offre-payer + .offre-payer { margin-top: 8px; }
+  .offre-carte:not([hidden]) ~ .offre-crypto {
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+  }
 
   .offre-retour {
     position: absolute; top: 14px; left: 14px; width: 26px; height: 26px;
@@ -299,6 +305,11 @@
     font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; vertical-align: 1px;
   }
   .offre-payer[disabled], .offre-choisir[disabled] { opacity: .55; cursor: default; }
+  /* `.btn` pose un `display: inline-flex` qui BAT l'attribut `hidden` : sans
+     cette règle, le bouton carte resterait visible alors qu'on l'a caché, et la
+     sonde de disponibilité ne servirait à rien. Vérifié dans le navigateur —
+     l'attribut seul laissait `display: inline-flex`. */
+  .btn[hidden] { display: none; }
   .price-note { font-size: 13px; color: var(--text-muted); margin-top: 22px; max-width: 66ch; }
   .pay-error {
     margin-top: 18px; font-size: 13.5px; color: var(--loss);
@@ -657,7 +668,8 @@
           </div>
           <p class="offre-question">Quelle durée ?</p>
           <div class="offre-durees"></div>
-          <button class="btn btn-primary offre-payer">Payer</button>
+          <button class="btn btn-primary offre-payer offre-carte" hidden>Payer par carte</button>
+          <button class="btn btn-primary offre-payer offre-crypto">Payer en crypto</button>
         </div>
       </div>
 
@@ -682,7 +694,8 @@
           <p class="offre-nom">Pro</p>
           <p class="offre-question">Quelle durée ?</p>
           <div class="offre-durees"></div>
-          <button class="btn btn-primary offre-payer">Payer</button>
+          <button class="btn btn-primary offre-payer offre-carte" hidden>Payer par carte</button>
+          <button class="btn btn-primary offre-payer offre-crypto">Payer en crypto</button>
         </div>
       </div>
 
@@ -706,7 +719,8 @@
           <p class="offre-nom">Expert</p>
           <p class="offre-question">Quelle durée ?</p>
           <div class="offre-durees"></div>
-          <button class="btn btn-primary offre-payer">Payer</button>
+          <button class="btn btn-primary offre-payer offre-carte" hidden>Payer par carte</button>
+          <button class="btn btn-primary offre-payer offre-crypto">Payer en crypto</button>
         </div>
       </div>
 
@@ -716,8 +730,8 @@
 
     <p class="price-note">
       Le paiement se fait avec ton compte Google — le même que dans l'application, pour que
-      ton accès s'y active tout seul. Paiement en crypto (USDT, BTC, et une centaine d'autres).
-      Prix en euros, taxes applicables en sus le cas échéant.
+      ton accès s'y active tout seul. Carte bancaire, ou crypto (USDT, BTC, et une centaine
+      d'autres). Prix en euros, taxes applicables en sus le cas échéant.
     </p>
   </div>
 </section>
@@ -963,8 +977,32 @@
   // fermeture de l'onglet, sinon un retour sur le site des jours plus tard
   // rouvrirait une facture sans que personne l'ait demandé.
   const CLE_PLAN = "gl_plan_en_attente";
-  const memoriserPlan = (p) => { try { sessionStorage.setItem(CLE_PLAN, p); } catch {} };
-  const oublierPlan = () => { try { sessionStorage.removeItem(CLE_PLAN); } catch {} };
+  // LE MOYEN DE PAIEMENT VOYAGE AVEC LA FORMULE. Il y a maintenant deux boutons
+  // par carte ; ne mémoriser que la formule ferait revenir tout le monde sur le
+  // paiement crypto après le détour par Google, y compris celui qui venait de
+  // cliquer « Payer par carte ».
+  const CLE_MOYEN = "gl_moyen_en_attente";
+  const memoriserPlan = (p, fonction) => {
+    try {
+      sessionStorage.setItem(CLE_PLAN, p);
+      if (fonction) sessionStorage.setItem(CLE_MOYEN, fonction);
+    } catch {}
+  };
+  const oublierPlan = () => {
+    try {
+      sessionStorage.removeItem(CLE_PLAN);
+      sessionStorage.removeItem(CLE_MOYEN);
+    } catch {}
+  };
+  const reprendreMoyen = () => {
+    try {
+      const f = sessionStorage.getItem(CLE_MOYEN);
+      // Liste blanche : cette valeur sert de nom de fonction serveur, et elle
+      // vient d'un stockage que la page ne contrôle pas seule.
+      if (f === "create-sumup-payment" || f === "create-crypto-payment") return f;
+    } catch {}
+    return "create-crypto-payment";
+  };
   const reprendrePlan = () => {
     let p = null;
     try { p = sessionStorage.getItem(CLE_PLAN); } catch {}
@@ -1037,17 +1075,26 @@
         majToutesLesCartes();
       }));
 
-    carte.querySelector(".offre-payer")?.addEventListener("click", () => {
+    // Un écouteur par bouton, et le moyen de paiement vient de sa classe :
+    // les deux fonctions serveur rendent la même chose — une adresse de page de
+    // paiement — donc tout le reste du chemin est commun.
+    carte.querySelectorAll(".offre-payer").forEach((bouton) => bouton.addEventListener("click", () => {
       const plan = `${produitDe(carte.dataset.offre)}_${carte.dataset.duree}`;
-      buy(plan, carte.querySelector(".offre-payer"));
-    });
+      const fonction = bouton.classList.contains("offre-carte")
+        ? "create-sumup-payment" : "create-crypto-payment";
+      buy(plan, bouton, fonction);
+    }));
   }
   majToutesLesCartes();
 
   function setBusy(busy, activeBtn) {
     for (const b of document.querySelectorAll(".offre-payer")) {
       b.disabled = busy;
-      b.textContent = busy && b === activeBtn ? "Ouverture…" : "Payer";
+      // LE LIBELLÉ D'ORIGINE EST MÉMORISÉ. Il y a maintenant deux boutons par
+      // carte — « Payer par carte » et « Payer en crypto » — et les remettre
+      // tous à « Payer » après une tentative effacerait la distinction.
+      if (!b.dataset.libelle) b.dataset.libelle = b.textContent;
+      b.textContent = busy && b === activeBtn ? "Ouverture…" : b.dataset.libelle;
     }
   }
 
@@ -1066,7 +1113,43 @@
     return error?.message || "Le paiement n'a pas pu être lancé.";
   }
 
-  async function buy(planId, btn) {
+  // LE BOUTON CARTE N'APPARAÎT QUE SI LE PRESTATAIRE RÉPOND. Sans clé côté
+  // serveur, la fonction est dormante ; un bouton affiché mènerait alors à une
+  // erreur que le visiteur ne peut pas corriger. On pose donc la question une
+  // fois au chargement, et on ne révèle le bouton que sur une réponse claire.
+  //
+  // LA SONDE N'EXIGE PAS DE COMPTE. La fonction vérifie sa configuration AVANT
+  // l'authentification : « Connexion requise » (401) prouve donc qu'elle est
+  // configurée, au même titre que « Formule inconnue » (400). Un visiteur non
+  // connecté — le cas normal ici — doit voir le bouton comme les autres.
+  // Seul le drapeau `inactif`, renvoyé avec un 503, signifie « pas de clé ».
+  async function carteDisponible() {
+    try {
+      const { error } = await supabase.functions.invoke("create-sumup-payment", {
+        body: { planId: "__sonde__" },
+      });
+      if (!error) return true;
+      let corps = null;
+      try { corps = await error?.context?.json(); } catch { /* pas du JSON */ }
+      if (corps?.inactif === true) return false;
+      // ON N'ACCEPTE QUE NOS PROPRES REFUS. Se contenter de « ce n'est pas
+      // `inactif` » afficherait aussi le bouton quand la fonction n'est pas
+      // déployée du tout : la passerelle rend alors un 404 qui ne porte aucun
+      // drapeau, et le visiteur cliquerait sur un bouton mort. Ces deux
+      // messages-là ne peuvent venir que de la fonction elle-même, donc APRÈS
+      // le contrôle de configuration.
+      return /connexion requise|formule inconnue/i.test(String(corps?.error ?? ""));
+    } catch {
+      return false;
+    }
+  }
+
+  carteDisponible().then((ok) => {
+    if (!ok) return;
+    for (const b of document.querySelectorAll(".offre-carte")) b.hidden = false;
+  });
+
+  async function buy(planId, btn, fonction = "create-crypto-payment") {
     payError.hidden = true;
     setBusy(true, btn);
     try {
@@ -1080,7 +1163,7 @@
         // la session dans le FRAGMENT et ne garantit pas de conserver la chaîne
         // de requête. On la met à l'abri dans sessionStorage, qui survit à la
         // redirection et ne concerne que cet onglet.
-        memoriserPlan(planId);
+        memoriserPlan(planId, fonction);
         const retour = new URL(location.href);
         retour.searchParams.set("plan", planId);
         // LE FRAGMENT DOIT PARTIR. Supabase accroche son « ?code=… » à cette
@@ -1096,7 +1179,7 @@
         return; // la page part sur Google, elle reviendra ici
       }
 
-      const { data, error } = await supabase.functions.invoke("create-crypto-payment", {
+      const { data, error } = await supabase.functions.invoke(fonction, {
         body: { planId },
       });
       if (error) throw new Error(await motifReel(error));
@@ -1127,6 +1210,10 @@
   // Et si malgré tout la connexion n'aboutit pas, ON LE DIT. Un échec muet est
   // ce qui a coûté le plus de temps ici : la page semblait fonctionner.
   const planEnAttente = reprendrePlan();
+  // LU ICI, PAS DANS `reprendre` : celui-ci appelle `oublierPlan()` en premier,
+  // et relire le moyen après l'effacement rendrait toujours la valeur par
+  // défaut — le paiement carte repartirait en crypto sans rien signaler.
+  const moyenEnAttente = reprendreMoyen();
   if (planEnAttente) {
     const [prod, duree] = planEnAttente.split("_");
     const carteDuPlan = cartes.find((c) => produitDe(c.dataset.offre) === prod)
@@ -1148,7 +1235,9 @@
       // Oublié AVANT de relancer l'achat : sans cela, un rechargement de la
       // page rouvrirait une facture à chaque fois.
       oublierPlan();
-      buy(planEnAttente, carteDuPlan?.querySelector(".offre-payer") ?? null);
+      const boutonRepris = carteDuPlan?.querySelector(
+        moyenEnAttente === "create-sumup-payment" ? ".offre-carte" : ".offre-crypto") ?? null;
+      buy(planEnAttente, boutonRepris, moyenEnAttente);
     };
 
     // Au bout de six secondes sans session, la connexion a échoué. Mieux vaut
