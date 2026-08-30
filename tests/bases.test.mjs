@@ -139,5 +139,37 @@ const sansFiltre = [...src.matchAll(/\.eq\("user_id", uid\)(?!\.eq\(\.\.\.filtre
     /revoke all on function public\.purger_donnees/.test(sql));
 }
 
+// ---------------------------------------------------------------------------
+// LA CIBLE D'UPSERT DOIT SUIVRE LA CLÉ PRIMAIRE RÉELLE.
+//
+// 06_bases.sql fait passer les clés de (user_id, hand_id) à
+// (user_id, base, hand_id). Les cibles étaient écrites en dur : l'import a
+// donc cessé de marcher AU MOMENT où la migration a été jouée, pas au moment
+// d'un déploiement. La veille tout allait, le lendemain plus rien, et le
+// message de Postgres — « there is no unique or exclusion constraint matching
+// the ON CONFLICT specification » — ne dit ni quelle table ni quelles colonnes
+// il attendait.
+//
+// Les deux états doivent marcher : une base non migrée continue d'importer.
+// ---------------------------------------------------------------------------
+T("la cible d'upsert se construit selon l'état de la base",
+  /function cibleConflit\(/.test(src) && /COLONNE_BASE[\s\S]{0,120}user_id,base,/.test(src));
+
+for (const [table, colonne] of [
+  ["hands", "hand_id"], ["hand_raw", "hand_id"], ["spin_tournaments", "tourney_id"],
+  ["spin_hands", "hand_id"], ["spin_hand_raw", "hand_id"],
+]) {
+  T(`aucune cible en dur pour ${table}`,
+    !new RegExp(`onConflict: "user_id,${colonne}"`).test(src),
+    "une cible figée casse le jour où la migration est jouée");
+}
+
+// `settings` GARDE SA CIBLE EN DUR, et ce n'est pas un oubli : 06_bases.sql ne
+// touche pas à sa clé, les réglages étant communs aux deux bases. La faire
+// passer par cibleConflit casserait l'enregistrement du profil.
+T("settings garde sa cible à deux colonnes",
+  /key: `profil:\$\{base\}`[\s\S]{0,80}onConflict: "user_id,key"/.test(src),
+  "sa clé primaire n'a pas changé");
+
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

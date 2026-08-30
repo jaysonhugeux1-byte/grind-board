@@ -68,6 +68,29 @@ function filtreBase(uid) {
   return COLONNE_BASE ? ["base", BASE_ACTIVE] : ["user_id", uid];
 }
 
+/**
+ * La cible d'un `upsert`, qui DOIT correspondre à la clé primaire réelle.
+ *
+ * Postgres refuse un `on conflict` dont les colonnes ne forment pas une
+ * contrainte d'unicité, et le message — « there is no unique or exclusion
+ * constraint matching the ON CONFLICT specification » — ne dit ni quelle
+ * table ni quelles colonnes il attendait.
+ *
+ * 06_bases.sql fait passer les clés de `(user_id, hand_id)` à
+ * `(user_id, base, hand_id)`. Écrire la cible en dur cassait donc l'import
+ * au moment précis où la migration était jouée : la veille tout marchait,
+ * le lendemain plus rien, sans qu'un déploiement soit en cause.
+ *
+ * La cible suit donc l'état réel de la base, détecté au démarrage. Les deux
+ * versions doivent marcher : une installation dont la base n'a pas migré
+ * continue d'importer normalement.
+ */
+function cibleConflit(colonneFinale) {
+  return COLONNE_BASE
+    ? `user_id,base,${colonneFinale}`
+    : `user_id,${colonneFinale}`;
+}
+
 /** Change la base que toutes les requêtes suivantes viseront. */
 export function setBaseActive(n) {
   BASE_ACTIVE = n === 2 ? 2 : 1;
@@ -202,8 +225,8 @@ export async function importHands(uid, parsedHands, { forceUpdate = false, exist
         // upsert plutôt qu'insert : rejouer un import ne doit jamais échouer sur
         // une main déjà connue, et forceUpdate doit pouvoir réécrire.
         const [a, b] = await Promise.all([
-          supabase.from("hands").upsert(hands, { onConflict: "user_id,hand_id" }),
-          supabase.from("hand_raw").upsert(raws, { onConflict: "user_id,hand_id" }),
+          supabase.from("hands").upsert(hands, { onConflict: cibleConflit("hand_id") }),
+          supabase.from("hand_raw").upsert(raws, { onConflict: cibleConflit("hand_id") }),
         ]);
         if (a.error) throw a.error;
         if (b.error) throw b.error;
@@ -521,7 +544,7 @@ export async function importSpinData(uid, tournaments, hands, { onProgress } = {
     async (i) => {
       const { error } = await supabase
         .from("spin_tournaments")
-        .upsert(lotsT[i], { onConflict: "user_id,tourney_id" });
+        .upsert(lotsT[i], { onConflict: cibleConflit("tourney_id") });
       if (error) throw error;
     },
     avance
@@ -532,7 +555,7 @@ export async function importSpinData(uid, tournaments, hands, { onProgress } = {
     async (i) => {
       const { error } = await supabase
         .from("spin_hands")
-        .upsert(lotsM[i], { onConflict: "user_id,hand_id" });
+        .upsert(lotsM[i], { onConflict: cibleConflit("hand_id") });
       if (error) throw error;
     },
     avance
@@ -543,7 +566,7 @@ export async function importSpinData(uid, tournaments, hands, { onProgress } = {
     async (i) => {
       const { error } = await supabase
         .from("spin_hand_raw")
-        .upsert(lotsR[i], { onConflict: "user_id,hand_id" });
+        .upsert(lotsR[i], { onConflict: cibleConflit("hand_id") });
       if (error) throw error;
     },
     avance
@@ -590,7 +613,7 @@ export async function enregistrerMainsLecteur(uid, mains) {
   }));
 
   for (const lot of chunk(lignes, 100)) {
-    const { error } = await supabase.from("spin_hands").upsert(lot, { onConflict: "user_id,hand_id" });
+    const { error } = await supabase.from("spin_hands").upsert(lot, { onConflict: cibleConflit("hand_id") });
     if (error) throw error;
   }
   return mains.length;
