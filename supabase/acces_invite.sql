@@ -15,7 +15,17 @@ declare
   -- ------------------------------------------------------------------ RÉGLAGES
   v_email   text := 'adresse.de.ton.ami@gmail.com';
   v_mois    int  := 1;                          -- durée de l'essai
-  v_produits text[] := array['cash', 'spin'];   -- ou array['spin'] pour le spin seul
+
+  -- LES FORMULES N'EXISTENT PAS DANS LA BASE, seuls les produits qu'elles
+  -- ouvrent. « Pro » ou « Expert » ne se créditent donc pas : on liste ce
+  -- qu'ils contiennent.
+  --
+  --   Basic cash  : array['cash']
+  --   Basic spin  : array['spin']
+  --   Pro         : array['cash', 'spin']
+  --   Expert      : array['cash', 'spin', 'solveur']
+  --   Supplément  : ajouter 'base2' pour la seconde base de données
+  v_produits text[] := array['cash', 'spin'];
   -- ---------------------------------------------------------------------------
   v_user    uuid;
   v_produit text;
@@ -38,9 +48,17 @@ begin
   end loop;
 end $$;
 
--- Vérification : une ligne par produit, avec la date d'expiration.
-select u.email, a.product, a.access_until, a.provider
+-- Vérification.
+--
+-- ELLE NE REDEMANDE PAS L'ADRESSE. Elle la répétait, et il fallait donc penser
+-- à la changer aux deux endroits : en oublier un montrait l'accès de quelqu'un
+-- d'autre, ou rien du tout, et laissait croire que le script avait échoué.
+-- On liste plutôt les dernières invitations ouvertes — celle qu'on vient de
+-- créer est en haut.
+select u.email, a.product, a.access_until,
+       (a.access_until > now()) as encore_valable, a.updated_at
 from public.access a
 join auth.users u on u.id = a.user_id
-where lower(u.email) = lower('adresse.de.ton.ami@gmail.com')
-order by a.product;
+where a.provider = 'invitation'
+order by a.updated_at desc
+limit 10;
