@@ -4,7 +4,7 @@ import {
 } from "recharts";
 import { Spade, TrendingUp, TrendingDown, Diamond, Wallet, Loader2, Gift } from "lucide-react";
 import { useData } from "../contexts/DataContext";
-import { buildDailyChart, buildPerformanceChart } from "../lib/parse";
+import { buildBankrollByHands, buildPerformanceByHands } from "../lib/parse";
 import { StatCard, EmptyState, PageHeader, fmtMoney } from "../components/ui";
 import ChallengeCard from "../components/ChallengeCard";
 
@@ -20,6 +20,15 @@ const SERIES = [
   { key: "withSD", label: "Avec abattage", color: "#5fae79", dash: null },
   { key: "withoutSD", label: "Sans abattage", color: "#e0554f", dash: null },
 ];
+
+// L'ABSCISSE COMPTE DES MAINS, MAIS LA DATE RESTE UTILE. Passer du jour à la
+// main fait gagner une lecture juste de la variance et perdre le « c'était
+// quand » : l'infobulle rend le second sans reprendre le premier.
+const libelleMain = (mains, charge) => {
+  const point = charge?.[0]?.payload;
+  const n = Number(mains).toLocaleString("fr-FR");
+  return point?.date ? `main ${n} · ${point.date}` : `main ${n}`;
+};
 
 export default function Dashboard() {
   const { hands, entries, loading } = useData();
@@ -59,8 +68,8 @@ export default function Dashboard() {
     return { totalNet, bankroll, bb100, evBB100, totalEV, stakeRows, totalHands: hands.length, totalRakeback, totalRake };
   }, [hands, entries]);
 
-  const bankrollChartData = useMemo(() => buildDailyChart(hands, entries), [hands, entries]);
-  const performanceChartData = useMemo(() => buildPerformanceChart(hands), [hands]);
+  const bankrollChartData = useMemo(() => buildBankrollByHands(hands, entries), [hands, entries]);
+  const performanceChartData = useMemo(() => buildPerformanceByHands(hands), [hands]);
 
   const toggleSeries = (key) => {
     setVisibleSeries((prev) => {
@@ -150,6 +159,7 @@ export default function Dashboard() {
                     <Tooltip
                       contentStyle={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, fontFamily: "var(--font-mono)", fontSize: 12 }}
                       labelStyle={{ color: "var(--text-muted)" }}
+                      labelFormatter={(m, charge) => libelleMain(m, charge)}
                       formatter={(v, key) => [fmtMoney(v), SERIES.find((s) => s.key === key)?.label || key]}
                     />
                     {SERIES.filter((s) => visibleSeries.has(s.key)).map((s) => (
@@ -176,7 +186,7 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-title-row">
             <h2>Évolution de la bankroll</h2>
-            <span className="card-sub">cumul journalier, mains + dépôts/retraits</span>
+            <span className="card-sub">cumul par main jouée, dépôts et retraits compris</span>
           </div>
           {bankrollChartData.length === 0 ? (
             <EmptyState text="Importe un fichier de mains ou ajoute un dépôt pour voir le graphique." />
@@ -197,6 +207,7 @@ export default function Dashboard() {
                   <Tooltip
                     contentStyle={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 8, fontFamily: "var(--font-mono)", fontSize: 12 }}
                     labelStyle={{ color: "var(--text-muted)" }}
+                    labelFormatter={(m, charge) => libelleMain(m, charge)}
                     formatter={(v) => [fmtMoney(v), "Bankroll"]}
                   />
                   <Area type="monotone" dataKey="cum" stroke="var(--gold)" strokeWidth={2} fill="url(#fillCum)" />

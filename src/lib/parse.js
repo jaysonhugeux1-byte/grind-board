@@ -473,6 +473,110 @@ export function buildPerformanceChart(hands) {
   }));
 }
 
+// ---------------------------------------------------------------------------
+// Courbes indexées en MAINS, et non en jours
+// ---------------------------------------------------------------------------
+//
+// POURQUOI LE JOUR EST UNE MAUVAISE ABSCISSE AU POKER. Une journée de deux
+// cents mains et une journée de six pèsent pareil sur l'axe : la courbe donne
+// alors autant d'importance à une séance qu'à un coup d'œil, et une variance
+// qui s'étale sur trente mille mains paraît tenir en trois semaines. Tous les
+// trackers comptent en mains, parce que c'est le volume, pas le calendrier,
+// qui produit la variance.
+//
+// La date n'est pas perdue pour autant : chaque point la porte, pour que
+// l'infobulle puisse répondre à « c'était quand ».
+
+// Au-delà de quelques centaines de points, le graphique ne montre plus rien de
+// plus mais devient lourd à dessiner — cent trente mille mains feraient cent
+// trente mille points.
+//
+// ON N'ÉCHANTILLONNE PAS APRÈS COUP. Construire tous les points pour en jeter
+// quatre-vingt-dix-neuf sur cent coûtait dix-sept secondes sur une base
+// entière, l'essentiel passé à formater des dates jamais affichées. Le pas est
+// donc calculé d'abord, et seuls les points retenus sont fabriqués.
+const pasDe = (n, maxPoints) => (n <= maxPoints ? 1 : Math.ceil(n / maxPoints));
+
+const jourDe = (ts) => new Date(ts).toISOString().slice(0, 10);
+const dateCourte = (ts) =>
+  new Date(ts).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+
+/**
+ * Bankroll cumulée, en abscisse le nombre de mains jouées.
+ *
+ * Les dépôts et retraits ne sont pas des mains : ils se placent au compteur
+ * atteint à leur date, ce qui produit une marche verticale — exactement ce
+ * qu'ils sont. Ils sont TOUJOURS gardés, quel que soit le pas : ce sont les
+ * seuls accidents de la courbe, et les manquer la rendrait incompréhensible.
+ */
+export function buildBankrollByHands(hands, entries, maxPoints = 600) {
+  const events = [];
+  for (const h of hands) events.push({ ts: h.ts, delta: h.net, estMain: true });
+  for (const e of entries) {
+    // Le dépôt initial est la mise de départ, pas un mouvement : il fixe le
+    // point zéro et n'a pas à faire un saut dans la courbe.
+    if (e.type === "depot" && e.initial) continue;
+    events.push({ ts: e.ts, delta: e.type === "retrait" ? -e.amount : e.amount, estMain: false });
+  }
+  events.sort((a, b) => a.ts - b.ts);
+  if (!events.length) return [];
+
+  const pas = pasDe(events.length, maxPoints);
+  const points = [];
+  let cumul = 0;
+  let mains = 0;
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    cumul += ev.delta;
+    if (ev.estMain) mains++;
+    const dernier = i === events.length - 1;
+    if (!ev.estMain || dernier || i % pas === 0) {
+      points.push({
+        mains,
+        label: String(mains),
+        jour: jourDe(ev.ts),
+        date: dateCourte(ev.ts),
+        cum: Math.round(cumul * 100) / 100,
+      });
+    }
+  }
+  return points;
+}
+
+/**
+ * Résultat, EV et décomposition abattage / sans abattage, en abscisse les mains.
+ *
+ * Le dernier point est toujours produit : c'est le total, et le voir amputé
+ * afficherait un résultat faux.
+ */
+export function buildPerformanceByHands(hands, maxPoints = 600) {
+  if (!hands.length) return [];
+  const triees = [...hands].sort((a, b) => a.ts - b.ts);
+
+  const pas = pasDe(triees.length, maxPoints);
+  const points = [];
+  let net = 0, ev = 0, withSD = 0, withoutSD = 0;
+  for (let i = 0; i < triees.length; i++) {
+    const h = triees[i];
+    net += h.net;
+    ev += Number.isFinite(h.evNet) ? h.evNet : h.net;
+    if (h.wentToShowdown) withSD += h.net; else withoutSD += h.net;
+    if (i % pas === 0 || i === triees.length - 1) {
+      points.push({
+        mains: i + 1,
+        label: String(i + 1),
+        jour: jourDe(h.ts),
+        date: dateCourte(h.ts),
+        net: Math.round(net * 100) / 100,
+        ev: Math.round(ev * 100) / 100,
+        withSD: Math.round(withSD * 100) / 100,
+        withoutSD: Math.round(withoutSD * 100) / 100,
+      });
+    }
+  }
+  return points;
+}
+
 // Grille 13x13 : lignes/colonnes du rang le plus fort au plus faible.
 export const RANGE_RANKS = "AKQJT98765432".split("");
 
