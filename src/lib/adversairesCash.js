@@ -26,6 +26,9 @@ export const MAINS_MINIMUM_CASH = 100;
 /** Et pour une fréquence conditionnelle, dont les occasions sont plus rares. */
 export const OCCASIONS_MINIMUM = 20;
 
+/** Une relance qui n'atteint pas ce multiple de la grosse blinde est minimale. */
+const PLAFOND_MIN_RAISE = 2.2;
+
 const POSTES = ["UTG", "UTG+1", "UTG+2", "MP", "HJ", "CO", "BTN", "SB", "BB"];
 
 function neuve(nom) {
@@ -42,6 +45,11 @@ function neuve(nom) {
     abattages: 0, abattagesGagnes: 0,
     agressions: 0, suivis: 0,
     cartesVues: [],
+    // LES DEUX GESTES QUI TRIENT UN RÉCRÉATIF D'UN RÉGULIER. Ils ne sont pas
+    // des fréquences : un joueur peut être serré et médiocre, large et
+    // excellent. Ce sont des choix qui n'ont pas de version défendable.
+    limps: 0, occasionsLimp: 0,
+    minRaises: 0, ouvertures: 0,
     netContre: 0,
     premiereVue: Infinity,
     derniereVue: -Infinity,
@@ -79,9 +87,18 @@ export function construireFichesCash(mains) {
     let ouvreur = null;
     let agresseurFlop = null;
     let miseFlopFaite = false;
+    // La grosse blinde de CETTE main : les niveaux de relance se mesurent en
+    // blindes, et une base peut mélanger plusieurs limites.
+    const bb = Number(main?.bb) > 0 ? Number(main.bb) : 0;
     const etat = {};
     for (const n of noms) {
-      etat[n] = { volontaire: false, aRelance: false, vuFlop: false, agressions: 0, suivis: 0 };
+      etat[n] = {
+        volontaire: false, aRelance: false, vuFlop: false,
+        agressions: 0, suivis: 0,
+        // Sa première décision volontaire a-t-elle déjà eu lieu ? Un limp ne se
+        // reconnaît que là : payer une relance plus tard n'en est pas un.
+        aDecide: false,
+      };
     }
 
     const bilan = rejouerMain(lecture, (e) => {
@@ -115,6 +132,35 @@ export function construireFichesCash(mains) {
           s.aRelance = true;
           if (e.relances === 0) ouvreur = e.joueur;
         }
+
+        // OUVRIR EN PAYANT — le limp. Personne n'a relancé devant, il y a
+        // quelque chose à payer, et le joueur se contente de payer. En cash
+        // six joueurs, c'est le geste le plus lisible qui soit : il renonce à
+        // l'initiative et à la chance de gagner le coup tout de suite, contre
+        // rien. Aucun régulier n'en fait une habitude.
+        //
+        // Sa PREMIÈRE décision seulement : payer une relance plus tard n'est
+        // pas un limp, et compter les deux effacerait la distinction.
+        if (e.face === "blindes" && e.aPayer > 0 && !s.aDecide) {
+          const f = de(e.joueur);
+          if (f) {
+            f.occasionsLimp++;
+            if (e.quoi === "call") f.limps++;
+          }
+        }
+
+        // LA RELANCE MINIMALE. Elle offre au défenseur un prix imbattable pour
+        // continuer. On mesure le NIVEAU atteint, pas ce qui est ajouté.
+        if ((e.quoi === "raise" || e.quoi === "allin") && bb > 0) {
+          const f = de(e.joueur);
+          if (f) {
+            f.ouvertures++;
+            const niveau = (e.engage + e.montant) / bb;
+            if (niveau > 0 && niveau <= PLAFOND_MIN_RAISE) f.minRaises++;
+          }
+        }
+
+        if (e.quoi !== "fold" && e.quoi !== "check") s.aDecide = true;
         // Face à une ouverture, et pas la sienne : occasion de sur-relancer.
         if (e.relances === 1 && e.meneur !== e.joueur) {
           const f = de(e.joueur);
