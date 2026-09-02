@@ -116,6 +116,9 @@ function resolveHeroPreflop(lines) {
 function extractVillainPreflopStats(lines) {
   const players = {};
   let inPreflop = false;
+  // La plus grosse mise posée sur la rue : sert à distinguer un tapis-relance
+  // d'un tapis-suivi.
+  let maxSurRue = 0;
   for (const line of lines) {
     if (line.startsWith("*** HOLE CARDS ***")) { inPreflop = true; continue; }
     if (/^\*\*\* (FLOP|TURN|RIVER|SHOWDOWN|SUMMARY) \*\*\*/.test(line)) break;
@@ -137,10 +140,16 @@ function extractVillainPreflopStats(lines) {
     } else if ((m = line.match(/^\S+: raises ₮[\d.]+ to ₮([\d.]+)/))) {
       p.streetCum = parseFloat(m[1]); p.vpip = true; p.pfr = true;
     } else if ((m = line.match(/^\S+: ALLIN ₮([\d.]+)/))) {
-      const to = parseFloat(m[1]);
-      if (to > p.streetCum) p.pfr = true;
-      p.streetCum = to; p.vpip = true;
+      // Un tapis AJOUTE. Reste à savoir si c'est une relance ou un simple
+      // suivi : c'est une relance si le total atteint dépasse la plus grosse
+      // mise déjà posée sur la rue. Comparer au seul cumul du joueur, comme
+      // avant, faisait passer tout tapis pour une relance — y compris un
+      // suivi-tapis, qui est le geste d'un joueur dominé, pas d'un agresseur.
+      p.streetCum += parseFloat(m[1]);
+      if (p.streetCum > maxSurRue + 1e-9) p.pfr = true;
+      p.vpip = true;
     }
+    if (p.streetCum > maxSurRue) maxSurRue = p.streetCum;
   }
   return Object.entries(players).map(([name, p]) => ({ name, vpip: p.vpip, pfr: p.pfr }));
 }

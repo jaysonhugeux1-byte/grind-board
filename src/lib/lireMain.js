@@ -126,8 +126,17 @@ export function lireMain(raw) {
       evenements.push({ type: "action", rue, joueur: x[1], quoi: "raise", niveau: nombre(x[2]) });
       continue;
     }
+    // UN TAPIS S'ANNONCE PAR CE QU'IL AJOUTE, pas par le niveau atteint —
+    // contrairement à « raises A to B ». On l'émet donc en `montant`, que
+    // rejouerMain prend tel quel, et non en `niveau`, dont il retrancherait ce
+    // qui est déjà engagé sur la rue.
+    //
+    // La mesure tranche : sur les 23 mains à tapis d'une session réelle, cette
+    // lecture reconstitue le pot annoncé sur 21, contre 11 pour l'autre. Un
+    // joueur relançant à 0,14 puis annonçant « ALLIN ₮1.25 » avec 1,39 de tapis
+    // a bien mis 1,39 — pas 1,25.
     if ((x = ligne.match(/^(\S+): ALLIN ₮([\d.]+)/)) && connus.has(x[1])) {
-      evenements.push({ type: "action", rue, joueur: x[1], quoi: "allin", niveau: nombre(x[2]) });
+      evenements.push({ type: "action", rue, joueur: x[1], quoi: "allin", montant: nombre(x[2]) });
       continue;
     }
   }
