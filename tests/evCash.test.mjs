@@ -148,5 +148,63 @@ T("deux calculs de la même main donnent le même résultat",
   computeHandEV(troisJoueurs, 10) === evTrois);
 T("et le tête-à-tête aussi", computeHandEV(duel, 10) === evDuel);
 
+// ---------------------------------------------------------------------------
+// L'ÉQUITÉ SE PREND AU MOMENT DU DERNIER TAPIS.
+//
+// C'est une CONVENTION, choisie explicitement, et ce test est là pour qu'on ne
+// la change pas par inadvertance.
+//
+// Le cas qui la met à l'épreuve, tiré d'une main réelle : un joueur est à tapis
+// PRÉFLOP pour l'essentiel du pot, un autre complète sur le FLOP. Le pot entier
+// est alors évalué flop connu — Hero est donc crédité d'avoir touché son roi,
+// ou puni de l'avoir manqué.
+//
+// L'autre lecture consisterait à évaluer chaque pot à la rue où son argent a
+// été engagé. Elle est plus fine et donne d'autres chiffres ; ce n'est pas
+// celle qui a été retenue.
+// ---------------------------------------------------------------------------
+const deuxRues = `CoinPoker Hand #9500002: NLH (₮0.01/₮0.02) 2026/09/02 09:18:30
+Table 'Essai' 6-max Seat #3 is the button
+Seat 1: Hero (₮2.00 in chips)
+Seat 2: botCourt (₮1.51 in chips)
+Seat 3: botLong (₮2.00 in chips)
+botCourt: posts small blind ₮0.01
+botLong: posts big blind ₮0.02
+*** HOLE CARDS ***
+Hero: ALLIN ₮1.00
+botCourt: ALLIN ₮0.99
+botLong: folds
+*** FLOP *** [Ks 7d 3c]
+Hero: bets ₮0.50
+botCourt: ALLIN ₮0.51
+Hero: RETURN ₮0.01
+*** TURN *** [Ks 7d 3c] [8s]
+*** RIVER *** [Ks 7d 3c 8s] [Jd]
+*** SHOWDOWN ***
+Hero: shows [Ah Kd]
+botCourt: shows [8c 8d]
+botCourt collected ₮3.02 from pot
+*** SUMMARY ***
+Total pot ₮3.02 | Rake ₮0.00
+Board [ Ks 7d 3c 8s Jd ]`;
+
+// Roi au flop : évaluée flop connu, Hero est largement devant ; évaluée
+// préflop, beaucoup moins. Le test compare aux DEUX valeurs et vérifie
+// laquelle sort, sans dépendre d'un nombre magique.
+const evDeuxRues = computeHandEV(deuxRues, 1.5);
+const equiteFlop = equityOf(
+  [mains("Ah Kd"), mains("8c 8d")], mains("Ks 7d 3c"), 0, "Ah Kd|",
+);
+const equitePreflop = equityOf([mains("Ah Kd"), mains("8c 8d")], [], 0, "Ah Kd|");
+const siFlop = equiteFlop * 3.02 - 1.5;
+const siPreflop = equitePreflop * 3.02 - 1.5;
+
+T("les deux rues donnent bien des valeurs différentes",
+  Math.abs(siFlop - siPreflop) > 0.2,
+  "sinon le test suivant ne distingue rien");
+T("L'ÉQUITÉ EST PRISE AU DERNIER TAPIS, PAS AU PREMIER",
+  Number.isFinite(evDeuxRues) && Math.abs(evDeuxRues - siFlop) < Math.abs(evDeuxRues - siPreflop),
+  `rendu ${evDeuxRues} · flop ${siFlop.toFixed(3)} · préflop ${siPreflop.toFixed(3)}`);
+
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

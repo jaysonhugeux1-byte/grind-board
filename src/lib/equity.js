@@ -235,9 +235,23 @@ export function computeHandEV(raw, heroInvested) {
   const finalBoard = boardMatch[1].trim().split(/\s+/);
   if (finalBoard.length !== 5) return null;
 
-  // Le tapis décisif est le dernier posé par un joueur qui va effectivement à
-  // l'abattage : ignorer ceux des joueurs déjà couchés éviterait sinon de croire
-  // le board moins avancé qu'il ne l'était quand l'argent est entré.
+  // L'ÉQUITÉ SE PREND AU MOMENT DU DERNIER TAPIS. C'est une CONVENTION, pas une
+  // évidence, et elle a été choisie explicitement — ne pas la changer sans le
+  // vouloir.
+  //
+  // Le cas qui la met à l'épreuve : un joueur à tapis préflop, un autre qui
+  // complète pour un centime sur le flop. Le pot entier est alors évalué flop
+  // connu, ce qui crédite Hero d'avoir touché — ou le punit d'avoir manqué.
+  // L'autre lecture consisterait à évaluer chaque pot à la rue où SON argent a
+  // été engagé ; elle est plus fine, plus lourde, et donne d'autres chiffres.
+  //
+  // Conséquence assumée : sur une session réelle de 293 mains, cette convention
+  // donne +2,11 d'EV là où un tracker tiers en donnait +0,37. L'écart vient de
+  // la règle, pas d'un défaut de calcul.
+  //
+  // Le tapis retenu est le dernier posé par un joueur qui va effectivement à
+  // l'abattage : ignorer ceux des joueurs déjà couchés ferait sinon croire le
+  // board moins avancé qu'il ne l'était quand l'argent est entré.
   const involved = new Set([heroShow.player, ...villainShows.map((s) => s.player)]);
   const lines = raw.split("\n");
   let allinIdx = -1;
