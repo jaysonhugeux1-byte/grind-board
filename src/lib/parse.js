@@ -260,6 +260,7 @@ export function parseCoinPokerText(text) {
     let streetCum = 0;
     let invested = 0;
     let collected = 0;
+    let collecteTotale = 0;
     let heroSeen = false;
 
     for (const line of lines) {
@@ -287,11 +288,16 @@ export function parseCoinPokerText(text) {
           const delta = to - streetCum;
           invested += delta; streetCum = to;
         } else if ((m = line.match(/^Hero: ALLIN ₮([\d.]+)/))) {
-          // CoinPoker écrit un tapis comme un montant TOTAL pour la rue en cours
-          // (même logique que "raises ... to X"), pas comme un montant ajouté.
-          const to = parseFloat(m[1]);
-          const delta = to - streetCum;
-          invested += delta; streetCum = to;
+          // UN TAPIS EST UN MONTANT AJOUTÉ, pas le total de la rue.
+          //
+          // Le commentaire d'origine affirmait l'inverse — « même logique que
+          // raises ... to X ». C'est faux, et la mesure le tranche : sur les 23
+          // mains contenant un tapis d'une session réelle, la lecture « montant
+          // ajouté » reconstitue le pot annoncé sur 21 d'entre elles, contre 11
+          // pour l'autre. Un joueur relançant à 0,14 puis annonçant
+          // « ALLIN ₮1.25 » avec 1,39 de tapis a bien mis 1,39 au total.
+          const amt = parseFloat(m[1]);
+          streetCum += amt; invested += amt;
         } else if ((m = line.match(/^Hero: RETURN ₮([\d.]+)/))) {
           const amt = parseFloat(m[1]);
           invested -= amt; streetCum -= amt;
@@ -300,22 +306,55 @@ export function parseCoinPokerText(text) {
         const m = line.match(/Hero collected ₮([\d.]+) from pot/);
         if (m) collected += parseFloat(m[1]);
       }
+      // Ce que TOUS ramassent : sert à répartir l'argent du splash, qui
+      // n'apparaît dans aucune ligne « collected » (voir plus bas).
+      const mTous = line.match(/^(\S+) collected ₮([\d.]+) from pot/);
+      if (mTous) collecteTotale += parseFloat(mTous[2]);
     }
 
     if (!heroSeen && collected === 0 && invested === 0) continue;
 
-    const net = Math.round((collected - invested) * 1e6) / 1e6;
+    // L'ARGENT DU SPLASH N'EST DANS AUCUNE LIGNE « collected ».
+    //
+    // CoinPoker verse parfois des jetons dans le pot — « SPLASH dropped ₮0.10 ».
+    // Ils comptent dans le « Total pot » et reviennent bien au gagnant, mais la
+    // ligne qui annonce ce qu'il ramasse les EXCLUT. Vérifié à l'unité sur une
+    // main : pot 0,21, rake 0,01, splash 0,10, et « Hero collected ₮0.10 » —
+    // soit exactement le pot moins le rake moins le splash.
+    //
+    // Sans ce rattrapage, chaque splash gagné manque au résultat. Sur une
+    // session de 293 mains l'écart valait 0,20, ce qui suffisait à afficher
+    // −1,37 là où le tracker montrait −1,17.
+    //
+    // Réparti au prorata de ce que chacun ramasse : un pot partagé partage
+    // aussi le splash.
+    const splashMatch = trimmedBlock.match(/^SPLASH dropped ₮([\d.]+)/m);
+    let splashPourHero = 0;
+    if (splashMatch && collected > 0 && collecteTotale > 0) {
+      splashPourHero = parseFloat(splashMatch[1]) * (collected / collecteTotale);
+    }
+
+    const net = Math.round((collected + splashPourHero - invested) * 1e6) / 1e6;
 
     // Le "Rake" et le "Splash Fee" indiqués sont prélevés sur le pot ENTIER de la
     // table, pas juste sur la mise de Hero — les attribuer à 100% à Hero sur chaque
     // main (même celles où il fold sa BB sans y toucher) surestimait massivement son
     // rake réel. On attribue plutôt la part proportionnelle à sa contribution au pot
     // (comme un calcul de rakeback), cohérent avec ce qu'affichent les autres trackers.
-    const potMatch = trimmedBlock.match(/Total pot ₮([\d.]+) \| Rake ₮([\d.]+) \| Splash Fee ₮([\d.]+)/);
+    // LE « SPLASH FEE » EST FACULTATIF, et son absence coûtait cher.
+    //
+    // L'expression l'exigeait. Or les exports actuels écrivent seulement
+    // « Total pot ₮0.79 | Rake ₮0.03 » : la correspondance échouait sur CHAQUE
+    // main. Deux conséquences muettes — un rake affiché à zéro alors qu'il
+    // valait 0,96 sur la session, et une EV strictement égale au résultat,
+    // puisque le calcul d'équité abandonne dès cette ligne.
+    const potMatch = trimmedBlock.match(
+      /Total pot ₮([\d.]+) \| Rake ₮([\d.]+)(?: \| Splash Fee ₮([\d.]+))?/,
+    );
     let rake = 0;
     if (potMatch) {
       const totalPot = parseFloat(potMatch[1]);
-      const rakeAndFee = parseFloat(potMatch[2]) + parseFloat(potMatch[3]);
+      const rakeAndFee = parseFloat(potMatch[2]) + parseFloat(potMatch[3] ?? 0);
       if (totalPot > 0 && invested > 0) rake = Math.round(rakeAndFee * (invested / totalPot) * 1e6) / 1e6;
     }
 

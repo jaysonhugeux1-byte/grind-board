@@ -26,8 +26,8 @@ Seat 2: Hero (₮10.00 in chips)
 botBig: posts small blind ₮0.05
 Hero: posts big blind ₮0.10
 *** HOLE CARDS ***
-botBig: ALLIN ₮10.00
-Hero: ALLIN ₮10.00
+botBig: ALLIN ₮9.95
+Hero: ALLIN ₮9.90
 *** FLOP *** [2c 7d 9s]
 *** TURN *** [2c 7d 9s] [3h]
 *** RIVER *** [2c 7d 9s 3h] [4d]
@@ -66,8 +66,8 @@ botBig: posts small blind ₮0.05
 botMid: posts big blind ₮0.10
 *** HOLE CARDS ***
 Hero: ALLIN ₮10.00
-botBig: ALLIN ₮30.00
-botMid: ALLIN ₮30.00
+botBig: ALLIN ₮29.95
+botMid: ALLIN ₮29.90
 *** FLOP *** [2c 7d 9s]
 *** TURN *** [2c 7d 9s] [3h]
 *** RIVER *** [2c 7d 9s 3h] [4d]
@@ -127,7 +127,7 @@ T("les jetons d'un joueur couché comptent dans le pot mais pas dans les ayants 
 // LES CAS OÙ IL N'Y A RIEN À AJUSTER
 // ---------------------------------------------------------------------------
 T("une main sans tapis ne produit aucun ajustement",
-  computeHandEV(duel.replace(/ALLIN ₮10.00/g, "calls ₮10.00"), 10) === null);
+  computeHandEV(duel.replace(/: ALLIN ₮/g, ": calls ₮"), 10) === null);
 
 const riviere = duel
   .replace("botBig: ALLIN ₮10.00\nHero: ALLIN ₮10.00\n*** FLOP ***", "*** FLOP ***")

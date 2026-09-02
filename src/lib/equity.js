@@ -175,7 +175,7 @@ export function calcEquity(heroCards, villainsCards, knownBoard) {
  *
  * On reprend la sémantique exacte du format CoinPoker, la même que celle du
  * lecteur de mains :
- *   — « raises A to B » et « ALLIN B » donnent le TOTAL de la rue, pas l'ajout ;
+ *   — « raises A to B » donne le TOTAL de la rue ; « ALLIN B » donne l'AJOUT ;
  *   — « RETURN A » rend une mise non payée et se retranche ;
  *   — l'ante ne compte pas dans le cumul de rue, n'étant pas relançable.
  *
@@ -204,7 +204,8 @@ function contributionsCoinPoker(lignes) {
     } else if ((a = action.match(/^raises ₮[\d.]+ to ₮([\d.]+)/))) {
       const to = parseFloat(a[1]); ajouter(to - cumul); rue.set(joueur, to);
     } else if ((a = action.match(/^ALLIN ₮([\d.]+)/))) {
-      const to = parseFloat(a[1]); ajouter(to - cumul); rue.set(joueur, to);
+      // Montant AJOUTÉ, pas total de rue — voir la note dans parse.js.
+      const v = parseFloat(a[1]); ajouter(v); rue.set(joueur, cumul + v);
     } else if ((a = action.match(/^RETURN ₮([\d.]+)/))) {
       const v = parseFloat(a[1]); ajouter(-v); rue.set(joueur, cumul - v);
     } else if (/^folds/.test(action)) {
@@ -255,9 +256,17 @@ export function computeHandEV(raw, heroInvested) {
   }
   if (knownLen === 5) return null; // tapis à la river : plus rien d'aléatoire
 
-  const potMatch = raw.match(/Total pot ₮([\d.]+) \| Rake ₮([\d.]+) \| Splash Fee ₮([\d.]+)/);
+  // LE « SPLASH FEE » EST FACULTATIF. L'exiger faisait échouer la
+  // correspondance sur chaque main des exports actuels, qui écrivent seulement
+  // « Total pot ₮0.79 | Rake ₮0.03 » — et le calcul abandonnait ici. L'EV
+  // valait alors exactement le résultat réel, sur toutes les mains, ce qui
+  // ressemblait à une EV calculée et n'en était pas une.
+  const potMatch = raw.match(
+    /Total pot ₮([\d.]+) \| Rake ₮([\d.]+)(?: \| Splash Fee ₮([\d.]+))?/,
+  );
   if (!potMatch) return null;
-  const potTotal = parseFloat(potMatch[1]) - parseFloat(potMatch[2]) - parseFloat(potMatch[3]);
+  const potTotal =
+    parseFloat(potMatch[1]) - parseFloat(potMatch[2]) - parseFloat(potMatch[3] ?? 0);
   if (!Number.isFinite(potTotal) || !Number.isFinite(heroInvested)) return null;
 
   const hero = toInts(heroShow.cards.trim().split(/\s+/));
@@ -300,8 +309,14 @@ export function computeHandEV(raw, heroInvested) {
   // que le format écrirait autrement fausserait le découpage sans prévenir ;
   // mieux vaut alors l'ancien calcul, exact en tête-à-tête, que des pots faux.
   // La tolérance couvre les arrondis au centime.
+  // Le splash n'est la contribution d'aucun joueur : il tombe du site dans le
+  // pot. L'oublier ferait échouer le rapprochement sur toutes les mains qui en
+  // portent un, et renverrait au calcul de repli — le pot latéral redeviendrait
+  // alors faux là où il compte.
+  const splash = raw.match(/^SPLASH dropped ₮([\d.]+)/m);
+  const apporte = splash ? parseFloat(splash[1]) : 0;
   const potAnnonce = parseFloat(potMatch[1]);
-  if (!potsBruts.length || Math.abs(misTotal - potAnnonce) > 0.02) {
+  if (!potsBruts.length || Math.abs(misTotal + apporte - potAnnonce) > 0.02) {
     const equite = equityOf(cartes, board, 0, heroShow.cards + "|" + board.join("-"));
     if (!Number.isFinite(equite)) return null;
     return Math.round((equite * potTotal - heroInvested) * 1e6) / 1e6;
