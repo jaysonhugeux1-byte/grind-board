@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor, Waypoints, TrendingUp, Shield, Scale, Layers } from "lucide-react";
+import { LayoutDashboard, Upload, ListOrdered, Wallet, LogOut, Spade, Grid3x3, BarChart3, Flame, Users, LineChart, Search, Settings as SettingsIcon, Zap, Monitor, Waypoints, TrendingUp, Shield, Scale, Layers, Target } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useMode } from "../contexts/ModeContext";
 import { useProfil } from "../contexts/ProfilContext";
@@ -12,32 +12,61 @@ import { DataProvider } from "../contexts/DataContext";
 // `modes` indique dans quels modes l'entrée est visible. Le cash game et le
 // spin ne partagent pas les mêmes analyses : le bb/100 n'a aucun sens en
 // tournoi, et les ranges d'ouverture y cèdent la place au push/fold.
+// LES ENTRÉES SONT GROUPÉES, et c'est le cash qui l'imposait : dix-sept liens
+// d'affilée, sans respiration, contre dix en spin. Une liste plate de cette
+// longueur ne se lit plus — on la parcourt, on ne la comprend pas, et les
+// écrans du bas ne s'ouvrent jamais.
+//
+// Les groupes répondent à une question chacun, dans l'ordre où on se les pose :
+// ce que j'ai fait, comment j'ai joué, contre qui, combien je peux miser.
+// `groupe: null` reste hors section — le tableau de bord et l'import ouvrent la
+// barre, ils n'ont pas besoin d'être annoncés.
 const NAV_ITEMS = [
-  { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true, modes: ["cash", "spin"] },
-  { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"] },
-  { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"] },
-  { to: "/adversaires", label: "Adversaires", icon: Users, modes: ["cash", "spin"] },
+  { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true, modes: ["cash", "spin"], groupe: null },
+  { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"], groupe: null },
+  { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"], groupe: null },
+
+  { to: "/fuites", label: "Chercheur de fuites", icon: Target, modes: ["spin"], groupe: "Mon jeu" },
+  { to: "/fuites-cash", label: "Chercheur de fuites", icon: Target, modes: ["cash"], groupe: "Mon jeu" },
+  { to: "/ev", label: "EV par position", icon: BarChart3, modes: ["cash"], groupe: "Mon jeu" },
+  { to: "/stats-hero", label: "Mes spots", icon: Layers, modes: ["cash"], groupe: "Mon jeu" },
+  { to: "/ranges", label: "Ranges", icon: Grid3x3, modes: ["cash"], groupe: "Mon jeu" },
+  { to: "/statistics", label: "Statistiques", icon: LineChart, modes: ["cash"], groupe: "Mon jeu" },
+
+  { to: "/adversaires", label: "Adversaires", icon: Users, modes: ["cash", "spin"], groupe: "En face" },
+  { to: "/table-tendencies", label: "Tendances table", icon: Users, modes: ["cash"], groupe: "En face" },
+
+  { to: "/search", label: "Recherche de mains", icon: Search, modes: ["cash"], groupe: "Revoir" },
+  { to: "/top-hands", label: "Grosses mains", icon: Flame, modes: ["cash"], groupe: "Revoir" },
+  { to: "/sessions", label: "Sessions", icon: ListOrdered, modes: ["cash"], groupe: "Revoir" },
+
   // « option » marque une entree reservee a une formule : elle reste visible et
   // porte un point tant qu'elle n'est pas accessible.
-  { to: "/solveur", label: "Solveur", icon: Scale, modes: ["cash", "spin"], option: "solveur" },
-  { to: "/carte-mentale", label: "Carte mentale", icon: Waypoints, modes: ["cash", "spin"] },
-  { to: "/projection", label: "Projection", icon: TrendingUp, modes: ["cash", "spin"] },
-  { to: "/gestion-bankroll", label: "Gestion de bankroll", icon: Shield, modes: ["cash", "spin"] },
-  { to: "/sessions", label: "Sessions", icon: ListOrdered, modes: ["cash"] },
-  { to: "/ranges", label: "Ranges", icon: Grid3x3, modes: ["cash"] },
-  // L'équivalent spin des ranges, mais il fait plus : il JUGE, parce qu'à
-  // tapis court il existe une référence calculable — ce qui n'est pas le cas
-  // du cash game profond.
-  { to: "/fuites", label: "Chercheur de fuites", icon: Grid3x3, modes: ["spin"] },
-  { to: "/ev", label: "EV par position", icon: BarChart3, modes: ["cash"] },
-  { to: "/statistics", label: "Statistiques", icon: LineChart, modes: ["cash"] },
-  { to: "/stats-hero", label: "Mes spots", icon: Layers, modes: ["cash"] },
-  { to: "/search", label: "Recherche de mains", icon: Search, modes: ["cash"] },
-  { to: "/top-hands", label: "Grosses mains", icon: Flame, modes: ["cash"] },
-  { to: "/table-tendencies", label: "Tendances table", icon: Users, modes: ["cash"] },
-  { to: "/bankroll", label: "Bankroll", icon: Wallet, modes: ["cash", "spin"] },
-  { to: "/settings", label: "Paramètres", icon: SettingsIcon, modes: ["cash", "spin"] },
+  { to: "/solveur", label: "Solveur", icon: Scale, modes: ["cash", "spin"], option: "solveur", groupe: "Travailler" },
+  { to: "/carte-mentale", label: "Carte mentale", icon: Waypoints, modes: ["cash", "spin"], groupe: "Travailler" },
+
+  { to: "/bankroll", label: "Bankroll", icon: Wallet, modes: ["cash", "spin"], groupe: "Argent" },
+  { to: "/gestion-bankroll", label: "Gestion de bankroll", icon: Shield, modes: ["cash", "spin"], groupe: "Argent" },
+  { to: "/projection", label: "Projection", icon: TrendingUp, modes: ["cash", "spin"], groupe: "Argent" },
+
+  { to: "/settings", label: "Paramètres", icon: SettingsIcon, modes: ["cash", "spin"], groupe: null },
 ];
+
+/**
+ * Découpe les entrées en sections, dans l'ordre où elles apparaissent.
+ *
+ * Un groupe dont toutes les entrées sont masquées dans ce mode DISPARAÎT, titre
+ * compris : un intitulé seul, sans rien dessous, se lit comme un écran cassé.
+ */
+export function enSections(items) {
+  const sections = [];
+  for (const item of items) {
+    const derniere = sections[sections.length - 1];
+    if (derniere && derniere.titre === (item.groupe ?? null)) derniere.items.push(item);
+    else sections.push({ titre: item.groupe ?? null, items: [item] });
+  }
+  return sections.filter((s) => s.items.length);
+}
 
 export default function Layout() {
   const { user, signOutUser } = useAuth();
@@ -91,7 +120,10 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav">
-          {items.map((item) => (
+          {enSections(items).map((section) => (
+            <div className="nav-section" key={section.titre ?? "sans-titre"}>
+              {section.titre && <p className="nav-section-titre">{section.titre}</p>}
+              {section.items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -107,7 +139,9 @@ export default function Layout() {
               {item.option && !aAcces(item.option) && (
                 <span className="mode-lock" title="Option à activer">•</span>
               )}
-            </NavLink>
+              </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 

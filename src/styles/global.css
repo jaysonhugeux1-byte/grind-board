@@ -1671,3 +1671,29 @@ tr.cliquable:hover { background: var(--surface-2); }
    raison. Le résultat : 38 px moins 28 de padding, une image de 8 px de large.
    Le nom est désormais celui du composant, qui ne désigne que lui. */
 .brand-mark.marque-salle{ border:1px solid; font-weight:700; }
+
+/* ---------------------------------------------------------------------------
+   Barre latérale groupée, et le chercheur de fuites du cash
+   --------------------------------------------------------------------------- */
+
+/* LE CASH A DIX-SEPT ENTRÉES, contre dix en spin. Une liste plate de cette
+   longueur ne se lit plus : on la parcourt, et les écrans du bas ne s'ouvrent
+   jamais. Les titres de section coûtent quelques pixels et rendent la barre
+   consultable. */
+.nav-section { display: flex; flex-direction: column; gap: 2px; }
+.nav-section + .nav-section { margin-top: 12px; }
+.nav-section-titre {
+  margin: 0 0 4px 10px;
+  font-size: 10.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: .75;
+}
+
+/* Un tableau large ne doit jamais élargir la page : il défile dans son propre
+   cadre. Sans ça, une colonne de trop pousse toute l'interface de côté. */
+.enrobage-table { overflow-x: auto; }
+
+.liste-motifs { margin: 10px 0 0; padding-left: 20px; }
+.liste-motifs li { margin-bottom: 6px; color: var(--text-muted); font-size: 13.5px; }

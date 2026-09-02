@@ -24,6 +24,7 @@ import Bienvenue from "./components/Bienvenue";
 import { useProfil } from "./contexts/ProfilContext";
 import { useBase } from "./contexts/BaseContext";
 import LeakFinderSpin from "./pages/LeakFinderSpin";
+import LeakFinderCash from "./pages/LeakFinderCash";
 import SpinImport from "./pages/SpinImport";
 import LecteurDirect from "./pages/LecteurDirect";
 import Adversaires from "./pages/Adversaires";
@@ -144,6 +145,7 @@ export default function App() {
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/ranges" element={<Ranges />} />
         <Route path="/fuites" element={<LeakFinderSpin />} />
+        <Route path="/fuites-cash" element={<LeakFinderCash />} />
         <Route path="/ev" element={<EvByPosition />} />
         <Route path="/top-hands" element={<TopHands />} />
         <Route path="/table-tendencies" element={<TableTendencies />} />
