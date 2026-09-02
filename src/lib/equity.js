@@ -6,6 +6,7 @@
 // probabilité de chaque board restant. C'est la seule façon de séparer le jeu de
 // la chance sur un échantillon court.
 import { evaluate7, cardToInt } from "./evaluator.js";
+import { buildPots } from "./pots.js";
 
 export { cardToInt };
 
@@ -169,6 +170,50 @@ export function calcEquity(heroCards, villainsCards, knownBoard) {
   return equityOf([hero, ...villains], board, 0, hero.join("-") + "|" + board.join("-"));
 }
 
+/**
+ * Ce que chaque joueur a mis au pot, et qui reste debout à l'abattage.
+ *
+ * On reprend la sémantique exacte du format CoinPoker, la même que celle du
+ * lecteur de mains :
+ *   — « raises A to B » et « ALLIN B » donnent le TOTAL de la rue, pas l'ajout ;
+ *   — « RETURN A » rend une mise non payée et se retranche ;
+ *   — l'ante ne compte pas dans le cumul de rue, n'étant pas relançable.
+ *
+ * Les joueurs couchés sont gardés : leurs jetons fixent la taille des pots,
+ * même s'ils n'ont plus le droit de les gagner.
+ */
+function contributionsCoinPoker(lignes) {
+  const total = new Map();
+  const rue = new Map();
+  const couches = new Set();
+
+  for (const ligne of lignes) {
+    if (/^\*\*\* (FLOP|TURN|RIVER) \*\*\*/.test(ligne)) { rue.clear(); continue; }
+    const m = ligne.match(/^(\S+): (.+)$/);
+    if (!m) continue;
+    const [, joueur, action] = m;
+    const cumul = rue.get(joueur) ?? 0;
+    const ajouter = (v) => total.set(joueur, (total.get(joueur) ?? 0) + v);
+    let a;
+    if ((a = action.match(/^posts (?:small|big) blind ₮([\d.]+)/))) {
+      const v = parseFloat(a[1]); ajouter(v); rue.set(joueur, cumul + v);
+    } else if ((a = action.match(/^posts ante ₮([\d.]+)/))) {
+      ajouter(parseFloat(a[1]));
+    } else if ((a = action.match(/^(?:calls|bets) ₮([\d.]+)/))) {
+      const v = parseFloat(a[1]); ajouter(v); rue.set(joueur, cumul + v);
+    } else if ((a = action.match(/^raises ₮[\d.]+ to ₮([\d.]+)/))) {
+      const to = parseFloat(a[1]); ajouter(to - cumul); rue.set(joueur, to);
+    } else if ((a = action.match(/^ALLIN ₮([\d.]+)/))) {
+      const to = parseFloat(a[1]); ajouter(to - cumul); rue.set(joueur, to);
+    } else if ((a = action.match(/^RETURN ₮([\d.]+)/))) {
+      const v = parseFloat(a[1]); ajouter(-v); rue.set(joueur, cumul - v);
+    } else if (/^folds/.test(action)) {
+      couches.add(joueur);
+    }
+  }
+  return { total, couches };
+}
+
 export function computeHandEV(raw, heroInvested) {
   if (!raw || !/: ALLIN ₮/.test(raw)) return null;
 
@@ -222,7 +267,57 @@ export function computeHandEV(raw, heroInvested) {
     return null;
   }
 
-  const equity = equityOf([hero, ...villains], board, 0, heroShow.cards + "|" + board.join("-"));
-  if (!Number.isFinite(equity)) return null;
-  return Math.round((equity * potTotal - heroInvested) * 1e6) / 1e6;
+  // LES POTS LATÉRAUX DÉCIDENT DE CE QUE HERO PEUT GAGNER.
+  //
+  // Le calcul faisait « équité × pot entier ». Sur un tapis à trois où Hero est
+  // le plus court, cela lui crédite une part du pot latéral qu'il ne dispute
+  // pas : mesuré à 17,66 pour une valeur réelle de 1,85, soit neuf fois trop.
+  // L'erreur ne se voyait pas en tête-à-tête, où il n'existe qu'un seul pot —
+  // et rien ne la cherchait, le cash game n'ayant aucun test d'EV.
+  const cartes = [hero, ...villains];
+  const nomsMontrant = [heroShow.player, ...villainShows.map((v) => v.player)];
+  const { total, couches } = contributionsCoinPoker(lines);
+
+  // Les joueurs sont ordonnés en mettant d'abord ceux qui abattent : les
+  // indices rendus par le découpage désignent alors directement une main
+  // connue, sans table de correspondance.
+  const ordre = [
+    ...nomsMontrant,
+    ...[...total.keys()].filter((n) => !nomsMontrant.includes(n)),
+  ];
+  const joueurs = ordre.map((nom) => ({
+    effective: Math.round((total.get(nom) ?? 0) * 1e6) / 1e6,
+    // Couché, ou simplement absent de l'abattage : dans les deux cas il ne peut
+    // rien gagner. On ne se fie donc pas au seul « folds », qu'un historique
+    // tronqué pourrait omettre.
+    folded: couches.has(nom) || !nomsMontrant.includes(nom),
+  }));
+
+  const potsBruts = buildPots(joueurs);
+  const misTotal = joueurs.reduce((somme, j) => somme + j.effective, 0);
+
+  // REPLI SI LES CONTRIBUTIONS NE RECONSTITUENT PAS LE POT ANNONCÉ. Une action
+  // que le format écrirait autrement fausserait le découpage sans prévenir ;
+  // mieux vaut alors l'ancien calcul, exact en tête-à-tête, que des pots faux.
+  // La tolérance couvre les arrondis au centime.
+  const potAnnonce = parseFloat(potMatch[1]);
+  if (!potsBruts.length || Math.abs(misTotal - potAnnonce) > 0.02) {
+    const equite = equityOf(cartes, board, 0, heroShow.cards + "|" + board.join("-"));
+    if (!Number.isFinite(equite)) return null;
+    return Math.round((equite * potTotal - heroInvested) * 1e6) / 1e6;
+  }
+
+  // Le rake se répartit au prorata de chaque pot : il est prélevé sur le total,
+  // pas sur un pot en particulier.
+  const partNette = potTotal / potAnnonce;
+  const pots = potsBruts
+    .filter((pot) => pot.eligible.every((i) => i < cartes.length))
+    .map((pot) => ({ amount: pot.amount * partNette, eligible: pot.eligible }));
+  if (!pots.length) return null;
+
+  const parts = expectedPotShares(
+    cartes, board, pots, heroShow.cards + "|" + board.join("-"),
+  );
+  if (!Number.isFinite(parts[0])) return null;
+  return Math.round((parts[0] - heroInvested) * 1e6) / 1e6;
 }
