@@ -9,7 +9,7 @@
 // Ces tests vérifient donc surtout ce que le module REFUSE de faire.
 import {
   observation, siegesDeLaMain, observationDeLaMain, relierIdentites, appliquerIdentites,
-  TOLERANCE_MS,
+  placesDepuisHero, relierParPlaces, TOLERANCE_MS,
 } from "../src/lib/identitesCash.js";
 
 let ok = 0, ko = 0;
@@ -174,6 +174,108 @@ T("la blinde est l'unité par défaut",
 T("un tapis en jetons pris pour des blindes est REFUSÉ",
   relierIdentites([m1], [observation("200588", T0, [{ siege: 2, nom: "X", tapis: 3.5 }])]).liens.size === 0,
   "3,5 BB au lieu de 175 : le garde-fou fait son travail");
+
+// ---------------------------------------------------------------------------
+// L'ALIGNEMENT PAR LES PLACES — la méthode que le lecteur peut réellement
+// alimenter.
+//
+// L'écran ne montre AUCUN numéro de siège : le client dessine des joueurs
+// autour d'un ovale. Le lecteur ne peut relever qu'une place. Hero sert d'ancre
+// — toujours en bas, et l'historique dit à quel siège il est assis — mais reste
+// à savoir dans quel sens le client tourne.
+//
+// On ne le devine pas : on essaie les deux, et LES TAPIS TRANCHENT.
+// ---------------------------------------------------------------------------
+const SIX = [
+  { siege: 4, alias: "Hero", tapis: 2.0 },
+  { siege: 5, alias: "aaaaaaaa", tapis: 1.94 },   // place 1 dans le sens direct
+  { siege: 6, alias: "bbbbbbbb", tapis: 2.0 },
+  { siege: 1, alias: "cccccccc", tapis: 4.91 },
+  { siege: 2, alias: "dddddddd", tapis: 2.01 },
+  { siege: 3, alias: "eeeeeeee", tapis: 1.99 },   // place 5, donc voisin precedent
+];
+const m6 = main("h6", T0, "200588", SIX);
+
+T("les sièges se réordonnent en partant de Hero",
+  placesDepuisHero(siegesDeLaMain(m6)).map((s) => s.alias).join(",")
+  === "Hero,aaaaaaaa,bbbbbbbb,cccccccc,dddddddd,eeeeeeee",
+  JSON.stringify(placesDepuisHero(siegesDeLaMain(m6)).map((s) => s.siege)));
+
+// Sens direct : la place 1 vaut le siège suivant celui de Hero.
+const direct = observation("200588", T0, [
+  { place: 1, nom: "Un", tapis: 1.94 },
+  { place: 2, nom: "Deux", tapis: 2.0 },
+  { place: 3, nom: "Trois", tapis: 4.91 },
+  { place: 4, nom: "Quatre", tapis: 2.01 },
+  { place: 5, nom: "Cinq", tapis: 1.99 },
+], { unite: "jetons" });
+
+const rd = relierParPlaces([m6], [direct]);
+T("LE SENS SE DÉDUIT DES TAPIS, sans être configuré",
+  rd.liens.get("h6:cccccccc") === "Trois",
+  JSON.stringify([...rd.liens]));
+T("et les cinq adversaires sont reliés", rd.liens.size === 5);
+
+// Sens inverse : les mêmes tapis, mais lus dans l'autre sens autour de la table.
+const inverse = observation("200588", T0, [
+  { place: 5, nom: "Un", tapis: 1.94 },
+  { place: 4, nom: "Deux", tapis: 2.0 },
+  { place: 3, nom: "Trois", tapis: 4.91 },
+  { place: 2, nom: "Quatre", tapis: 2.01 },
+  { place: 1, nom: "Cinq", tapis: 1.99 },
+], { unite: "jetons" });
+T("l'autre sens se reconnaît aussi",
+  relierParPlaces([m6], [inverse]).liens.get("h6:cccccccc") === "Trois");
+
+// AUCUN SENS NE CONCORDE : on refuse, plutôt que de prendre le moins mauvais.
+const faux = observation("200588", T0, [
+  { place: 1, nom: "X", tapis: 99 }, { place: 2, nom: "Y", tapis: 98 },
+  { place: 3, nom: "Z", tapis: 97 }, { place: 4, nom: "W", tapis: 96 },
+  { place: 5, nom: "V", tapis: 95 },
+], { unite: "jetons" });
+const rf = relierParPlaces([m6], [faux]);
+T("des tapis qui ne concordent nulle part produisent un REFUS",
+  rf.liens.size === 0 && rf.refus.some((r) => /aucun sens/.test(r.motif)),
+  JSON.stringify(rf.refus));
+
+// LES DEUX SENS CONCORDENT : c'est le cas piège. Des tapis symétriques rendent
+// l'alignement indécidable, et choisir reviendrait à tirer à pile ou face — une
+// fois sur deux on verserait les mains d'un joueur dans la fiche d'un autre.
+const SYM = [
+  { siege: 1, alias: "Hero", tapis: 2.0 },
+  { siege: 2, alias: "pppppppp", tapis: 5.0 },
+  { siege: 3, alias: "qqqqqqqq", tapis: 3.0 },
+  { siege: 4, alias: "rrrrrrrr", tapis: 5.0 },
+];
+const mSym = main("hs", T0, "200588", SYM);
+const symetrique = observation("200588", T0, [
+  { place: 1, nom: "A", tapis: 5.0 },
+  { place: 2, nom: "B", tapis: 3.0 },
+  { place: 3, nom: "C", tapis: 5.0 },
+], { unite: "jetons" });
+const rs = relierParPlaces([mSym], [symetrique]);
+T("DES TAPIS SYMÉTRIQUES PRODUISENT UN REFUS",
+  rs.liens.size === 0 && rs.refus.some((r) => /les deux sens concordent/.test(r.motif)),
+  JSON.stringify(rs.refus));
+
+// Une place manquante à l'écran empêche l'alignement : on ne comble pas.
+const incomplete = observation("200588", T0, [
+  { place: 1, nom: "Un", tapis: 1.94 }, { place: 2, nom: "Deux", tapis: 2.0 },
+], { unite: "jetons" });
+T("une place non observée empêche l'alignement",
+  relierParPlaces([m6], [incomplete]).liens.size === 0);
+
+// La conversion en blindes marche aussi par places.
+const enBB = observation("200588", T0, [
+  { place: 1, nom: "Un", tapis: 97 },
+  { place: 2, nom: "Deux", tapis: 100 },
+  { place: 3, nom: "Trois", tapis: 245.5 },
+  { place: 4, nom: "Quatre", tapis: 100.5 },
+  { place: 5, nom: "Cinq", tapis: 99.5 },
+]);
+T("les tapis en blindes sont convertis ici aussi",
+  relierParPlaces([m6], [enBB]).liens.size === 5,
+  "1,94 jeton à 0,02 de blinde fait bien 97 BB");
 
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

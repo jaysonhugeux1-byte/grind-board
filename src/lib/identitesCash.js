@@ -80,9 +80,20 @@ export function observation(table, ts, sieges = [], { unite = "bb" } = {}) {
     // motif de refus dirait « tapis incompatibles », ce qui enverrait chercher
     // le defaut au mauvais endroit.
     unite: unite === "jetons" ? "jetons" : "bb",
+    // UN SIÈGE OU UNE PLACE, l'un des deux suffit. Le numéro de siège vient de
+    // salles qui l'affichent ; la place vient de celles qui dessinent seulement
+    // des joueurs autour d'un ovale — CoinPoker en fait partie. Exiger le siège
+    // faisait silencieusement disparaître toutes les observations du lecteur,
+    // et l'alignement annonçait « place non observée » sans qu'on comprenne
+    // pourquoi.
     sieges: sieges
-      .filter((s) => s && s.nom && Number.isFinite(s.siege))
-      .map((s) => ({ siege: Number(s.siege), nom: String(s.nom), tapis: nombre(s.tapis) })),
+      .filter((s) => s && s.nom && (Number.isFinite(s.siege) || Number.isFinite(s.place)))
+      .map((s) => ({
+        ...(Number.isFinite(s.siege) ? { siege: Number(s.siege) } : {}),
+        ...(Number.isFinite(s.place) ? { place: Number(s.place) } : {}),
+        nom: String(s.nom),
+        tapis: nombre(s.tapis),
+      })),
   };
 }
 
@@ -137,6 +148,114 @@ export function observationDeLaMain(main, observations, { toleranceMs = TOLERANC
     return { obs: null, motif: "deux observations aussi proches : impossible de trancher" };
   }
   return { obs: proches[0].o, motif: null, ecart: proches[0].ecart };
+}
+
+// ---------------------------------------------------------------------------
+// L'ALIGNEMENT PAR LES PLACES, quand l'écran ne donne pas de numéro de siège
+// ---------------------------------------------------------------------------
+//
+// L'historique numérote les sièges — « Seat 3 » — mais le client, lui, ne les
+// affiche pas : il dessine des joueurs autour d'un ovale. Le lecteur ne peut
+// donc relever qu'une PLACE À L'ÉCRAN, pas un numéro.
+//
+// Hero sert d'ancre : il est toujours en bas, et l'historique dit à quel siège
+// il est assis. En partant de lui et en tournant, les deux listes décrivent les
+// mêmes joueurs — reste à savoir DANS QUEL SENS le client tourne.
+//
+// ON NE LE DEVINE PAS, ON LE VÉRIFIE. Les deux sens sont essayés, et les TAPIS
+// tranchent : le bon alignement les fait tous concorder, le mauvais non. Si les
+// deux concordent — ce qui suppose des tapis symétriques, donc une coïncidence
+// rare — on refuse, parce qu'on ne saurait pas lequel est juste.
+//
+// Cette méthode a un avantage inattendu : elle se passe complètement du numéro
+// de siège, du sens de rotation du client, et de la façon dont il numérote. Il
+// n'y a rien à configurer et rien à se tromper.
+
+/** Les sièges d'une main, réordonnés en partant de Hero et en tournant. */
+export function placesDepuisHero(sieges) {
+  const tries = [...sieges].sort((a, b) => a.siege - b.siege);
+  const iHero = tries.findIndex((s) => s.alias === "Hero");
+  if (iHero < 0) return null;
+  return [...tries.slice(iHero), ...tries.slice(0, iHero)];
+}
+
+/**
+ * Essaie les deux sens et rend celui que les tapis confirment.
+ *
+ * @param places  [{ place, nom, tapis }] relevé à l'écran, place 0 = Hero
+ */
+export function alignerParPlaces(main, obs, { exigerTapis = true } = {}) {
+  const ordre = placesDepuisHero(siegesDeLaMain(main));
+  if (!ordre) return { paires: null, motif: "Hero introuvable dans la main" };
+
+  const parPlace = new Map(obs.sieges.map((s) => [s.place ?? s.siege, s]));
+  const adverses = ordre.slice(1);
+  const n = adverses.length;
+
+  const essayer = (sens) => {
+    const paires = [];
+    for (let i = 0; i < n; i++) {
+      // Sens direct : la place 1 est le voisin suivant de Hero. Sens inverse :
+      // c'est le précédent, donc la dernière place.
+      const place = sens === 1 ? i + 1 : n - i;
+      const vu = parPlace.get(place);
+      if (!vu) return { ok: false, motif: `place ${place} non observée` };
+
+      const attendu = obs.unite === "bb"
+        ? (main.bb > 0 ? adverses[i].tapis / main.bb : null)
+        : adverses[i].tapis;
+      const { ok, verifie } = tapisCompatibles(attendu, vu.tapis);
+      if (!ok) return { ok: false, motif: "tapis discordants" };
+      if (exigerTapis && !verifie) return { ok: false, motif: "tapis non relevé" };
+      paires.push({ alias: adverses[i].alias, nom: vu.nom });
+    }
+    return { ok: true, paires };
+  };
+
+  const direct = essayer(1);
+  const inverse = essayer(-1);
+
+  if (direct.ok && inverse.ok) {
+    // Les deux sens concordent : les tapis ne distinguent rien, donc rien ne
+    // dit lequel est juste. Choisir reviendrait à tirer à pile ou face, et une
+    // fois sur deux on verserait les mains d'un joueur dans la fiche d'un
+    // autre.
+    return { paires: null, motif: "les deux sens concordent : impossible de trancher" };
+  }
+  if (direct.ok) return { paires: direct.paires, sens: 1 };
+  if (inverse.ok) return { paires: inverse.paires, sens: -1 };
+  return { paires: null, motif: `aucun sens ne concorde (${direct.motif} / ${inverse.motif})` };
+}
+
+/**
+ * Le pont, version « places à l'écran ».
+ *
+ * Même contrat que `relierIdentites`, mais sans numéro de siège : c'est celui
+ * que le lecteur peut réellement alimenter.
+ */
+export function relierParPlaces(mains = [], observations = [], {
+  toleranceMs = TOLERANCE_MS,
+  exigerTapis = true,
+} = {}) {
+  const liens = new Map();
+  const refus = [];
+  let mainsReliees = 0;
+
+  for (const main of mains) {
+    const { obs, motif } = observationDeLaMain(main, observations, { toleranceMs });
+    if (!obs) { refus.push({ main: main?.id ?? null, motif }); continue; }
+
+    const { paires, motif: m2 } = alignerParPlaces(main, obs, { exigerTapis });
+    if (!paires) { refus.push({ main: main.id, motif: m2 }); continue; }
+
+    for (const { alias, nom } of paires) liens.set(`${main.id}:${alias}`, nom);
+    if (paires.length) mainsReliees++;
+  }
+
+  return {
+    liens, refus, mainsReliees, mainsTotales: mains.length,
+    tauxLiaison: mains.length ? (mainsReliees / mains.length) * 100 : null,
+  };
 }
 
 /**
