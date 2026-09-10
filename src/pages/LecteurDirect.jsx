@@ -13,10 +13,19 @@ import {
   deduireResultat, zonesAbsolues, zoneDansRegion, lireCartesTable,
 } from "../lib/tableReader";
 import { addSpinTournament, enregistrerMainsLecteur } from "../lib/supabaseData";
-import calibragePrepare from "../calibrages/betclic-4tables.json";
+import calibrageBetclic from "../calibrages/betclic-4tables.json";
 import { integrerImage, cloturerMain, mainExploitable, notation, evDeAbattage } from "../lib/mainEnDirect";
 import { observation, ajouterObservation } from "../lib/apprentissageAuto";
 import { listerAdversaires, trouverPseudo, styleAdversaire } from "../lib/adversaires";
+import { useMode } from "../contexts/ModeContext";
+import calibrageCoinPoker from "../calibrages/coinpoker-cash-6max.json";
+import { hudCash } from "../lib/hudCash";
+// `observation` est deja pris par l'apprentissage des signes : on renomme, sinon
+// l'un des deux ecraserait l'autre en silence.
+import { observation as observationTable } from "../lib/identitesCash";
+import { ajouterObservations } from "../lib/observationsTable";
+import { clesAdversaires, clesNoms } from "../lib/tableReader";
+import { observerPopulation } from "../lib/populationCash";
 
 const CLE_ZONES = "gl_lecteur_zones";
 const CLE_REGIONS = "gl_lecteur_regions";
@@ -219,6 +228,10 @@ export default function LecteurDirect() {
 
   const bureau = typeof window !== "undefined" && window.grandLivre?.estBureau;
 
+  // LE MODE DECIDE DE CE QUE LE LECTEUR ECRIT. En spin il tient des tournois ;
+  // en cash il n'y en a pas, et en creer depuis une table de cash remplirait la
+  // base de tournois qui n'ont jamais eu lieu — un degat silencieux et durable.
+  const { estCash } = useMode();
   const [tables, setTables] = useState([]);
   const [tableChoisie, setTableChoisie] = useState(null);
   // Un décalage par fenêtre, mémorisé sous son identifiant. Sert tant que les
@@ -256,6 +269,7 @@ export default function LecteurDirect() {
   // tant que les rangs ne sont pas appris. On la laisse débrayable.
   const [lireLesMains, setLireLesMains] = useState(() => lireLocal(CLE_MAINS, false));
   const [mainsLues, setMainsLues] = useState(0);
+  const [identitesVues, setIdentitesVues] = useState(0);
   // Ce que chaque table lit, tour par tour. Sans cette vue, un lecteur qui
   // n'enregistre rien ne dit pas POURQUOI — et c'est toujours la question.
   const [etatTables, setEtatTables] = useState([]);
@@ -281,6 +295,13 @@ export default function LecteurDirect() {
   // Signes vus mais non reconnus, en attente d'être nommés par l'historique.
   const observationsRef = useRef(lireLocal(CLE_OBSERVATIONS, []));
   const suivisRef = useRef(new Map());
+  // Les identites relevees pendant le tour en cours. Elles sont ecrites en
+  // stockage a la fin du tour, pas a chaque table : quatre tables feraient
+  // quatre ecritures par seconde pour la meme information.
+  const identitesRef = useRef([]);
+  // Le profil du pool, calcule une fois sur les mains deja importees. Le
+  // recalculer a chaque tour couterait plus cher que tout le reste du lecteur.
+  const populationRef = useRef(null);
   const boucleRef = useRef(null);
 
   useEffect(() => { localStorage.setItem(CLE_ZONES, JSON.stringify(zones)); }, [zones]);
@@ -381,15 +402,20 @@ export default function LecteurDirect() {
   // chiffre et du symbole qui s'y trouvent. Evite a l'utilisateur la partie la
   // plus ingrate — tracer quatre rectangles a la souris sur une image reduite.
   function chargerCalibragePrepare() {
+    // Chaque salle a sa table : charger celui de Betclic sur une table
+    // CoinPoker placerait toutes les zones a cote, et l'ecran n'afficherait que
+    // des lectures vides sans dire pourquoi.
+    const calibragePrepare = estCash ? calibrageCoinPoker : calibrageBetclic;
     setRegions(calibragePrepare.regions);
     setZones((z) => ({ ...z, ...calibragePrepare.zones }));
     setGabarits((g) => fusionnerGabarits(g, calibragePrepare.gabarits));
     setRegionActive(0);
     setModeCalibrage("zones");
+    const signes = calibragePrepare.gabarits.map((x) => x.signe).join(" ");
     setMessage(
-      `Calibrage chargé : ${calibragePrepare.regions.length} tables délimitées, ` +
-      `dotation et bouton Rejouer placés, signes ${calibragePrepare.gabarits.map((x) => x.signe).join(" ")} appris. ` +
-      `Il reste à placer « Fin : gain », tes tapis et le pot — le reste fonctionne déjà.`
+      `Calibrage ${calibragePrepare.nom} chargé : ${calibragePrepare.regions.length} table(s) délimitée(s)`
+      + (signes ? `, signes ${signes} appris` : "")
+      + `. ${calibragePrepare.note ?? ""}`
     );
     setErreur(null);
   }
@@ -510,6 +536,17 @@ export default function LecteurDirect() {
 
   // ---------------------------------------------------------------- surveillance
 
+  // Le pool sert au HUD : il se calcule sur les mains deja en base, une fois,
+  // et non a chaque photographie de l'ecran.
+  useEffect(() => {
+    if (!estCash) { populationRef.current = null; return; }
+    try {
+      populationRef.current = observerPopulation(hands ?? []).global;
+    } catch {
+      populationRef.current = null;
+    }
+  }, [estCash, hands]);
+
   const tick = useCallback(async () => {
     const depart = performance.now();
     try {
@@ -611,7 +648,56 @@ export default function LecteurDirect() {
 
           // Pastilles de l'affichage superposé : un adversaire reconnu, ses
           // chiffres posés au-dessus de son siège.
-          if (hudActif) {
+          // ------------------------------------------------ le releve d'identites
+          //
+          // C'EST LA RAISON D'ETRE DU LECTEUR EN CASH. L'export anonymise les
+          // adversaires ; l'ecran, lui, montre leurs vrais noms. On les releve
+          // ici pour que l'import puisse traduire les alias plus tard.
+          //
+          // La PLACE, pas le siege : l'ecran ne numerote pas les sieges. La
+          // place 1 est le voisin de Hero dans l'ordre du calibrage, et c'est
+          // l'alignement par les tapis qui retrouvera le sens.
+          if (estCash) {
+            const noms = clesNoms(zonesAbs);
+            const tapisCles = clesAdversaires(zonesAbs);
+            const sieges = [];
+            for (let k = 0; k < noms.length; k++) {
+              const nom = lu[noms[k]];
+              if (!nom || typeof nom !== "string") continue;
+              const tapis = lu[tapisCles[k]];
+              sieges.push({ place: k + 1, nom, tapis: Number.isFinite(tapis) ? tapis : null });
+            }
+            // L'identifiant de table se lit dans le titre : « NLH 1312456 ».
+            const idTable = String(lu.titre ?? capture.titre ?? "").match(/(\d{4,})/)?.[1];
+            if (idTable && sieges.length) {
+              identitesRef.current.push(observationTable(idTable, maintenant, sieges));
+            }
+          }
+
+          if (hudActif && estCash) {
+            // Le HUD du cash ne montre pas de fiches — il ne peut pas, les
+            // alias changent a chaque main. Il montre ce qui decide du coup.
+            const vue = hudCash({
+              pot: lu.pot,
+              aPayer: null,
+              tapisHero: lu.tapisHero,
+              tapisAdverses: clesAdversaires(zonesAbs).map((c) => lu[c]),
+              population: populationRef.current,
+            });
+            const ancre = versEcran(zonesAbs.tapisHero ?? { x: 0.45, y: 0.85, l: 0.1, h: 0.05 }, capture);
+            if (ancre) {
+              vue.pastilles.forEach((pa, k) => {
+                pastilles.push({
+                  nom: pa.titre,
+                  ton: pa.ton === "loss" ? "danger" : pa.ton === "win" ? "cible" : "",
+                  note: pa.detail,
+                  stats: [{ label: "", valeur: pa.valeur }],
+                  x: ancre.x,
+                  y: Math.max(0, ancre.y - 150 + k * 46),
+                });
+              });
+            }
+          } else if (hudActif) {
             for (const cleNom of ["nomAdversaire1", "nomAdversaire2"]) {
               const texteLu = lu[cleNom];
               if (!texteLu || !zonesAbs[cleNom]) continue;
@@ -645,7 +731,11 @@ export default function LecteurDirect() {
             }
           }
           suivis.set(cle, suivi);
-          if (tournoiTermine) nouvellesFiches.push(tournoiTermine);
+          // EN CASH, AUCUN TOURNOI. `integrerLecture` en deduit un des que les
+          // tapis bougent, parce que c'est son travail en spin. Le laisser
+          // remonter ici remplirait la base de tournois qui n'ont jamais eu
+          // lieu — et rien ne le signalerait.
+          if (!estCash && tournoiTermine) nouvellesFiches.push(tournoiTermine);
           if (i === regionActive) setLectureLive(lu);
           etats.push({
             table: capture.estTable ? capture.titre : `Table ${i + 1}`,
@@ -697,7 +787,8 @@ export default function LecteurDirect() {
       }
 
       setCadence({ duree: Math.round(performance.now() - depart), tables: captures.length });
-      if (mainsFinies.length) {
+      // Meme raison : `enregistrerMainsLecteur` ecrit dans les mains de SPIN.
+      if (!estCash && mainsFinies.length) {
         try {
           await enregistrerMainsLecteur(user.uid, mainsFinies);
           setMainsLues((n) => n + mainsFinies.length);
@@ -719,12 +810,19 @@ export default function LecteurDirect() {
         }
       }
 
+      // Les identites relevees pendant ce tour, ecrites en une fois.
+      if (identitesRef.current.length) {
+        ajouterObservations(identitesRef.current);
+        setIdentitesVues((n) => n + identitesRef.current.length);
+        identitesRef.current = [];
+      }
+
       setEtatTables(etats);
       if (hudActif) window.grandLivre.hudAfficher?.(pastilles);
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
-  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh, hudActif, pseudos, fiches, versEcran, lireLesMains, user]);
+  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh, hudActif, pseudos, fiches, versEcran, lireLesMains, user, estCash]);
 
   useEffect(() => {
     if (!surveillance) return undefined;
@@ -799,8 +897,12 @@ export default function LecteurDirect() {
               ))}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              <button className="btn-secondary" onClick={chargerCalibragePrepare} title={calibragePrepare.note}>
-                Charger le calibrage préparé
+              <button
+                className="btn-secondary"
+                onClick={chargerCalibragePrepare}
+                title={(estCash ? calibrageCoinPoker : calibrageBetclic).note}
+              >
+                Charger le calibrage {estCash ? "CoinPoker" : "Betclic"}
               </button>
               <button className="btn-primary" onClick={capturer} disabled={occupe || !tableChoisie}>
                 {occupe ? <Loader2 size={14} className="spin" /> : <Crosshair size={14} />} Capturer

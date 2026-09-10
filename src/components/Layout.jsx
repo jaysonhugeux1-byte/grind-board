@@ -24,7 +24,7 @@ import { DataProvider } from "../contexts/DataContext";
 const NAV_ITEMS = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true, modes: ["cash", "spin"], groupe: null },
   { to: "/import", label: "Importer", icon: Upload, modes: ["cash", "spin"], groupe: null },
-  { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["spin"], groupe: null },
+  { to: "/lecteur", label: "Lecteur en direct", icon: Monitor, modes: ["cash", "spin"], groupe: null },
 
   { to: "/fuites", label: "Chercheur de fuites", icon: Target, modes: ["spin"], groupe: "Mon jeu" },
   { to: "/fuites-cash", label: "Chercheur de fuites", icon: Target, modes: ["cash"], groupe: "Mon jeu" },

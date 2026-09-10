@@ -5,6 +5,8 @@ import { useData } from "../contexts/DataContext";
 import { parseCoinPokerText } from "../lib/parse";
 import { importHands } from "../lib/supabaseData";
 import { minimum, maximum } from "../lib/grandsTableaux";
+import { relierParPlaces, appliquerIdentites } from "../lib/identitesCash";
+import { lireObservations, etatObservations } from "../lib/observationsTable";
 import { PageHeader, fmtMoney, fmtDate } from "../components/ui";
 
 export default function Import() {
@@ -42,9 +44,33 @@ export default function Import() {
         setError("Aucune main reconnue dans ce fichier. Vérifie qu'il s'agit bien d'un export CoinPoker.");
         return;
       }
-      const newCount = parsed.filter((h) => !existingIds.has(h.id)).length;
-      const existingCount = parsed.length - newCount;
-      setPreview({ fileName: file.name, parsed, newCount, existingCount });
+      // LES VRAIS NOMS, SI LE LECTEUR LES A VUS.
+      //
+      // L'export anonymise chaque adversaire, avec un alias neuf a chaque main.
+      // Le lecteur, lui, a vu leurs noms a l'ecran pendant qu'on jouait. On
+      // rapproche les deux ici, avant l'envoi : les fiches d'adversaires se
+      // construiront alors sur des identites reelles.
+      //
+      // CE QUI NE SE RELIE PAS RESTE ANONYME. Une identite mal attribuee
+      // verserait les mains d'un joueur dans la fiche d'un autre, sans que rien
+      // ne le signale ; un alias intact, lui, sera simplement ecarte faute de
+      // volume.
+      const vues = lireObservations();
+      const lien = vues.length ? relierParPlaces(parsed, vues) : null;
+      const mains = lien ? appliquerIdentites(parsed, lien.liens) : parsed;
+
+      const newCount = mains.filter((h) => !existingIds.has(h.id)).length;
+      const existingCount = mains.length - newCount;
+      setPreview({
+        fileName: file.name,
+        parsed: mains,
+        newCount,
+        existingCount,
+        identites: lien
+          ? { reliees: lien.mainsReliees, total: lien.mainsTotales, taux: lien.tauxLiaison }
+          : null,
+        vues: etatObservations(),
+      });
     } catch (e) {
       console.error("Erreur lors de la lecture/analyse du fichier:", e);
       if (e.name === "NotFoundError") {
@@ -157,6 +183,29 @@ export default function Import() {
               <span className="win"><strong>{preview.newCount}</strong> nouvelle(s)</span>
               <span className="muted"><strong>{preview.existingCount}</strong> déjà présente(s)</span>
             </div>
+
+            {/* LE RAPPROCHEMENT DES IDENTITES, DIT FRANCHEMENT.
+                Un taux affiche vaut mieux qu'une base qu'on croit complete :
+                si le lecteur ne tournait pas, ou si les tapis n'ont pas
+                concorde, les adversaires resteront anonymes et il faut le
+                savoir avant de chercher pourquoi les fiches sont vides. */}
+            {preview.identites && (
+              <p className="dashboard-hint" style={{ marginTop: 10 }}>
+                <strong>{preview.identites.reliees}</strong> main(s) sur{" "}
+                {preview.identites.total} ont pu être reliées aux noms vus à table
+                {preview.identites.taux != null && ` (${preview.identites.taux.toFixed(0)} %)`}.
+                {preview.identites.reliees === 0
+                  && " Aucune : les adversaires resteront anonymes. Vérifie que le lecteur"
+                     + " tournait pendant la session, et sur les mêmes tables."}
+              </p>
+            )}
+            {!preview.identites && (
+              <p className="dashboard-hint" style={{ marginTop: 10 }}>
+                Aucun relevé du lecteur en mémoire : les adversaires resteront anonymes,
+                comme dans l'export. Lance le lecteur en direct pendant que tu joues pour
+                que leurs vrais noms soient rattachés à ces mains.
+              </p>
+            )}
 
             <label className="checkbox-row">
               <input type="checkbox" checked={forceUpdate} onChange={(e) => setForceUpdate(e.target.checked)} />
