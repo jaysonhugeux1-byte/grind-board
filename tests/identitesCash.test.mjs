@@ -1,0 +1,159 @@
+// Le pont entre les noms vus à table et les alias de l'export.
+//
+// LE DÉFAUT À EMPÊCHER N'EST PAS L'ABSENCE DE LIEN, C'EST LE LIEN FAUX. Une
+// identité mal attribuée ne plante pas et ne s'affiche pas en rouge : elle
+// verse les mains d'un joueur dans la fiche d'un autre, et la fiche paraît
+// d'autant plus solide qu'elle contient plus de mains. On ne s'en aperçoit
+// jamais, et on joue contre un portrait faux.
+//
+// Ces tests vérifient donc surtout ce que le module REFUSE de faire.
+import {
+  observation, siegesDeLaMain, observationDeLaMain, relierIdentites, appliquerIdentites,
+  TOLERANCE_MS,
+} from "../src/lib/identitesCash.js";
+
+let ok = 0, ko = 0;
+const T = (n, c, d = "") => {
+  if (c) { ok++; console.log("OK    " + n); }
+  else { ko++; console.log("FAIL  " + n + (d ? "  — " + d : "")); }
+};
+
+const T0 = Date.UTC(2026, 8, 2, 7, 50, 33);
+
+const main = (id, ts, table, sieges) => ({
+  id, ts, table, bb: 0.02,
+  villains: sieges.filter((s) => s.alias !== "Hero").map((s) => ({ name: s.alias, vpip: true, pfr: false })),
+  raw: `CoinPoker Hand #${id}: NLH (₮0.01/₮0.02) 2026/09/02 07:50:33 CEST
+Table '${table}' 6-max Seat #3 is the button
+${sieges.map((s) => `Seat ${s.siege}: ${s.alias} (₮${s.tapis} in chips)`).join("\n")}
+*** HOLE CARDS ***
+Dealt to Hero [8d 2s]
+${sieges.filter((s) => s.alias !== "Hero").map((s) => `${s.alias}: folds`).join("\n")}
+*** SUMMARY ***
+Total pot ₮0.03 | Rake ₮0.00
+Board [ ]`,
+});
+
+const SIEGES = [
+  { siege: 1, alias: "Hero", tapis: 2 },
+  { siege: 2, alias: "eeae271a", tapis: 3.5 },
+  { siege: 3, alias: "0db33b31", tapis: 1.8 },
+];
+
+// ---------------------------------------------------------------------------
+// LA LECTURE DES SIÈGES
+// ---------------------------------------------------------------------------
+const m1 = main("h1", T0, "200588", SIEGES);
+T("les sièges se relisent dans le texte brut", siegesDeLaMain(m1).length === 3);
+T("avec numéro, alias et tapis",
+  siegesDeLaMain(m1)[1].siege === 2 && siegesDeLaMain(m1)[1].alias === "eeae271a"
+  && siegesDeLaMain(m1)[1].tapis === 3.5,
+  JSON.stringify(siegesDeLaMain(m1)[1]));
+
+// ---------------------------------------------------------------------------
+// LE CAS QUI MARCHE
+// ---------------------------------------------------------------------------
+const vue = observation("200588", T0 + 2000, [
+  { siege: 2, nom: "PokerPaul", tapis: 3.5 },
+  { siege: 3, nom: "Mireille", tapis: 1.8 },
+]);
+
+const bon = relierIdentites([m1], [vue]);
+T("les deux adversaires sont reliés", bon.liens.size === 2, JSON.stringify([...bon.liens]));
+T("chacun à son vrai nom",
+  bon.liens.get("h1:eeae271a") === "PokerPaul" && bon.liens.get("h1:0db33b31") === "Mireille");
+T("HERO N'EST PAS RELIÉ", ![...bon.liens.keys()].some((k) => k.endsWith(":Hero")),
+  "il se connaît, et lui donner une fiche d'adversaire n'a aucun sens");
+T("le taux de liaison est rendu", bon.tauxLiaison === 100, String(bon.tauxLiaison));
+
+// ---------------------------------------------------------------------------
+// CE QUE LE MODULE REFUSE — LE CŒUR DU FICHIER
+// ---------------------------------------------------------------------------
+
+// LE TAPIS QUI NE CORRESPOND PAS ANNULE. C'est le garde-fou contre le cas le
+// plus vicieux : un joueur quitte le siège 2, un autre s'y assied, et les deux
+// observations sont proches dans le temps.
+const autreJoueur = observation("200588", T0 + 2000, [
+  { siege: 2, nom: "QuelquUnDAutre", tapis: 9.9 },
+  { siege: 3, nom: "Mireille", tapis: 1.8 },
+]);
+const avecEcart = relierIdentites([m1], [autreJoueur]);
+T("UN TAPIS INCOMPATIBLE ANNULE LE LIEN",
+  !avecEcart.liens.has("h1:eeae271a") && avecEcart.liens.get("h1:0db33b31") === "Mireille",
+  JSON.stringify([...avecEcart.liens]));
+T("et le refus dit pourquoi",
+  avecEcart.refus.some((r) => /tapis incompatibles/.test(r.motif)),
+  JSON.stringify(avecEcart.refus));
+
+// Une blinde d'écart sur un tapis reste le même joueur : le lecteur
+// photographie la table à un instant qui n'est pas celui de la distribution.
+const legerEcart = observation("200588", T0 + 2000, [{ siege: 2, nom: "PokerPaul", tapis: 3.53 }]);
+T("un écart d'une blinde ne casse pas le lien",
+  relierIdentites([m1], [legerEcart]).liens.get("h1:eeae271a") === "PokerPaul");
+
+// DEUX OBSERVATIONS AUSSI PROCHES : ON NE TRANCHE PAS.
+const jumelle1 = observation("200588", T0 + 1000, [{ siege: 2, nom: "Premier", tapis: 3.5 }]);
+const jumelle2 = observation("200588", T0 - 1000, [{ siege: 2, nom: "Second", tapis: 3.5 }]);
+const ambigu = observationDeLaMain(m1, [jumelle1, jumelle2]);
+T("DEUX OBSERVATIONS ÉQUIDISTANTES PRODUISENT UN REFUS",
+  ambigu.obs === null && /impossible de trancher/.test(ambigu.motif),
+  JSON.stringify(ambigu));
+T("aucun lien n'en sort", relierIdentites([m1], [jumelle1, jumelle2]).liens.size === 0);
+
+// UNE AUTRE TABLE NE COMPTE PAS, même au même instant.
+const autreTable = observation("999999", T0, [{ siege: 2, nom: "Ailleurs", tapis: 3.5 }]);
+T("une observation d'une autre table est ignorée",
+  relierIdentites([m1], [autreTable]).liens.size === 0);
+
+// TROP LOIN DANS LE TEMPS : ce n'est plus la même main.
+const tropTard = observation("200588", T0 + TOLERANCE_MS + 1000, [
+  { siege: 2, nom: "PlusTard", tapis: 3.5 },
+]);
+T("une observation hors fenêtre est ignorée",
+  relierIdentites([m1], [tropTard]).liens.size === 0);
+T("et le motif le dit",
+  relierIdentites([m1], [tropTard]).refus.some((r) => /aucune observation/.test(r.motif)));
+
+// UN SIÈGE NON OBSERVÉ NE S'INVENTE PAS.
+const partielle = observation("200588", T0, [{ siege: 2, nom: "PokerPaul", tapis: 3.5 }]);
+const p = relierIdentites([m1], [partielle]);
+T("un siège non observé n'est pas relié",
+  p.liens.size === 1 && p.refus.some((r) => r.motif === "siège non observé"));
+
+// SANS TAPIS RELEVÉ, LE LIEN N'EST PAS VÉRIFIABLE — et par défaut on refuse.
+const sansTapis = observation("200588", T0, [{ siege: 2, nom: "PokerPaul", tapis: null }]);
+T("un lien non vérifiable est refusé par défaut",
+  relierIdentites([m1], [sansTapis]).liens.size === 0,
+  "le tapis est la seule confirmation dont on dispose");
+T("mais on peut l'accepter explicitement",
+  relierIdentites([m1], [sansTapis], { exigerTapis: false }).liens.get("h1:eeae271a") === "PokerPaul");
+
+// ---------------------------------------------------------------------------
+// LA RÉÉCRITURE
+// ---------------------------------------------------------------------------
+const [reecrite] = appliquerIdentites([m1], bon.liens);
+T("le texte brut porte les vrais noms",
+  /Seat 2: PokerPaul/.test(reecrite.raw) && /Seat 3: Mireille/.test(reecrite.raw));
+T("les actions aussi", /PokerPaul: folds/.test(reecrite.raw));
+T("plus aucun alias ne subsiste",
+  !/eeae271a|0db33b31/.test(reecrite.raw), reecrite.raw.slice(0, 200));
+T("Hero reste Hero", /Seat 1: Hero/.test(reecrite.raw));
+T("la liste des vilains suit",
+  reecrite.villains.map((v) => v.name).sort().join(",") === "Mireille,PokerPaul",
+  JSON.stringify(reecrite.villains));
+T("la main est marquée comme identifiée", reecrite.identifie === true);
+
+// ON NE TOUCHE PAS AUX MAINS NON RELIÉES : mieux vaut une fiche absente qu'une
+// fiche fausse, et un alias intact sera écarté ailleurs faute de volume.
+const m2 = main("h2", T0 + 600_000, "200588", SIEGES);
+const [intacte] = appliquerIdentites([m2], bon.liens);
+T("UNE MAIN NON RELIÉE RESTE INTACTE",
+  intacte.raw === m2.raw && !intacte.identifie,
+  "réécrire au hasard produirait exactement le défaut qu'on veut éviter");
+
+// Un lot mixte : une main reliée, une non.
+const mixte = relierIdentites([m1, m2], [vue]);
+T("le taux de liaison reflète la réalité", mixte.tauxLiaison === 50, String(mixte.tauxLiaison));
+
+console.log(`\n${ok} OK, ${ko} FAIL`);
+if (ko) process.exit(1);

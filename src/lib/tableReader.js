@@ -129,6 +129,33 @@ export const LIBELLES_ZONES = {
 
 // Zones dont le contenu est du texte et non un nombre : elles ne participent pas
 // au calcul de la part de tapis et leur lecture n'a pas à être exacte.
+// LE NOMBRE DE SIÈGES VIENT DU CALIBRAGE, PAS D'UNE CONSTANTE.
+//
+// Ces deux listes étaient figées à deux adversaires — la table de spin. Une
+// table de cash en compte cinq, et un lecteur qui n'en connaît que deux lirait
+// les trois premiers sièges et ignorerait les autres, sans le dire.
+//
+// C'est donc l'objet `zones` qui fait foi : tout ce qui s'appelle
+// `adversaireN` est un siège, tout ce qui s'appelle `nomAdversaireN` est un
+// pseudonyme. Ajouter un siège au calibrage suffit, il n'y a rien à changer
+// ici.
+const ORDRE_NUMERIQUE = (a, b) =>
+  Number(a.match(/\d+$/)?.[0] ?? 0) - Number(b.match(/\d+$/)?.[0] ?? 0);
+
+/** Les clés de tapis adverses présentes dans un jeu de zones, dans l'ordre. */
+export function clesAdversaires(zones = {}) {
+  return Object.keys(zones).filter((c) => /^adversaire\d+$/.test(c)).sort(ORDRE_NUMERIQUE);
+}
+
+/** Les clés de pseudonymes adverses présentes, dans l'ordre. */
+export function clesNoms(zones = {}) {
+  return Object.keys(zones).filter((c) => /^nomAdversaire\d+$/.test(c)).sort(ORDRE_NUMERIQUE);
+}
+
+/** Une zone dont le contenu est du TEXTE et non un nombre. */
+export const estZoneTexte = (cle) => /^nomAdversaire\d+$/.test(cle);
+
+// Conservées pour ce qui les importait déjà : ce sont les sièges du spin.
 export const ZONES_TEXTE = ["nomAdversaire1", "nomAdversaire2"];
 
 // Deux tables côte à côte : la disposition la plus courante sur écran large.
@@ -241,10 +268,10 @@ export function lireTable(image, zones, gabarits) {
     // Les zones numériques portent une unité derrière le nombre (« 23,5 BB »).
     // On tolère donc que la fin reste illisible, jamais le milieu.
     const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits, {
-      suffixeTolere: !ZONES_TEXTE.includes(cle),
+      suffixeTolere: !estZoneTexte(cle),
     });
     lectures[cle] = { texte: lu.texte, fiable: lu.fiable, vide: lu.vide, signes: lu.signes };
-    if (ZONES_TEXTE.includes(cle)) {
+    if (estZoneTexte(cle)) {
       // Un pseudo n'est pas un nombre : on garde le texte tel qu'il a été lu,
       // trous compris. Le rapprochement avec la base fera le reste.
       valeurs[cle] = lu.vide ? null : lu.texte.trim();
@@ -281,7 +308,9 @@ export function partDeHero(lecture) {
   if (hero == null || hero < 0) return null;
 
   let total = hero + (lecture.pot ?? 0);
-  for (const cle of ZONES_ADVERSAIRES) {
+  // Les sièges effectivement lus, quel qu'en soit le nombre : deux en spin,
+  // cinq en cash. Une liste figée en ignorerait trois sans le dire.
+  for (const cle of clesAdversaires(lecture)) {
     if (!(cle in lecture)) continue; // zone non calibrée : on l'ignore
     const v = lecture[cle];
     // null = de l'encre qu'on n'a pas su lire : aucune conclusion possible.
@@ -525,12 +554,14 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
   // Instantané, et seulement s'il apporte quelque chose : réenregistrer des
   // valeurs identiques à chaque demi-seconde remplirait la trace de doublons.
   const dernier = s.observations[s.observations.length - 1];
+  // Les tapis adverses, dans l'ordre des sièges, quel qu'en soit le nombre.
+  const tapisAdverses = clesAdversaires(lecture).map((c) => lecture[c] ?? null);
   const change =
     !dernier ||
     dernier.tapis !== lecture.tapisHero ||
     dernier.pot !== lecture.pot ||
-    dernier.a1 !== lecture.adversaire1 ||
-    dernier.a2 !== lecture.adversaire2;
+    (dernier.adverses ?? []).length !== tapisAdverses.length ||
+    tapisAdverses.some((v, i) => (dernier.adverses ?? [])[i] !== v);
   if (change && s.observations.length < MAX_OBSERVATIONS) {
     s.observations = [
       ...s.observations,
@@ -538,6 +569,10 @@ export function integrerLecture(suivi, lecture, maintenant = Date.now()) {
         t: maintenant - s.debut,
         tapis: lecture.tapisHero ?? null,
         pot: lecture.pot ?? null,
+        adverses: tapisAdverses,
+        // `a1` et `a2` restent écrits : des traces enregistrées avant ce
+        // changement les portent, et les écrans qui les relisent ne doivent pas
+        // tomber sur du vide.
         a1: lecture.adversaire1 ?? null,
         a2: lecture.adversaire2 ?? null,
         part: part ?? null,
