@@ -36,7 +36,9 @@
 //   l'instant     Une main dure une minute ; deux mains de la même table ne
 //                 commencent jamais au même instant.
 //   le siège      « Seat 3 » d'un côté, la place à l'écran de l'autre.
-//   le tapis      C'est la VÉRIFICATION, jamais la clé. Deux joueurs peuvent
+//   le tapis      C'est la VERIFICATION, jamais la cle. ATTENTION A L'UNITE :
+//                 le client affiche des grosses blindes, l'historique des
+//                 jetons ; la conversion est faite plus bas. Deux joueurs peuvent
 //                 avoir le même tapis ; un même joueur ne peut pas en avoir
 //                 deux. Un tapis qui ne correspond pas invalide le lien.
 //
@@ -68,10 +70,16 @@ const nombre = (v) => (Number.isFinite(v) ? v : null);
  * @param sieges  [{ siege, nom, tapis }] — le numéro de siège est celui du
  *                client, le même que dans l'historique
  */
-export function observation(table, ts, sieges = []) {
+export function observation(table, ts, sieges = [], { unite = "bb" } = {}) {
   return {
     table: String(table ?? ""),
     ts: Number(ts) || 0,
+    // L'UNITE DES TAPIS. Le client CoinPoker les affiche en GROSSES BLINDES —
+    // « 97BB » — alors que l'historique les ecrit en jetons — « ₮2 ». Comparer
+    // les deux sans convertir rejetterait absolument tous les liens, et le
+    // motif de refus dirait « tapis incompatibles », ce qui enverrait chercher
+    // le defaut au mauvais endroit.
+    unite: unite === "jetons" ? "jetons" : "bb",
     sieges: sieges
       .filter((s) => s && s.nom && Number.isFinite(s.siege))
       .map((s) => ({ siege: Number(s.siege), nom: String(s.nom), tapis: nombre(s.tapis) })),
@@ -166,14 +174,18 @@ export function relierIdentites(mains = [], observations = [], {
         continue;
       }
 
-      const { ok, verifie } = tapisCompatibles(s.tapis, vu.tapis);
+      // Le tapis de l'historique, ramene dans l'unite de l'observation.
+      const tapisMain = obs.unite === "bb"
+        ? (main.bb > 0 ? s.tapis / main.bb : null)
+        : s.tapis;
+      const { ok, verifie } = tapisCompatibles(tapisMain, vu.tapis);
       if (!ok) {
         // LE DÉSACCORD DE TAPIS ANNULE. C'est le garde-fou qui empêche de
         // relier deux joueurs différents assis au même numéro à deux moments
         // proches — un départ et une arrivée, par exemple.
         refus.push({
           main: main.id, siege: s.siege,
-          motif: `tapis incompatibles (${s.tapis} contre ${vu.tapis})`,
+          motif: `tapis incompatibles (${tapisMain} contre ${vu.tapis} ${obs.unite})`,
         });
         continue;
       }

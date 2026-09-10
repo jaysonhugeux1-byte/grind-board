@@ -56,7 +56,7 @@ T("avec numéro, alias et tapis",
 const vue = observation("200588", T0 + 2000, [
   { siege: 2, nom: "PokerPaul", tapis: 3.5 },
   { siege: 3, nom: "Mireille", tapis: 1.8 },
-]);
+], { unite: "jetons" });
 
 const bon = relierIdentites([m1], [vue]);
 T("les deux adversaires sont reliés", bon.liens.size === 2, JSON.stringify([...bon.liens]));
@@ -76,7 +76,7 @@ T("le taux de liaison est rendu", bon.tauxLiaison === 100, String(bon.tauxLiaiso
 const autreJoueur = observation("200588", T0 + 2000, [
   { siege: 2, nom: "QuelquUnDAutre", tapis: 9.9 },
   { siege: 3, nom: "Mireille", tapis: 1.8 },
-]);
+], { unite: "jetons" });
 const avecEcart = relierIdentites([m1], [autreJoueur]);
 T("UN TAPIS INCOMPATIBLE ANNULE LE LIEN",
   !avecEcart.liens.has("h1:eeae271a") && avecEcart.liens.get("h1:0db33b31") === "Mireille",
@@ -87,13 +87,13 @@ T("et le refus dit pourquoi",
 
 // Une blinde d'écart sur un tapis reste le même joueur : le lecteur
 // photographie la table à un instant qui n'est pas celui de la distribution.
-const legerEcart = observation("200588", T0 + 2000, [{ siege: 2, nom: "PokerPaul", tapis: 3.53 }]);
+const legerEcart = observation("200588", T0 + 2000, [{ siege: 2, nom: "PokerPaul", tapis: 3.53 }], { unite: "jetons" });
 T("un écart d'une blinde ne casse pas le lien",
   relierIdentites([m1], [legerEcart]).liens.get("h1:eeae271a") === "PokerPaul");
 
 // DEUX OBSERVATIONS AUSSI PROCHES : ON NE TRANCHE PAS.
-const jumelle1 = observation("200588", T0 + 1000, [{ siege: 2, nom: "Premier", tapis: 3.5 }]);
-const jumelle2 = observation("200588", T0 - 1000, [{ siege: 2, nom: "Second", tapis: 3.5 }]);
+const jumelle1 = observation("200588", T0 + 1000, [{ siege: 2, nom: "Premier", tapis: 3.5 }], { unite: "jetons" });
+const jumelle2 = observation("200588", T0 - 1000, [{ siege: 2, nom: "Second", tapis: 3.5 }], { unite: "jetons" });
 const ambigu = observationDeLaMain(m1, [jumelle1, jumelle2]);
 T("DEUX OBSERVATIONS ÉQUIDISTANTES PRODUISENT UN REFUS",
   ambigu.obs === null && /impossible de trancher/.test(ambigu.motif),
@@ -101,27 +101,27 @@ T("DEUX OBSERVATIONS ÉQUIDISTANTES PRODUISENT UN REFUS",
 T("aucun lien n'en sort", relierIdentites([m1], [jumelle1, jumelle2]).liens.size === 0);
 
 // UNE AUTRE TABLE NE COMPTE PAS, même au même instant.
-const autreTable = observation("999999", T0, [{ siege: 2, nom: "Ailleurs", tapis: 3.5 }]);
+const autreTable = observation("999999", T0, [{ siege: 2, nom: "Ailleurs", tapis: 3.5 }], { unite: "jetons" });
 T("une observation d'une autre table est ignorée",
   relierIdentites([m1], [autreTable]).liens.size === 0);
 
 // TROP LOIN DANS LE TEMPS : ce n'est plus la même main.
 const tropTard = observation("200588", T0 + TOLERANCE_MS + 1000, [
   { siege: 2, nom: "PlusTard", tapis: 3.5 },
-]);
+], { unite: "jetons" });
 T("une observation hors fenêtre est ignorée",
   relierIdentites([m1], [tropTard]).liens.size === 0);
 T("et le motif le dit",
   relierIdentites([m1], [tropTard]).refus.some((r) => /aucune observation/.test(r.motif)));
 
 // UN SIÈGE NON OBSERVÉ NE S'INVENTE PAS.
-const partielle = observation("200588", T0, [{ siege: 2, nom: "PokerPaul", tapis: 3.5 }]);
+const partielle = observation("200588", T0, [{ siege: 2, nom: "PokerPaul", tapis: 3.5 }], { unite: "jetons" });
 const p = relierIdentites([m1], [partielle]);
 T("un siège non observé n'est pas relié",
   p.liens.size === 1 && p.refus.some((r) => r.motif === "siège non observé"));
 
 // SANS TAPIS RELEVÉ, LE LIEN N'EST PAS VÉRIFIABLE — et par défaut on refuse.
-const sansTapis = observation("200588", T0, [{ siege: 2, nom: "PokerPaul", tapis: null }]);
+const sansTapis = observation("200588", T0, [{ siege: 2, nom: "PokerPaul", tapis: null }], { unite: "jetons" });
 T("un lien non vérifiable est refusé par défaut",
   relierIdentites([m1], [sansTapis]).liens.size === 0,
   "le tapis est la seule confirmation dont on dispose");
@@ -154,6 +154,26 @@ T("UNE MAIN NON RELIÉE RESTE INTACTE",
 // Un lot mixte : une main reliée, une non.
 const mixte = relierIdentites([m1, m2], [vue]);
 T("le taux de liaison reflète la réalité", mixte.tauxLiaison === 50, String(mixte.tauxLiaison));
+
+// ---------------------------------------------------------------------------
+// L'UNITÉ DES TAPIS — le piège que la capture d'écran a révélé
+//
+// Le client CoinPoker affiche « 97BB », l'historique écrit « ₮2 ». Comparer les
+// deux sans convertir rejetterait ABSOLUMENT TOUS les liens, en annonçant
+// « tapis incompatibles » — ce qui enverrait chercher le défaut au mauvais
+// endroit, et longtemps.
+// ---------------------------------------------------------------------------
+// Siège 2 : 3,5 jetons à 0,02 de blinde, soit 175 grosses blindes.
+const enBlindes = observation("200588", T0, [{ siege: 2, nom: "PokerPaul", tapis: 175 }]);
+T("UN TAPIS EN BLINDES EST CONVERTI POUR ÊTRE COMPARÉ",
+  relierIdentites([m1], [enBlindes]).liens.get("h1:eeae271a") === "PokerPaul",
+  "3,5 jetons à 0,02 de blinde font bien 175 BB");
+T("la blinde est l'unité par défaut",
+  observation("200588", T0, []).unite === "bb",
+  "c'est ce qu'affiche le client, donc ce que relèvera le lecteur");
+T("un tapis en jetons pris pour des blindes est REFUSÉ",
+  relierIdentites([m1], [observation("200588", T0, [{ siege: 2, nom: "X", tapis: 3.5 }])]).liens.size === 0,
+  "3,5 BB au lieu de 175 : le garde-fou fait son travail");
 
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);
