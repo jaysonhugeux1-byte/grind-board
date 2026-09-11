@@ -26,7 +26,14 @@ const { cadresDesFenetres } = require("./fenetres.cjs");
 //
 // Le motif ci-dessous attrape les deux cas, ainsi que les salles qui ouvrent
 // toujours une fenêtre par table.
-const TABLE_TITLE = /Betclic|Spin\s*&\s*(?:Rush|Go)|PokerStars|Winamax/i;
+//
+// COINPOKER OUVRE UNE FENETRE PAR TABLE, titree « NLH 1312476 - ₮0.01/₮0.02 ».
+// Elle ne contient ni « CoinPoker » ni le nom d'une salle connue : le motif
+// d'origine ne l'attrapait pas, et le lecteur annoncait « aucune fenetre de
+// poker detectee » alors que deux tables etaient ouvertes a l'ecran. C'est la
+// forme du titre qui la designe — une variante de poker suivie de ses blindes.
+const TABLE_TITLE =
+  /Betclic|Spin\s*&\s*(?:Rush|Go)|PokerStars|Winamax|CoinPoker|\b(?:NLH|PLO\d?|NLHE)\b\s*\d/i;
 
 // Betclic sait faire les deux, et il faut distinguer les deux cas.
 //
@@ -35,7 +42,15 @@ const TABLE_TITLE = /Betclic|Spin\s*&\s*(?:Rush|Go)|PokerStars|Winamax/i;
 // Détachées, chaque table redevient une vraie fenêtre titrée « Spin & Rush -
 // 1€ » — et là il n'y a plus rien à délimiter, la fenêtre EST la table. Son
 // titre redonne même le buy-in au passage.
-const FENETRE_DE_TABLE = /Spin\s*&\s*(?:Rush|Go)/i;
+//
+// CoinPoker est TOUJOURS dans ce cas : une fenetre par table, jamais de
+// mosaique. Son titre porte l'identifiant de table — « NLH 1312476 » — ce qui
+// vaut mieux que de le lire a l'ecran : un titre ne se trompe pas de caractere.
+const FENETRE_DE_TABLE = /Spin\s*&\s*(?:Rush|Go)|\b(?:NLH|PLO\d?|NLHE)\b\s*\d/i;
+
+// L'identifiant de table, tel que l'historique l'ecrit dans « Table '1312476' ».
+// C'est la cle qui rapproche ce que le lecteur voit de ce que l'export raconte.
+const ID_TABLE_DANS_TITRE = /\b(?:NLH|PLO\d?|NLHE)\b\s*(\d{4,})/i;
 
 const BUYIN_IN_TITLE = /-\s*([\d.,]+)\s*€/;
 
@@ -72,6 +87,7 @@ async function listTables() {
       // Une fenêtre de table se lit entière ; la fenêtre du client, elle, doit
       // être découpée en régions par l'utilisateur.
       estTable: FENETRE_DE_TABLE.test(s.name),
+      idTable: ID_TABLE_DANS_TITRE.exec(s.name)?.[1] ?? null,
     }));
 }
 
@@ -90,6 +106,7 @@ function versSortie(source, { encoderPng }) {
     titre: source.name,
     buyIn: parseBuyIn(source.name),
     estTable: FENETRE_DE_TABLE.test(source.name),
+    idTable: ID_TABLE_DANS_TITRE.exec(source.name)?.[1] ?? null,
     largeur: width,
     hauteur: height,
   };
@@ -153,4 +170,7 @@ async function captureTable(sourceId) {
   return table;
 }
 
-module.exports = { listTables, captureTable, captureTables, TABLE_TITLE, FENETRE_DE_TABLE };
+module.exports = {
+  listTables, captureTable, captureTables,
+  TABLE_TITLE, FENETRE_DE_TABLE, ID_TABLE_DANS_TITRE,
+};

@@ -667,8 +667,14 @@ export default function LecteurDirect() {
               const tapis = lu[tapisCles[k]];
               sieges.push({ place: k + 1, nom, tapis: Number.isFinite(tapis) ? tapis : null });
             }
-            // L'identifiant de table se lit dans le titre : « NLH 1312456 ».
-            const idTable = String(lu.titre ?? capture.titre ?? "").match(/(\d{4,})/)?.[1];
+            // L'IDENTIFIANT VIENT DU TITRE DE LA FENETRE, pas de l'ecran.
+            // CoinPoker titre ses tables « NLH 1312476 - ₮0.01/₮0.02 », et le
+            // systeme nous donne ce titre tel quel : un caractere n'y est
+            // jamais mal lu, alors qu'un identifiant reconnu de travers ferait
+            // echouer TOUS les rapprochements de cette table sans qu'on
+            // comprenne pourquoi.
+            const idTable = capture.idTable
+              ?? String(capture.titre ?? "").match(/(?:NLH|PLO\d?|NLHE)\s*(\d{4,})/i)?.[1];
             if (idTable && sieges.length) {
               identitesRef.current.push(observationTable(idTable, maintenant, sieges));
             }
@@ -870,7 +876,9 @@ export default function LecteurDirect() {
     <div className="section">
       <PageHeader
         title="Lecteur en direct"
-        subtitle="Betclic ne livre l'historique qu'une fois par jour — le lecteur comble l'attente"
+        subtitle={estCash
+          ? "CoinPoker anonymise ses adversaires — le lecteur relève leurs vrais noms"
+          : "Betclic ne livre l'historique qu'une fois par jour — le lecteur comble l'attente"}
       />
 
       <div className="card">
@@ -882,7 +890,11 @@ export default function LecteurDirect() {
         </div>
 
         {!tables.length ? (
-          <EmptyState text="Aucune fenêtre de poker détectée. Lance le client Betclic Poker, puis actualise." />
+          <EmptyState text={
+            estCash
+              ? "Aucune table détectée. Ouvre une table CoinPoker, puis actualise."
+              : "Aucune fenêtre de poker détectée. Lance le client Betclic Poker, puis actualise."
+          } />
         ) : (
           <>
             <div className="segmented" style={{ flexWrap: "wrap" }}>
@@ -1026,9 +1038,12 @@ export default function LecteurDirect() {
               </>
             ) : (
               <>
-                En mosaïque intégrée, Betclic dessine ses tables dans une seule fenêtre : elles
-                n'existent pas pour le système, c'est donc à toi de les délimiter. Détacher tes tables
-                dans le client rend cette étape inutile.
+                {estCash
+                  ? "CoinPoker ouvre toujours une fenêtre par table : il n'y a rien à délimiter. "
+                    + "Si aucune n'apparaît, c'est que la table n'est pas ouverte."
+                  : "En mosaïque intégrée, Betclic dessine ses tables dans une seule fenêtre : elles "
+                    + "n'existent pas pour le système, c'est donc à toi de les délimiter. Détacher tes "
+                    + "tables dans le client rend cette étape inutile."}
               </>
             )}
           </div>
@@ -1329,19 +1344,49 @@ export default function LecteurDirect() {
         <div className="card-title-row">
           <h2>Comment ça marche</h2>
         </div>
-        <p style={{ fontSize: 13, lineHeight: 1.7, margin: 0 }}>
-          Le lecteur photographie toutes tes tables en un seul cliché, plusieurs fois par seconde, et y
-          lit la dotation — qui donne le multiplicateur — ainsi que les tapis. Le buy-in vient du titre de
-          la fenêtre.
-        </p>
-        <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
-          Comme Betclic affiche les tapis en grosses blindes et que les blindes montent, aucun seuil en
-          valeur absolue n'aurait de sens : c'est la <strong>part du tapis total</strong> qui décide. Celui
-          qui détient tout a gagné, celui qui n'a plus rien est éliminé, et entre les deux le lecteur te
-          demande plutôt que d'inventer. Un siège sans la moindre encre est un joueur sorti ; un siège dont
-          le montant reste illisible interdit toute conclusion — confondre les deux ferait passer une
-          lecture ratée pour une victoire.
-        </p>
+        {estCash ? (
+          <>
+            <p style={{ fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+              CoinPoker <strong>anonymise son export</strong> : chaque adversaire y reçoit un
+              pseudonyme neuf à chaque main. Mesuré sur une session réelle, 1325 pseudonymes pour
+              1325 places à table — aucun ne revient jamais. Suivre un joueur à partir du seul
+              historique est donc impossible.
+            </p>
+            <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
+              Mais le client, lui, affiche leurs <strong>vrais noms</strong>. Le lecteur les relève
+              pendant que tu joues, avec les tapis, et l'import les rattache aux mains anonymisées.
+              Tes fiches d'adversaires se construisent alors sur de vraies identités.
+            </p>
+            <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
+              L'écran ne numérote pas les sièges : c'est toi qui sers de repère, toujours en bas.
+              Reste à savoir dans quel sens la table tourne — le lecteur ne le devine pas, il essaie
+              les deux et <strong>les tapis tranchent</strong>. Quand aucun sens ne concorde, ou
+              quand les deux concordent, il <strong>refuse</strong> plutôt que de choisir : une
+              identité mal attribuée verserait les mains d'un joueur dans la fiche d'un autre, sans
+              que rien ne le signale.
+            </p>
+            <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
+              C'est la lecture des <strong>tapis</strong> qui décide de tout. Si l'import annonce
+              « 0 main reliée », ce sont les cadres des tapis qu'il faut affiner.
+            </p>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+              Le lecteur photographie toutes tes tables en un seul cliché, plusieurs fois par seconde, et y
+              lit la dotation — qui donne le multiplicateur — ainsi que les tapis. Le buy-in vient du titre de
+              la fenêtre.
+            </p>
+            <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
+              Comme Betclic affiche les tapis en grosses blindes et que les blindes montent, aucun seuil en
+              valeur absolue n'aurait de sens : c'est la <strong>part du tapis total</strong> qui décide. Celui
+              qui détient tout a gagné, celui qui n'a plus rien est éliminé, et entre les deux le lecteur te
+              demande plutôt que d'inventer. Un siège sans la moindre encre est un joueur sorti ; un siège dont
+              le montant reste illisible interdit toute conclusion — confondre les deux ferait passer une
+              lecture ratée pour une victoire.
+            </p>
+          </>
+        )}
         <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
           Rien n'est envoyé nulle part : les captures ne quittent jamais ta machine.
         </p>

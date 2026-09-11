@@ -124,5 +124,43 @@ T("le pot n'est pas pris pour un siège",
 T("un pseudonyme est du texte, un tapis est un nombre",
   estZoneTexte("nomAdversaire4") && !estZoneTexte("adversaire4"));
 
+
+// ---------------------------------------------------------------------------
+// LA DÉTECTION DES FENÊTRES — le défaut vu en vrai
+//
+// Deux tables CoinPoker étaient ouvertes à l'écran, et le lecteur annonçait
+// « aucune fenêtre de poker détectée ». Le motif ne cherchait que des salles
+// nommées ; or CoinPoker titre ses tables « NLH 1312476 - ₮0.01/₮0.02 », sans
+// jamais écrire son nom. C'est la FORME du titre qui la désigne.
+// ---------------------------------------------------------------------------
+import { TABLE_TITLE, FENETRE_DE_TABLE, ID_TABLE_DANS_TITRE }
+  from "../electron/capture.cjs";
+
+for (const titre of ["NLH 1312476 - ₮0.01/₮0.02", "NLH 1309916 - ₮0.01/₮0.02"]) {
+  T(`une table CoinPoker est reconnue — ${titre.slice(0, 12)}`, TABLE_TITLE.test(titre));
+  T("et comme une fenêtre de table, pas une mosaïque", FENETRE_DE_TABLE.test(titre));
+}
+
+// L'IDENTIFIANT VIENT DU TITRE, PAS DE L'ÉCRAN. C'est la clé du rapprochement
+// avec l'historique, et un caractère mal lu ferait échouer tous les liens de
+// cette table sans qu'on comprenne pourquoi.
+T("l'identifiant de table se lit dans le titre",
+  ID_TABLE_DANS_TITRE.exec("NLH 1312476 - ₮0.01/₮0.02")?.[1] === "1312476");
+T("les Omaha aussi", ID_TABLE_DANS_TITRE.exec("PLO5 998877 - ₮0.05/₮0.10")?.[1] === "998877");
+
+// Betclic ne doit rien perdre au passage.
+T("une table Betclic détachée reste reconnue",
+  TABLE_TITLE.test("Spin & Rush - 1€") && FENETRE_DE_TABLE.test("Spin & Rush - 1€"));
+T("la mosaïque Betclic reste une fenêtre de client, pas une table",
+  TABLE_TITLE.test("Betclic Poker") && !FENETRE_DE_TABLE.test("Betclic Poker"));
+
+// ET SURTOUT, RIEN D'AUTRE. Un motif trop large ferait photographier des
+// fenêtres qui n'ont rien à voir, et le lecteur lirait des chiffres au hasard.
+for (const intrus of [
+  "GrindBoard — Bankroll Tracker", "Explorateur de fichiers",
+  "Nouveau document texte", "Conversation coding in folder", "NLHE.txt",
+]) {
+  T(`« ${intrus.slice(0, 22)} » n'est pas une table`, !TABLE_TITLE.test(intrus));
+}
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);
