@@ -26,6 +26,7 @@ import { observation as observationTable } from "../lib/identitesCash";
 import { ajouterObservations } from "../lib/observationsTable";
 import { clesAdversaires, clesNoms } from "../lib/tableReader";
 import { observerPopulation } from "../lib/populationCash";
+import { signatureNom, nomOuEtiquette } from "../lib/signatureNom";
 
 const CLE_ZONES = "gl_lecteur_zones";
 const CLE_REGIONS = "gl_lecteur_regions";
@@ -672,10 +673,22 @@ export default function LecteurDirect() {
             const tapisCles = clesAdversaires(zonesAbs);
             const sieges = [];
             for (let k = 0; k < noms.length; k++) {
-              const nom = lu[noms[k]];
-              if (!nom || typeof nom !== "string") continue;
+              // ON N'A PAS BESOIN DE SAVOIR LIRE LE PSEUDO POUR RECONNAITRE LE
+              // JOUEUR. La suite des FORMES qui le composent suffit : deux
+              // captures du meme pseudo la donnent identique, deux pseudos
+              // differents non. C'est indispensable ici, ou rien n'apprend
+              // jamais les lettres — l'historique etant anonymise, il ne peut
+              // en enseigner aucune.
+              const lecture = lu.lectures?.[noms[k]];
+              const signature = signatureNom(lecture?.signes);
+              if (!signature) continue;
+              const nom = nomOuEtiquette(lu[noms[k]], signature);
+              if (!nom) continue;
               const tapis = lu[tapisCles[k]];
-              sieges.push({ place: k + 1, nom, tapis: Number.isFinite(tapis) ? tapis : null });
+              sieges.push({
+                place: k + 1, nom, signature,
+                tapis: Number.isFinite(tapis) ? tapis : null,
+              });
             }
             const idTable = idTableCourante;
             if (idTable && sieges.length) {

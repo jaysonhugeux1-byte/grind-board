@@ -92,6 +92,9 @@ export function observation(table, ts, sieges = [], { unite = "bb" } = {}) {
         ...(Number.isFinite(s.siege) ? { siege: Number(s.siege) } : {}),
         ...(Number.isFinite(s.place) ? { place: Number(s.place) } : {}),
         nom: String(s.nom),
+        // La signature de forme accompagne le nom : c'est elle qui identifie
+        // reellement le joueur quand les lettres ne sont pas lisibles.
+        ...(s.signature ? { signature: String(s.signature) } : {}),
         tapis: nombre(s.tapis),
       })),
   };

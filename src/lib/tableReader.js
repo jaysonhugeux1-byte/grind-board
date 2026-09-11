@@ -272,6 +272,22 @@ export function lireTable(image, zones, gabarits) {
     });
     lectures[cle] = { texte: lu.texte, fiable: lu.fiable, vide: lu.vide, signes: lu.signes };
     if (estZoneTexte(cle)) {
+      // UN PSEUDO ENTIEREMENT ILLISIBLE N'EST PAS UN PSEUDO.
+      //
+      // Un signe que la reconnaissance ne sait pas nommer s'ecrit « ? ». Tant
+      // qu'aucune lettre n'a ete apprise, TOUS les pseudos se lisent donc
+      // « ???????? » — et rien ne les distingue les uns des autres. Les rendre
+      // tels quels ferait fondre tous les adversaires d'une table dans une
+      // seule fiche, dont le nom serait une suite de points d'interrogation et
+      // les statistiques un melange de cinq joueurs.
+      //
+      // On rend donc `null` quand il ne reste aucun caractere reconnu : une
+      // absence se voit et se corrige, une fusion silencieuse non.
+      const reconnu = lu.texte.replace(/[?\s]/g, "");
+      if (!reconnu) {
+        valeurs[cle] = null;
+        continue;
+      }
       // Un pseudo n'est pas un nombre : on garde le texte tel qu'il a été lu,
       // trous compris. Le rapprochement avec la base fera le reste.
       valeurs[cle] = lu.vide ? null : lu.texte.trim();
