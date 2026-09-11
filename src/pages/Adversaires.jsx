@@ -6,6 +6,8 @@ import { useMode } from "../contexts/ModeContext";
 import { PageHeader, EmptyState, fmtDate } from "../components/ui";
 import { profilerVilains } from "../lib/profilVilain";
 import MarqueJoueur from "../components/MarqueJoueur";
+import BaptemeJoueurs from "../components/BaptemeJoueurs";
+import { traducteurDeNoms } from "../lib/nomsJoueurs";
 import {
   listerAdversaires, chercherAdversaires, rangeMontree, styleAdversaire,
   MAINS_MINIMUM_FIABLE,
@@ -270,7 +272,21 @@ export default function Adversaires() {
     [hands],
   );
   const fiches = useMemo(
-    () => (cash ? listerAdversairesCash(hands || [], bb) : listerAdversaires(hands, tournois)),
+    () => {
+      const brutes = cash
+        ? listerAdversairesCash(hands || [], bb)
+        : listerAdversaires(hands, tournois);
+      if (!cash) return brutes;
+      // LES MAINS DEJA IMPORTEES PORTENT L'ETIQUETTE DE FORME dans leur texte
+      // (« Joueur 7a3f »). Les reecrire serait long et risque ; il suffit de
+      // traduire au moment d'afficher, et le bapteme vaut alors pour tout
+      // l'historique, y compris ce qui a ete importe avant lui.
+      const traduire = traducteurDeNoms();
+      return brutes.map((f) => {
+        const nom = traduire(f.nom);
+        return nom === f.nom ? f : { ...f, nom, etiquette: f.nom };
+      });
+    },
     [cash, hands, tournois, bb],
   );
   useEffect(() => {
@@ -353,6 +369,8 @@ export default function Adversaires() {
           ? "Ce que tes mains savent des joueurs que tu recroises à table"
           : "Ce que tes historiques savent des joueurs que tu recroises"}
       />
+
+      {cash && <BaptemeJoueurs />}
 
       {!fiches.length ? (
         <div className="card">

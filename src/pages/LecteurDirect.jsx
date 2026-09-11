@@ -27,6 +27,7 @@ import { ajouterObservations } from "../lib/observationsTable";
 import { clesAdversaires, clesNoms } from "../lib/tableReader";
 import { observerPopulation } from "../lib/populationCash";
 import { signatureNom, nomOuEtiquette } from "../lib/signatureNom";
+import { retenirSignes, nomPourSignature } from "../lib/nomsJoueurs";
 
 const CLE_ZONES = "gl_lecteur_zones";
 const CLE_REGIONS = "gl_lecteur_regions";
@@ -682,7 +683,17 @@ export default function LecteurDirect() {
               const lecture = lu.lectures?.[noms[k]];
               const signature = signatureNom(lecture?.signes);
               if (!signature) continue;
-              const nom = nomOuEtiquette(lu[noms[k]], signature);
+              // LES FORMES SONT GARDEES, PAS SEULEMENT LEUR SIGNATURE. Celle-ci
+              // est un descripteur grossier dont on ne peut rien reapprendre ;
+              // le jour ou l'utilisateur donnera un nom a ce joueur, ce sont ces
+              // formes-la qui apprendront les lettres au lecteur.
+              retenirSignes(signature, lecture.signes);
+              // LE NOM PART PAR LE REGISTRE, JAMAIS EN DIRECT. Il y gagne deux
+              // choses : le bapteme de l'utilisateur l'emporte sur la lecture,
+              // et deux joueurs dont les pseudonymes se LISENT pareil — un I
+              // majuscule pour un l minuscule — ne peuvent pas se retrouver
+              // enregistres sous le meme nom, donc fondus dans une seule fiche.
+              const nom = nomPourSignature(signature, nomOuEtiquette(lu[noms[k]], signature));
               if (!nom) continue;
               const tapis = lu[tapisCles[k]];
               sieges.push({

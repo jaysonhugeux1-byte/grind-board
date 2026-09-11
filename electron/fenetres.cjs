@@ -143,9 +143,19 @@ async function cadresDesFenetres(sourceIds = []) {
 
   if (manquants.length) {
     const obtenus = await interroger(manquants);
-    if (!frais) cache = { instant: maintenant, cadres: new Map() };
+    // LE CACHE EST DATE DE LA FIN DE L'INTERROGATION, PAS DE SON DEBUT.
+    //
+    // Le dater du debut lui faisait consommer sa propre duree de vie : une
+    // interrogation qui prend 1,8 s ne laissait que 200 ms de cache, et une qui
+    // depassait DUREE_CACHE_MS naissait DEJA PERIMEE — le cache ne servait alors
+    // plus jamais, et le lecteur relancait PowerShell deux fois par seconde.
+    //
+    // Le defaut ne se voyait que sur une machine chargee, c'est-a-dire
+    // exactement quand le cache etait le plus necessaire.
+    const fini = Date.now();
+    if (!frais) cache = { instant: fini, cadres: new Map() };
     for (const [h, c] of obtenus) cache.cadres.set(h, c);
-    cache.instant = maintenant;
+    cache.instant = fini;
   }
 
   // GetClientRect rend des pixels physiques ; Electron raisonne en points.

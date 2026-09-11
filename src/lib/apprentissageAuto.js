@@ -310,3 +310,83 @@ export function contexteDepuisMains(mains) {
   }
   return { tournois: [...parTournoi.values()], mains };
 }
+
+// ---------------------------------------------------------------------------
+// LE BAPTEME COMME LECON
+// ---------------------------------------------------------------------------
+//
+// L'historique ne peut enseigner que des CHIFFRES : il donne le tapis de Hero,
+// et rien d'autre qui soit ecrit a l'ecran. Les LETTRES, personne ne les
+// enseigne — les pseudonymes de l'export sont anonymises.
+//
+// Sauf l'utilisateur. Quand il ecrit « szuga » en face de cinq formes relevees,
+// il vient d'etiqueter cinq lettres aussi surement que l'historique etiquette un
+// tapis. C'est la seule source de lettres qui existe, et elle est exacte.
+
+/** D'ou vient un gabarit appris par bapteme — pour pouvoir le retirer. */
+export const sourceDeBapteme = (signature) => `bapteme:${signature}`;
+
+/**
+ * Apprend les lettres d'un pseudonyme que l'utilisateur vient de nommer.
+ *
+ * LA LONGUEUR DOIT CORRESPONDRE EXACTEMENT, comme partout ailleurs ici. Si le
+ * decoupage a rendu six formes pour un nom de sept caracteres, chaque lecon
+ * tomberait un cran a cote : le « z » apprendrait la forme du « u », et toutes
+ * les lectures suivantes s'en trouveraient empoisonnees. On refuse alors
+ * d'apprendre — mais le NOM, lui, reste enregistre : il n'a pas besoin des
+ * lettres pour etre utile.
+ *
+ * @returns { gabarits, appris, erreur }
+ */
+export function apprendreDepuisBapteme(signes = [], nom = "", gabarits = [], signature = null) {
+  const attendus = [...String(nom).replace(/\s+/g, "")];
+  if (!attendus.length || !Array.isArray(signes) || !signes.length) {
+    return { gabarits, appris: 0, erreur: null };
+  }
+
+  if (signes.length !== attendus.length) {
+    return {
+      gabarits,
+      appris: 0,
+      erreur:
+        `${signes.length} forme(s) relevee(s) pour « ${nom} », qui compte ${attendus.length} caractere(s). `
+        + `Le nom est enregistre, mais aucune lettre n'est apprise.`,
+    };
+  }
+
+  const source = signature ? sourceDeBapteme(signature) : undefined;
+  const nouveaux = [];
+  for (let i = 0; i < attendus.length; i++) {
+    const vu = signes[i];
+    if (!vu?.empreinte) continue;
+    // Inutile de reapprendre ce que le lecteur lisait deja correctement.
+    //
+    // LE NOM DU CHAMP DIFFERE SELON LA PROVENANCE : la lecture brute rend
+    // `signe`, l'observation rangee rend `lu`. N'en regarder qu'un seul faisait
+    // reapprendre a chaque bapteme des lettres deja connues — sans fausser les
+    // lectures, mais en usant les trois exemplaires gardes par signe, donc en
+    // chassant peu a peu les variantes utiles.
+    if ((vu.lu ?? vu.signe) === attendus[i]) continue;
+    nouveaux.push({ signe: attendus[i], empreinte: vu.empreinte, ratio: vu.ratio, source });
+  }
+
+  return {
+    gabarits: fusionnerGabarits(gabarits, nouveaux),
+    appris: nouveaux.length,
+    erreur: null,
+  };
+}
+
+/**
+ * Retire les gabarits appris d'un bapteme donne.
+ *
+ * CE QUI REND L'ERREUR REPARABLE. Un nom mal recopie — mauvaise casse, lettre
+ * oubliee — apprend des formes sous le mauvais nom, et rien dans les lectures
+ * suivantes ne dirait d'ou vient le desordre. Marquer l'origine de chaque lecon
+ * permet de defaire exactement celle-la, sans toucher aux autres.
+ */
+export function retirerGabaritsDeBapteme(gabarits = [], signature) {
+  if (!signature) return gabarits;
+  const source = sourceDeBapteme(signature);
+  return gabarits.filter((g) => g?.source !== source);
+}

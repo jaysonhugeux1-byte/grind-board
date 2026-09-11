@@ -99,14 +99,22 @@ export function signatureNom(signes) {
  * un repère. Afficher un pseudonyme à moitié déchiffré — « R?z?lv » — laisserait
  * croire à une lecture, et deux joueurs mal lus se ressembleraient.
  */
-export function etiquetteDeSignature(signature) {
+export function hachage(signature) {
   if (!signature) return null;
   let h = 2166136261 >>> 0;
   for (let i = 0; i < signature.length; i++) {
     h ^= signature.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return `Joueur ${(h >>> 0).toString(16).slice(0, 4)}`;
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+export function etiquetteDeSignature(signature) {
+  const h = hachage(signature);
+  // Quatre caracteres suffisent a distinguer les joueurs d'une soiree et se
+  // lisent d'un coup d'oeil. Le hachage complet reste disponible pour departager
+  // deux joueurs dont les noms se liraient pareil.
+  return h ? `Joueur ${h.slice(0, 4)}` : null;
 }
 
 /**
