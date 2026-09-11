@@ -1,29 +1,88 @@
 {
   "nom": "CoinPoker — cash 6-max",
-  "captureOrigine": "Table NLH 1312456 (₮0.01/₮0.02), fenêtre 792 × 609",
-  "note": "PREMIER JET, À AJUSTER À LA SOURIS. Les cadres viennent d'une mesure sur une capture d'écran, pas d'un relevé automatique : ils placent chaque zone au bon endroit à quelques pixels près, ce qui suffit à démarrer mais pas à garantir une lecture propre. L'écran de calibrage permet de les corriger un par un, et c'est plus rapide que de les tracer depuis rien. DEUX PARTICULARITÉS DE CETTE SALLE, à ne pas perdre de vue : les tapis et le pot s'affichent en GROSSES BLINDES, pas en jetons — la conversion se fait avec les blindes lues dans le titre ; et le titre de la fenêtre porte l'identifiant de table, qui est la clé du rapprochement avec l'historique.",
+  "captureOrigine": "Deux tables NLH 1312456 (792 x 609) et NLH 1312195 (745 x 578), ₮0.01/₮0.02, mesurees a l'ecran",
+  "note": "Cadres corriges sur une seconde capture : les premiers tombaient 2 a 3 % trop haut et ne lisaient rien. Les hauteurs sont volontairement GENEREUSES — un cadre un peu trop grand ne coute rien, la lecture ne retient que l'encre ; un cadre trop juste tronque le texte et rend la zone illisible sans dire pourquoi. Ajuste a la souris si une colonne reste vide : vise les TAPIS en priorite, ce sont eux qui valident chaque rapprochement d'identite. Les tapis et le pot s'affichent en GROSSES BLINDES ; l'identifiant de table vient du titre de la fenetre, pas de l'ecran.",
   "regions": [
-    { "x": 0, "y": 0, "l": 1, "h": 1 }
+    {
+      "x": 0,
+      "y": 0,
+      "l": 1,
+      "h": 1
+    }
   ],
   "zones": {
-    "titre": { "x": 0.030, "y": 0.005, "l": 0.230, "h": 0.030 },
-    "pot": { "x": 0.487, "y": 0.363, "l": 0.060, "h": 0.036 },
-    "tapisHero": { "x": 0.430, "y": 0.888, "l": 0.125, "h": 0.038 },
-
-    "nomAdversaire1": { "x": 0.820, "y": 0.668, "l": 0.120, "h": 0.033 },
-    "adversaire1": { "x": 0.820, "y": 0.702, "l": 0.120, "h": 0.038 },
-
-    "nomAdversaire2": { "x": 0.800, "y": 0.280, "l": 0.130, "h": 0.033 },
-    "adversaire2": { "x": 0.800, "y": 0.314, "l": 0.130, "h": 0.038 },
-
-    "nomAdversaire3": { "x": 0.430, "y": 0.192, "l": 0.140, "h": 0.033 },
-    "adversaire3": { "x": 0.430, "y": 0.226, "l": 0.140, "h": 0.038 },
-
-    "nomAdversaire4": { "x": 0.070, "y": 0.278, "l": 0.130, "h": 0.033 },
-    "adversaire4": { "x": 0.070, "y": 0.312, "l": 0.130, "h": 0.038 },
-
-    "nomAdversaire5": { "x": 0.060, "y": 0.668, "l": 0.130, "h": 0.033 },
-    "adversaire5": { "x": 0.060, "y": 0.702, "l": 0.130, "h": 0.038 }
+    "pot": {
+      "x": 0.47,
+      "y": 0.362,
+      "l": 0.075,
+      "h": 0.042
+    },
+    "tapisHero": {
+      "x": 0.42,
+      "y": 0.872,
+      "l": 0.14,
+      "h": 0.048
+    },
+    "nomAdversaire1": {
+      "x": 0.8,
+      "y": 0.664,
+      "l": 0.15,
+      "h": 0.042
+    },
+    "adversaire1": {
+      "x": 0.8,
+      "y": 0.702,
+      "l": 0.15,
+      "h": 0.048
+    },
+    "nomAdversaire2": {
+      "x": 0.79,
+      "y": 0.283,
+      "l": 0.15,
+      "h": 0.042
+    },
+    "adversaire2": {
+      "x": 0.79,
+      "y": 0.322,
+      "l": 0.15,
+      "h": 0.048
+    },
+    "nomAdversaire3": {
+      "x": 0.425,
+      "y": 0.2,
+      "l": 0.15,
+      "h": 0.042
+    },
+    "adversaire3": {
+      "x": 0.425,
+      "y": 0.239,
+      "l": 0.15,
+      "h": 0.048
+    },
+    "nomAdversaire4": {
+      "x": 0.055,
+      "y": 0.283,
+      "l": 0.15,
+      "h": 0.042
+    },
+    "adversaire4": {
+      "x": 0.055,
+      "y": 0.322,
+      "l": 0.15,
+      "h": 0.048
+    },
+    "nomAdversaire5": {
+      "x": 0.045,
+      "y": 0.664,
+      "l": 0.15,
+      "h": 0.042
+    },
+    "adversaire5": {
+      "x": 0.045,
+      "y": 0.702,
+      "l": 0.15,
+      "h": 0.048
+    }
   },
   "gabarits": []
 }

@@ -987,6 +987,23 @@ export default function LecteurDirect() {
             <h2>Ce que lit chaque table</h2>
             <span className="card-sub">mis à jour à chaque tour de lecture</span>
           </div>
+
+          {/* LE BLOCAGE LE PLUS FREQUENT, ET LE MOINS EVIDENT.
+              Des cadres parfaitement places ne lisent RIEN tant que le lecteur
+              ne sait pas a quoi ressemblent les chiffres de la salle. L'ecran
+              affiche alors « rien de lisible » partout, ce qui fait chercher un
+              defaut de cadrage — alors qu'il ne manque qu'un apprentissage
+              d'une minute. Autant le dire. */}
+          {gabarits.length === 0 && (
+            <p className="dashboard-hint" style={{ margin: "0 0 12px" }}>
+              <strong>Aucun signe appris.</strong> Le lecteur ne connaît pas encore la police
+              de cette salle : tant qu'il ne l'a pas apprise, aucune colonne ne se remplira,
+              même avec des cadres parfaitement placés. Capture une table, sélectionne le cadre
+              d'un tapis, tape ce qu'il affiche — « 99BB » par exemple — puis « Apprendre ».
+              Deux ou trois tapis suffisent à couvrir les dix chiffres.
+            </p>
+          )}
+
           <table className="table">
             <thead>
               <tr>
