@@ -264,6 +264,7 @@ export default function LecteurDirect() {
 
   const [surveillance, setSurveillance] = useState(false);
   const [lectureLive, setLectureLive] = useState(null);
+  const [vignettes, setVignettes] = useState(null);
   const [file, setFile] = useState([]);
   const [enregistres, setEnregistres] = useState(0);
   const [periodeMs, setPeriodeMs] = useState(() => lireLocal(CLE_PERIODE, PERIODE_DEFAUT));
@@ -496,9 +497,38 @@ export default function LecteurDirect() {
     setSaisieApprentissage("");
   }
 
+  /**
+   * Ce que chaque cadre contient REELLEMENT, en pixels.
+   *
+   * ON NE PEUT PAS REGLER UN CADRE SANS VOIR CE QU'IL ATTRAPE. Tant que l'ecran
+   * ne montrait que le texte lu, un cadre pose a cote donnait « ???? » — un
+   * resultat qui ressemble a un defaut de reconnaissance alors que c'est un
+   * defaut de cadrage, et rien ne permettait de faire la difference. Un cadre
+   * qui deborde sur le pseudonyme au-dessus du tapis, ou qui mord sur le mot
+   * « Pot », se voit ici en une seconde.
+   */
+  function vignetteDeZone(zoneAbs) {
+    const morceau = extraireZone(image, zoneAbs);
+    if (!morceau) return null;
+    const toile = document.createElement("canvas");
+    toile.width = morceau.largeur;
+    toile.height = morceau.hauteur;
+    toile.getContext("2d").putImageData(
+      new ImageData(morceau.data, morceau.largeur, morceau.hauteur), 0, 0,
+    );
+    return toile.toDataURL();
+  }
+
   function essayerLecture() {
     if (!image || !regions[regionActive]) return;
-    const lu = lireTable(image, zonesAbsolues(regions[regionActive], zones), gabarits);
+    const abs = zonesAbsolues(regions[regionActive], zones);
+    const lu = lireTable(image, abs, gabarits);
+    const vues = {};
+    for (const cle of clesDeCalibrage(zones)) {
+      if (!abs[cle]) continue;
+      try { vues[cle] = vignetteDeZone(abs[cle]); } catch { vues[cle] = null; }
+    }
+    setVignettes(vues);
     setLectureLive(lu);
     setMessage(null);
     setErreur(null);
@@ -1323,8 +1353,13 @@ export default function LecteurDirect() {
           </div>
 
           <div style={{ marginTop: 14, paddingTop: 13, borderTop: "1px solid var(--border)" }}>
-            <button className="btn-secondary" onClick={essayerLecture} disabled={!gabarits.length}>
-              Tester la lecture
+            {/* CE BOUTON ETAIT VERROUILLE TANT QU'AUCUN SIGNE N'ETAIT APPRIS.
+                C'est pourtant AVANT d'apprendre qu'il faut verifier ses cadres :
+                sans signe, la lecture ne rend rien, mais la vignette montre ce
+                que le cadre attrape — et c'est tout ce qu'il faut pour le
+                regler. Le verrou obligeait a apprendre a l'aveugle. */}
+            <button className="btn-secondary" onClick={essayerLecture} disabled={!image}>
+              Voir ce que lisent les cadres
             </button>
             {lectureLive && (
               <>
@@ -1337,6 +1372,12 @@ export default function LecteurDirect() {
                     return (
                       <div key={cle} className={`lecture ${etat}`}>
                         <span className="lecture-label">{libelle}</span>
+                        {/* CE QUE LE CADRE ATTRAPE, tel quel. C'est la seule
+                            chose qui distingue un cadre mal pose d'un signe mal
+                            reconnu — les deux donnent « ???? ». */}
+                        {vignettes?.[cle] && (
+                          <img className="vignette-zone" src={vignettes[cle]} alt={`Cadre ${libelle}`} />
+                        )}
                         <span className="lecture-valeur mono">
                           {l.vide ? "siège vide" : l.texte || "—"}
                         </span>

@@ -1713,3 +1713,15 @@ tr.cliquable:hover { background: var(--surface-2); }
   line-height: 1.6;
 }
 .note-bapteme.alerte { border-left-color: var(--loss); color: var(--text-muted); }
+
+/* La vignette d'un cadre de calibrage : ce que le cadre attrape, en pixels.
+   Agrandie au rendu, car un cadre de tapis fait quarante pixels de haut et
+   l'oeil doit pouvoir juger s'il mord sur le pseudonyme au-dessus. */
+.vignette-zone {
+  max-height: 34px;
+  max-width: 190px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #000;
+  image-rendering: pixelated;
+}

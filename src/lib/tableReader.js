@@ -48,7 +48,13 @@ export const ZONES_PAR_DEFAUT = {
   // un coup : en dessous du seuil qu'il donne, payer perd de l'argent quelle
   // que soit l'intuition. Le cadre par defaut vise le bouton du milieu ; il
   // demande un reglage, comme les autres.
-  miseAPayer: { x: 0.58, y: 0.93, l: 0.12, h: 0.05 },
+  // Cadre estime sur une capture reelle de table CoinPoker 6-max : le montant
+  // occupe la ligne BASSE du bouton « Appeler », le mot lui-meme etant au-dessus
+  // — l'englober ferait entrer des lettres dans une zone qui ne doit contenir
+  // qu'un nombre. C'est une estimation prise sur une image reduite, donc un
+  // POINT DE DEPART : la vignette de l'ecran de calibrage montre ce que le cadre
+  // attrape, il suffit de le faire glisser dessus.
+  miseAPayer: { x: 0.752, y: 0.955, l: 0.07, h: 0.035 },
   adversaire1: { x: 0.835, y: 0.475, l: 0.126, h: 0.052 },
   adversaire2: { x: 0.03, y: 0.475, l: 0.138, h: 0.052 },
   // Les pseudos servent à retrouver l'adversaire dans ta base de fiches. La

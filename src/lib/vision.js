@@ -476,8 +476,87 @@ export function apparier(empreinte, ratio, gabarits, seuilRejet = 0.32, margeMax
  * début, lui, soit lu sans le moindre trou. Une unité qu'on ne sait pas lire
  * n'enlève rien à un montant qu'on sait lire.
  */
+// ---------------------------------------------------------------------------
+// ISOLER LA LIGNE VISEE PAR UN CADRE
+// ---------------------------------------------------------------------------
+//
+// LE DEFAUT QUE CECI REPARE, ET QUI A COUTE DEUX CALIBRAGES.
+//
+// Le decoupage des signes projette l'encre sur les COLONNES. Tant qu'un cadre
+// ne contient qu'une ligne de texte, c'est exactement ce qu'il faut. Mais sur
+// une table, le pseudonyme est colle au-dessus du tapis : un cadre pose deux ou
+// trois pour cent trop haut attrape les deux, et les colonnes des deux lignes
+// se superposent. Le resultat n'est pas une lecture approximative, c'est une
+// bouillie — et elle se presente comme « ???? », c'est-a-dire exactement comme
+// un defaut de reconnaissance. On cherchait donc la panne du mauvais cote.
+//
+// Isoler la ligne rend le cadrage TOLERANT : il suffit que le cadre tombe sur
+// le texte vise, il n'a plus besoin de l'encadrer proprement. C'est ce qui
+// permet a un reglage unique de servir sur des fenetres de tailles differentes,
+// ou la barre de titre — de hauteur fixe — decale tout le reste.
+
+/**
+ * Deux lignes de texte sont separees par plus de deux pixels vides ; le point
+ * d'un « i » ou un accent, par un ou deux. C'est ce qui les distingue.
+ */
+export const ECART_MEME_LIGNE = 2;
+
+/** Les bandes horizontales portant de l'encre, les voisines etant fusionnees. */
+export function bandesDeTexte({ bits, largeur, hauteur }, ecart = ECART_MEME_LIGNE) {
+  const brutes = [];
+  let debut = -1;
+  for (let y = 0; y < hauteur; y++) {
+    let encre = false;
+    const base = y * largeur;
+    for (let x = 0; x < largeur; x++) if (bits[base + x]) { encre = true; break; }
+    if (encre) { if (debut < 0) debut = y; }
+    else if (debut >= 0) { brutes.push([debut, y - 1]); debut = -1; }
+  }
+  if (debut >= 0) brutes.push([debut, hauteur - 1]);
+
+  const bandes = [];
+  for (const b of brutes) {
+    const derniere = bandes[bandes.length - 1];
+    if (derniere && b[0] - derniere[1] - 1 <= ecart) derniere[1] = b[1];
+    else bandes.push([...b]);
+  }
+  return bandes;
+}
+
+/**
+ * Restreint un binaire a la ligne de texte que le cadre visait.
+ *
+ * ON GARDE LA BANDE LA PLUS PROCHE DU CENTRE DU CADRE, pas la plus fournie. Le
+ * cadre a ete pose sur quelque chose : c'est ce qu'il vise qui compte, pas ce
+ * qui porte le plus d'encre. Un pseudonyme de douze lettres pese plus lourd
+ * qu'un tapis de quatre chiffres, et prendre le plus fourni choisirait
+ * systematiquement le mauvais.
+ */
+export function isolerLigne(binaire, { marge = 1 } = {}) {
+  const { bits, largeur, hauteur } = binaire;
+  const bandes = bandesDeTexte(binaire);
+  if (bandes.length <= 1) return binaire;
+
+  const centre = hauteur / 2;
+  let choisie = bandes[0];
+  let meilleure = Infinity;
+  for (const b of bandes) {
+    const d = Math.abs((b[0] + b[1]) / 2 - centre);
+    if (d < meilleure) { meilleure = d; choisie = b; }
+  }
+
+  const y0 = Math.max(0, choisie[0] - marge);
+  const y1 = Math.min(hauteur - 1, choisie[1] + marge);
+  const h = y1 - y0 + 1;
+  if (h >= hauteur) return binaire;
+  return { bits: bits.slice(y0 * largeur, (y1 + 1) * largeur), largeur, hauteur: h };
+}
+
 export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
-  const binaire = binariser(carteEncre(data, largeur, hauteur), options.seuil);
+  const brut = binariser(carteEncre(data, largeur, hauteur), options.seuil);
+  // UNE SEULE LIGNE A LA FOIS. Un cadre qui deborde sur la ligne voisine — le
+  // pseudonyme au-dessus du tapis — melangerait les colonnes des deux.
+  const binaire = options.toutesLesLignes ? brut : isolerLigne(brut);
   let boites = decouperSignes(binaire, options);
 
   // Deuxième passe guidée par les gabarits. Ils portent le rapport
