@@ -8,7 +8,7 @@ import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState } from "../components/ui";
 import { apprendreZone, fusionnerGabarits, carteEncre, binariser } from "../lib/vision";
 import {
-  ZONES_PAR_DEFAUT, LIBELLES_ZONES, REGIONS_PAR_DEFAUT, extraireZone, lireTable,
+  ZONES_PAR_DEFAUT, libelleZone, clesDeCalibrage, REGIONS_PAR_DEFAUT, extraireZone, lireTable,
   imageDepuisDataUrl, synchroniserTables, integrerLecture, partDeHero,
   deduireResultat, zonesAbsolues, zoneDansRegion, lireCartesTable,
 } from "../lib/tableReader";
@@ -28,6 +28,9 @@ import { clesAdversaires, clesNoms } from "../lib/tableReader";
 import { observerPopulation } from "../lib/populationCash";
 import { signatureNom, nomOuEtiquette } from "../lib/signatureNom";
 import { retenirSignes, nomPourSignature } from "../lib/nomsJoueurs";
+import {
+  listerAdversairesCash, styleAdversaireCash, MAINS_MINIMUM_CASH,
+} from "../lib/adversairesCash";
 
 const CLE_ZONES = "gl_lecteur_zones";
 const CLE_REGIONS = "gl_lecteur_regions";
@@ -211,7 +214,7 @@ function Calibrateur({ image, regions, regionActive, region, zones, zoneActive, 
 
       {mode === "zones" &&
         Object.entries(zones).map(([cle, z]) =>
-          cadre(z, cle, LIBELLES_ZONES[cle], cle === zoneActive)
+          cadre(z, cle, libelleZone(cle), cle === zoneActive)
         )}
 
       {enCours && (
@@ -226,7 +229,7 @@ function Calibrateur({ image, regions, regionActive, region, zones, zoneActive, 
 
 export default function LecteurDirect() {
   const { user } = useAuth();
-  const { hands, tournois, refresh } = useData();
+  const { hands, tournois, refresh, chargerTextes } = useData();
 
   const bureau = typeof window !== "undefined" && window.grandLivre?.estBureau;
 
@@ -347,6 +350,19 @@ export default function LecteurDirect() {
   // Fiches d'adversaires deja constituees : c'est elles qu'on interroge quand un
   // pseudo est lu sur la table.
   const fiches = useMemo(() => listerAdversaires(hands, tournois), [hands, tournois]);
+
+  // LES FICHES DE CASH SE RECONSTRUISENT EN RELISANT LE TEXTE DES MAINS, rien
+  // n'etant releve a l'import. Il faut donc le demander — sans quoi le HUD
+  // annoncerait « jamais croise » pour des joueurs deja rencontres cent fois.
+  useEffect(() => { if (estCash && hudActif) chargerTextes?.(); }, [estCash, hudActif, chargerTextes]);
+  const bbCash = useMemo(
+    () => (hands?.length ? hands[hands.length - 1].bb || 1 : 1),
+    [hands],
+  );
+  const fichesCash = useMemo(
+    () => (estCash ? listerAdversairesCash(hands || [], bbCash) : []),
+    [estCash, hands, bbCash],
+  );
   const pseudos = useMemo(() => fiches.map((f) => f.nom), [fiches]);
 
   // Adversaires reconnus dans la derniere lecture. La lecture d'un pseudo n'a
@@ -669,10 +685,11 @@ export default function LecteurDirect() {
           // La PLACE, pas le siege : l'ecran ne numerote pas les sieges. La
           // place 1 est le voisin de Hero dans l'ordre du calibrage, et c'est
           // l'alignement par les tapis qui retrouvera le sens.
+          const siegesCash = [];
           if (estCash) {
             const noms = clesNoms(zonesAbs);
             const tapisCles = clesAdversaires(zonesAbs);
-            const sieges = [];
+            const sieges = siegesCash;
             for (let k = 0; k < noms.length; k++) {
               // ON N'A PAS BESOIN DE SAVOIR LIRE LE PSEUDO POUR RECONNAITRE LE
               // JOUEUR. La suite des FORMES qui le composent suffit : deux
@@ -697,7 +714,7 @@ export default function LecteurDirect() {
               if (!nom) continue;
               const tapis = lu[tapisCles[k]];
               sieges.push({
-                place: k + 1, nom, signature,
+                place: k + 1, nom, signature, cleNom: noms[k],
                 tapis: Number.isFinite(tapis) ? tapis : null,
               });
             }
@@ -708,11 +725,59 @@ export default function LecteurDirect() {
           }
 
           if (hudActif && estCash) {
-            // Le HUD du cash ne montre pas de fiches — il ne peut pas, les
-            // alias changent a chaque main. Il montre ce qui decide du coup.
+            // ------------------------------------------------- fiches en direct
+            //
+            // CE BLOC ETAIT ABSENT, ET SON COMMENTAIRE DISAIT POURQUOI : « le HUD
+            // du cash ne montre pas de fiches, il ne peut pas, les alias
+            // changent a chaque main ». C'etait vrai tant que l'identite
+            // reposait sur le texte de l'export, qui donne un alias different a
+            // chaque main. Ce n'est plus vrai : l'identite tient desormais a la
+            // FORME du pseudonyme affiche, qui ne change pas.
+            //
+            // Rien ici n'a besoin de savoir LIRE ce pseudonyme.
+            for (const siege of siegesCash) {
+              const z = zonesAbs[siege.cleNom];
+              if (!z) continue;
+              const point = versEcran(z, capture);
+              if (!point) continue;
+              const f = fichesCash.find((x) => x.nom === siege.nom);
+              if (!f) {
+                pastilles.push({
+                  nom: siege.nom,
+                  ton: "faible",
+                  note: "jamais croise",
+                  x: point.x,
+                  y: Math.max(0, point.y - 62),
+                });
+                continue;
+              }
+              const st = styleAdversaireCash(f);
+              const assez = f.mains >= MAINS_MINIMUM_CASH;
+              pastilles.push({
+                nom: f.nom,
+                ton: !assez ? "faible" : st?.ton === "loss" ? "danger" : st?.ton === "win" ? "cible" : "",
+                stats: [
+                  { label: "joue", valeur: `${f.tauxVolontaire?.toFixed(0) ?? "—"}%` },
+                  { label: "rel", valeur: `${f.tauxRelance?.toFixed(0) ?? "—"}%` },
+                  { label: "3b", valeur: `${f.tauxTroisBet?.toFixed(0) ?? "—"}%` },
+                ],
+                // ON DIT COMBIEN DE MAINS FONDENT LE CHIFFRE. Une frequence tiree
+                // de douze mains se lirait comme un fait ; annoncee avec son
+                // volume, elle se lit pour ce qu'elle est.
+                note: assez ? `${f.mains} mains · ${st?.label ?? ""}` : `${f.mains} mains — trop peu`,
+                x: point.x,
+                y: Math.max(0, point.y - 62),
+              });
+            }
+
+            // Et les chiffres du coup lui-meme, poses sous ton tapis.
             const vue = hudCash({
               pot: lu.pot,
-              aPayer: null,
+              // LA COTE DU POT ETAIT CABLEE A `null`, donc jamais affichee.
+              // C'est pourtant le seul chiffre qui tranche un coup : sous le
+              // seuil qu'il donne, payer perd de l'argent quelle que soit
+              // l'intuition. Il lui fallait une zone, elle existe maintenant.
+              aPayer: lu.miseAPayer,
               tapisHero: lu.tapisHero,
               tapisAdverses: clesAdversaires(zonesAbs).map((c) => lu[c]),
               population: populationRef.current,
@@ -855,7 +920,7 @@ export default function LecteurDirect() {
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
-  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh, hudActif, pseudos, fiches, versEcran, lireLesMains, user, estCash]);
+  }, [zones, gabarits, regions, regionActive, auto, enregistrerFiche, refresh, hudActif, pseudos, fiches, fichesCash, versEcran, lireLesMains, user, estCash]);
 
   useEffect(() => {
     if (!surveillance) return undefined;
@@ -1148,14 +1213,19 @@ export default function LecteurDirect() {
             {(fenetreEstTable || modeCalibrage === "zones") && (
               <>
                 <div className="segmented">
-                  {Object.keys(LIBELLES_ZONES).map((cle) => (
+                  {/* LES ZONES REELLES, PAS UNE LISTE FIGEE. Cet ecran
+                      parcourait une constante qui decrit une table de spin :
+                      sur une table de cash a six joueurs, il n'affichait que
+                      deux sieges sur cinq. Les trois autres etaient lus par le
+                      lecteur mais impossibles a regler et a verifier. */}
+                  {clesDeCalibrage(zones).map((cle) => (
                     <button
                       key={cle}
                       className={zoneActive === cle ? "active" : ""}
                       onClick={() => setZoneActive(cle)}
                       title={zones[cle] ? "" : "zone désactivée"}
                     >
-                      {LIBELLES_ZONES[cle]}
+                      {libelleZone(cle)}
                       {!zones[cle] && " ✕"}
                     </button>
                   ))}
@@ -1259,7 +1329,8 @@ export default function LecteurDirect() {
             {lectureLive && (
               <>
                 <div className="lectures">
-                  {Object.entries(LIBELLES_ZONES).map(([cle, libelle]) => {
+                  {clesDeCalibrage(zones).map((cle) => {
+                    const libelle = libelleZone(cle);
                     const l = lectureLive.lectures?.[cle];
                     if (!l) return null;
                     const etat = l.vide ? "vide" : l.fiable ? "sure" : "douteuse";

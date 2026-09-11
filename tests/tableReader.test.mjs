@@ -1,6 +1,6 @@
 import {
   extraireZone, nouveauSuivi, integrerLecture, deduireResultat, cloturer,
-  synchroniserTables, dotationPlausible, partDeHero,
+  synchroniserTables, dotationPlausible, partDeHero, clesDeCalibrage, libelleZone,
 } from "../src/lib/tableReader.js";
 
 let ok = 0, ko = 0;
@@ -246,6 +246,52 @@ console.log("=== une elimination reelle reste detectee ===");
   ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 0, adversaire1: 25, adversaire2: 0, pot: 0 }, 2000));
   ({ suivi: s } = integrerLecture(s, { dotation: 2, tapisHero: 0, adversaire1: 25, adversaire2: 0, pot: 0 }, 2500));
   T("issue : perdu", deduireResultat(s) === "perdu", String(deduireResultat(s)));
+}
+
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("=== les zones offertes au calibrage ===");
+// ---------------------------------------------------------------------------
+//
+// L'ECRAN DE CALIBRAGE PARCOURAIT UNE CONSTANTE qui decrit une table de spin :
+// deux sieges. Sur une table de cash a six joueurs, il n'en montrait donc que
+// deux sur cinq. Les trois autres etaient lus par le lecteur mais invisibles :
+// impossible de regler leur cadre, impossible de voir ce qu'ils lisaient, donc
+// impossible de comprendre pourquoi la table ne se lisait pas.
+{
+  const cash = {
+    pot: 1, tapisHero: 1,
+    nomAdversaire1: 1, adversaire1: 1, nomAdversaire2: 1, adversaire2: 1,
+    nomAdversaire3: 1, adversaire3: 1, nomAdversaire4: 1, adversaire4: 1,
+    nomAdversaire5: 1, adversaire5: 1,
+  };
+  const cles = clesDeCalibrage(cash);
+
+  T("TOUS LES SIEGES DU CALIBRAGE SONT OFFERTS AU REGLAGE",
+    [1, 2, 3, 4, 5].every((n) => cles.includes(`adversaire${n}`) && cles.includes(`nomAdversaire${n}`)),
+    "un siege qu'on ne peut pas regler est un siege qu'on ne peut pas reparer");
+
+  T("les sieges se suivent dans l'ordre des places",
+    cles.indexOf("nomAdversaire3") < cles.indexOf("nomAdversaire4")
+    && cles.indexOf("nomAdversaire4") < cles.indexOf("nomAdversaire5"));
+
+  T("le pseudo vient avant le tapis, dans l'ordre ou on les regle",
+    cles.indexOf("nomAdversaire3") < cles.indexOf("adversaire3"));
+
+  T("le montant a suivre est propose, sans quoi la cote du pot reste muette",
+    cles.includes("miseAPayer"));
+
+  T("aucune zone en double", new Set(cles).size === cles.length);
+
+  // Une zone du calibrage de spin reste offerte meme absente du calibrage
+  // courant : c'est ainsi qu'on la reactive apres l'avoir desactivee.
+  T("les zones connues restent proposees meme absentes", clesDeCalibrage({}).includes("dotation"));
+
+  T("un siege inattendu recoit quand meme un libelle",
+    libelleZone("nomAdversaire5") === "Pseudo siège 5"
+    && libelleZone("adversaire5") === "Tapis siège 5",
+    `${libelleZone("nomAdversaire5")} / ${libelleZone("adversaire5")}`);
+  T("et les zones connues gardent le leur", libelleZone("pot") === "Pot");
 }
 
 console.log("");

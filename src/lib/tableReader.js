@@ -43,6 +43,12 @@ export const ZONES_PAR_DEFAUT = {
   // des lettres inconnues dans une zone qui ne doit contenir qu'un nombre.
   pot: { x: 0.408, y: 0.348, l: 0.1, h: 0.045 },
   tapisHero: { x: 0.446, y: 0.879, l: 0.106, h: 0.055 },
+  // LE MONTANT A SUIVRE, lu sur le bouton « Suivre ». Sans lui, la cote du pot
+  // ne peut pas etre calculee — et c'est le seul chiffre qui tranche vraiment
+  // un coup : en dessous du seuil qu'il donne, payer perd de l'argent quelle
+  // que soit l'intuition. Le cadre par defaut vise le bouton du milieu ; il
+  // demande un reglage, comme les autres.
+  miseAPayer: { x: 0.58, y: 0.93, l: 0.12, h: 0.05 },
   adversaire1: { x: 0.835, y: 0.475, l: 0.126, h: 0.052 },
   adversaire2: { x: 0.03, y: 0.475, l: 0.138, h: 0.052 },
   // Les pseudos servent à retrouver l'adversaire dans ta base de fiches. La
@@ -119,6 +125,7 @@ export const LIBELLES_ZONES = {
   dotation: "Dotation",
   pot: "Pot",
   tapisHero: "Ton tapis",
+  miseAPayer: "Montant à suivre",
   adversaire1: "Tapis adversaire droite",
   adversaire2: "Tapis adversaire gauche",
   nomAdversaire1: "Pseudo droite",
@@ -150,6 +157,52 @@ export function clesAdversaires(zones = {}) {
 /** Les clés de pseudonymes adverses présentes, dans l'ordre. */
 export function clesNoms(zones = {}) {
   return Object.keys(zones).filter((c) => /^nomAdversaire\d+$/.test(c)).sort(ORDRE_NUMERIQUE);
+}
+
+/**
+ * Le libelle d'une zone, meme si elle n'etait pas prevue d'avance.
+ *
+ * Les sieges 3 a 5 d'une table de cash n'ont jamais figure dans `LIBELLES_ZONES`
+ * — elle decrit une table de spin, qui en compte deux.
+ */
+export function libelleZone(cle) {
+  if (LIBELLES_ZONES[cle]) return LIBELLES_ZONES[cle];
+  const n = cle.match(/\d+$/)?.[0];
+  if (/^adversaire\d+$/.test(cle)) return `Tapis siège ${n}`;
+  if (/^nomAdversaire\d+$/.test(cle)) return `Pseudo siège ${n}`;
+  return cle;
+}
+
+const TETE = ["buyIn", "dotation", "pot", "tapisHero", "miseAPayer"];
+const QUEUE = ["finGain", "finRejouer"];
+
+/**
+ * Les zones a presenter au calibrage.
+ *
+ * MEME LECON QU'AU-DESSUS, ET ELLE AVAIT ETE OUBLIEE ICI. L'ecran de calibrage
+ * parcourait `LIBELLES_ZONES`, qui decrit une table de spin : sur une table de
+ * cash a six joueurs, il n'affichait que DEUX SIEGES SUR CINQ. Les trois autres
+ * etaient lus par le lecteur mais invisibles a l'ecran — impossible de regler
+ * leur cadre, impossible de voir ce qu'ils lisaient, et donc impossible de
+ * comprendre pourquoi la table ne se lisait pas.
+ *
+ * C'est le calibrage courant qui fait foi, comme partout ailleurs.
+ */
+export function clesDeCalibrage(zones = {}) {
+  const toutes = new Set([...Object.keys(LIBELLES_ZONES), ...Object.keys(zones)]);
+  const sieges = [...toutes].filter((c) => /^(?:nom)?adversaire\d+$/i.test(c));
+  const parPlace = sieges.sort((a, b) => {
+    const na = Number(a.match(/\d+$/)?.[0] ?? 0);
+    const nb = Number(b.match(/\d+$/)?.[0] ?? 0);
+    // Le pseudo avant le tapis : c'est l'ordre dans lequel on les regle.
+    if (na !== nb) return na - nb;
+    return a.startsWith("nom") ? -1 : 1;
+  });
+  return [
+    ...TETE.filter((c) => toutes.has(c)),
+    ...parPlace,
+    ...QUEUE.filter((c) => toutes.has(c)),
+  ];
 }
 
 /** Une zone dont le contenu est du TEXTE et non un nombre. */
