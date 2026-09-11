@@ -631,6 +631,12 @@ export default function LecteurDirect() {
               });
             }
           }
+          // L'identifiant de table, lu dans le titre de la fenetre : il sert au
+          // releve des identites plus bas ET a l'apprentissage automatique.
+          const idTableCourante = capture.idTable
+            ?? String(capture.titre ?? "").match(/(?:NLH|PLO\d?|NLHE)\s*(\d{4,})/i)?.[1]
+            ?? null;
+
           const { suivi, tournoiTermine } = integrerLecture(suivis.get(cle), lu, maintenant);
 
           // Mémoire des signes non reconnus. Le lecteur ne sait pas les nommer
@@ -639,10 +645,14 @@ export default function LecteurDirect() {
           for (const [cle2, lect] of Object.entries(lu.lectures || {})) {
             if (!lect || lect.vide || lect.fiable || !lect.signes?.length) continue;
             if (lect.signes.length > 6) continue;
+            // LA TABLE VOYAGE AVEC L'OBSERVATION. Sans elle, l'apprentissage
+            // automatique du cash ne saurait pas a quelle partie rapporter ce
+            // qu'il a vu : c'est le tapis de Hero SUR CETTE TABLE, a cet
+            // instant, qui donnera l'etiquette.
             aRetenir.push(
               observation(cle2, maintenant, lect.signes.map((x) => ({
                 empreinte: x.empreinte, ratio: x.ratio, lu: x.signe,
-              })))
+              })), { table: idTableCourante })
             );
           }
 
@@ -667,14 +677,7 @@ export default function LecteurDirect() {
               const tapis = lu[tapisCles[k]];
               sieges.push({ place: k + 1, nom, tapis: Number.isFinite(tapis) ? tapis : null });
             }
-            // L'IDENTIFIANT VIENT DU TITRE DE LA FENETRE, pas de l'ecran.
-            // CoinPoker titre ses tables « NLH 1312476 - ₮0.01/₮0.02 », et le
-            // systeme nous donne ce titre tel quel : un caractere n'y est
-            // jamais mal lu, alors qu'un identifiant reconnu de travers ferait
-            // echouer TOUS les rapprochements de cette table sans qu'on
-            // comprenne pourquoi.
-            const idTable = capture.idTable
-              ?? String(capture.titre ?? "").match(/(?:NLH|PLO\d?|NLHE)\s*(\d{4,})/i)?.[1];
+            const idTable = idTableCourante;
             if (idTable && sieges.length) {
               identitesRef.current.push(observationTable(idTable, maintenant, sieges));
             }

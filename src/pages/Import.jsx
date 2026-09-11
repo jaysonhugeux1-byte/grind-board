@@ -7,7 +7,32 @@ import { importHands } from "../lib/supabaseData";
 import { minimum, maximum } from "../lib/grandsTableaux";
 import { relierParPlaces, appliquerIdentites } from "../lib/identitesCash";
 import { lireObservations, etatObservations } from "../lib/observationsTable";
+import { apprendreCashDepuisHistorique } from "../lib/apprentissageAuto";
 import { PageHeader, fmtMoney, fmtDate } from "../components/ui";
+
+const CLE_GABARITS = "gl_lecteur_gabarits_v2";
+const CLE_OBSERVATIONS = "gl_lecteur_observations";
+
+/**
+ * Etiquette les signes que le lecteur n'a pas su nommer, a partir de l'historique.
+ *
+ * TOUT SE PASSE EN LOCAL, et rien n'est appris quand le rapprochement n'est pas
+ * certain : un signe mal etiquette empoisonnerait toutes les lectures suivantes,
+ * en silence et definitivement.
+ */
+function apprendreSignes(mains) {
+  try {
+    const observations = JSON.parse(localStorage.getItem(CLE_OBSERVATIONS) || "[]");
+    if (!Array.isArray(observations) || !observations.length) return null;
+    const gabarits = JSON.parse(localStorage.getItem(CLE_GABARITS) || "[]");
+    const r = apprendreCashDepuisHistorique(observations, mains, Array.isArray(gabarits) ? gabarits : []);
+    if (r.appris > 0) localStorage.setItem(CLE_GABARITS, JSON.stringify(r.gabarits));
+    return { appris: r.appris, examinees: r.examinees, rejetees: r.rejetees };
+  } catch {
+    // L'apprentissage est un bonus : son echec ne doit jamais empecher un import.
+    return null;
+  }
+}
 
 export default function Import() {
   const { user } = useAuth();
@@ -59,6 +84,17 @@ export default function Import() {
       const lien = vues.length ? relierParPlaces(parsed, vues) : null;
       const mains = lien ? appliquerIdentites(parsed, lien.liens) : parsed;
 
+      // L'APPRENTISSAGE AUTOMATIQUE DES SIGNES.
+      //
+      // Le lecteur a vu des chiffres qu'il ne savait pas nommer. L'historique,
+      // lui, donne ton tapis exact au debut de chaque main — et l'ecran
+      // l'affichait en clair au meme moment. Rapprocher les deux etiquette
+      // gratuitement ce qui n'avait pas ete lu, sans une seule saisie.
+      //
+      // Sur une session reelle de 293 mains, cela couvre les dix chiffres, le
+      // point et la lettre B : tout ce dont le lecteur a besoin.
+      const apprentissage = apprendreSignes(mains);
+
       const newCount = mains.filter((h) => !existingIds.has(h.id)).length;
       const existingCount = mains.length - newCount;
       setPreview({
@@ -69,6 +105,7 @@ export default function Import() {
         identites: lien
           ? { reliees: lien.mainsReliees, total: lien.mainsTotales, taux: lien.tauxLiaison }
           : null,
+        apprentissage,
         vues: etatObservations(),
       });
     } catch (e) {
@@ -197,6 +234,13 @@ export default function Import() {
                 {preview.identites.reliees === 0
                   && " Aucune : les adversaires resteront anonymes. Vérifie que le lecteur"
                      + " tournait pendant la session, et sur les mêmes tables."}
+              </p>
+            )}
+            {preview.apprentissage?.appris > 0 && (
+              <p className="dashboard-hint" style={{ marginTop: 10 }}>
+                <strong>{preview.apprentissage.appris} signe(s) appris</strong> automatiquement
+                depuis cet historique — le lecteur lira mieux les prochaines sessions, sans que
+                tu aies rien à taper.
               </p>
             )}
             {!preview.identites && (

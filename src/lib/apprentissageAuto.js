@@ -110,6 +110,137 @@ function formaterMontant(v) {
   return Number.isInteger(arrondi) ? String(arrondi) : String(arrondi).replace(".", ",");
 }
 
+// ---------------------------------------------------------------------------
+// CASH GAME : TON PROPRE TAPIS SERT DE PROFESSEUR
+// ---------------------------------------------------------------------------
+//
+// En cash il n'y a ni dotation ni board à étiqueter, mais il y a mieux : ton
+// tapis. L'historique en donne la valeur exacte au début de chaque main, et
+// l'écran l'affiche en clair — « 99BB », « 173.5BB ». Sur une session, il prend
+// assez de valeurs différentes pour couvrir les dix chiffres, le point et les
+// deux lettres. Aucune saisie, aucune erreur de frappe.
+//
+// LE PIÈGE EST DE L'ÉTIQUETER AU MAUVAIS MOMENT. Pendant une main, ton tapis
+// diminue à chaque mise : une observation prise trois secondes après le début
+// montre autre chose que ce qu'annonce l'en-tête, et l'étiquette serait fausse.
+// Un signe mal appris empoisonne ensuite TOUTES les lectures, en silence.
+//
+// On n'étiquette donc QUE DANS L'INTERVALLE ENTRE DEUX MAINS : après la fin de
+// la précédente, avant le début de la suivante. Là, le tapis ne bouge plus, et
+// il vaut exactement ce que la main suivante annonce.
+
+/** Au-delà, l'intervalle n'est plus une pause entre deux mains : on a quitté la table. */
+export const PAUSE_MAX_MS = 120_000;
+
+/**
+ * Le contexte de cash : par table, les mains triées, avec début, fin et tapis.
+ *
+ * On relit le texte brut parce que le résumé ne conserve ni l'heure de fin ni le
+ * tapis de départ — les deux bornes dont dépend tout ce qui suit.
+ */
+export function contexteCashDepuisMains(mains = []) {
+  const parTable = new Map();
+
+  for (const m of mains) {
+    if (typeof m?.raw !== "string" || !(m.bb > 0)) continue;
+    const tapis = m.raw.match(/^Seat \d+: Hero \(₮([\d.]+) in chips\)/m);
+    if (!tapis) continue;
+
+    const fin = m.raw.match(/^Game ended: (\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/m);
+    const table = String(m.table ?? "");
+    if (!table) continue;
+    if (!parTable.has(table)) parTable.set(table, []);
+    parTable.get(table).push({
+      ts: m.ts,
+      // La fin est lue si elle est ecrite ; sinon on prend le debut, ce qui
+      // RESSERRE l'intervalle au lieu de l'elargir. Un intervalle trop large
+      // laisserait passer une observation prise en pleine main.
+      fin: fin
+        ? new Date(`${fin[1]}-${fin[2]}-${fin[3]}T${fin[4]}:${fin[5]}:${fin[6]}`).getTime()
+        : m.ts,
+      bb: m.bb,
+      tapisHero: parseFloat(tapis[1]),
+    });
+  }
+
+  for (const liste of parTable.values()) liste.sort((a, b) => a.ts - b.ts);
+  return parTable;
+}
+
+/**
+ * Ce que ton tapis affichait à cet instant — ou rien, si on n'en est pas sûr.
+ *
+ * @param obs        { zone, ts, table }
+ * @param contexte   ce que rend `contexteCashDepuisMains`
+ */
+export function etiquetteCash(obs, contexte) {
+  if (obs?.zone !== "tapisHero" || !obs.table) return null;
+  const liste = contexte?.get(String(obs.table));
+  if (!liste?.length) return null;
+
+  // La premiere main qui commence APRES l'observation : c'est elle qui annonce
+  // le tapis qu'on avait sous les yeux.
+  const i = liste.findIndex((m) => m.ts > obs.ts);
+  if (i < 0) return null;
+  const suivante = liste[i];
+  const precedente = i > 0 ? liste[i - 1] : null;
+
+  // ON EXIGE D'ETRE DANS LA PAUSE, pas en pleine main. Sans cette borne, une
+  // observation prise au milieu du coup precedent serait etiquetee avec le
+  // tapis du debut du suivant — donc fausse, et definitivement apprise.
+  if (precedente && obs.ts < precedente.fin) return null;
+  if (obs.ts < suivante.ts - PAUSE_MAX_MS) return null;
+
+  const bb = suivante.tapisHero / suivante.bb;
+  if (!Number.isFinite(bb) || bb <= 0) return null;
+  return `${formaterBB(bb)}BB`;
+}
+
+/**
+ * Le format exact de l'affichage : « 99BB », « 173.5BB », « 100.5BB ».
+ *
+ * Une decimale au plus, et jamais de zero inutile — « 99.0BB » ne correspondrait
+ * a aucun signe observe, et l'apprentissage serait rejete sans qu'on sache
+ * pourquoi.
+ */
+export function formaterBB(v) {
+  const arrondi = Math.round(v * 10) / 10;
+  return Number.isInteger(arrondi) ? String(arrondi) : String(arrondi);
+}
+
+/**
+ * Apprend les signes du cash a partir de l'historique.
+ *
+ * Meme prudence que pour le spin : on n'apprend que lorsque le rapprochement
+ * est certain, et le nombre de signes observes doit correspondre exactement a
+ * la longueur de l'etiquette.
+ */
+export function apprendreCashDepuisHistorique(observations = [], mains = [], gabarits = []) {
+  const contexte = contexteCashDepuisMains(mains);
+  let courants = gabarits;
+  const appris = new Map();
+  let examinees = 0;
+  let rejetees = 0;
+
+  for (const obs of observations) {
+    const attendu = etiquetteCash(obs, contexte);
+    if (!attendu) continue;
+    examinees++;
+    if (!obs.signes?.length || obs.signes.length !== attendu.length) { rejetees++; continue; }
+    for (let k = 0; k < attendu.length; k++) {
+      const signe = attendu[k];
+      const vu = obs.signes[k];
+      if (!vu?.empreinte) continue;
+      appris.set(`${signe}:${vu.empreinte.join?.(",") ?? vu.empreinte}`, {
+        signe, empreinte: vu.empreinte, ratio: vu.ratio,
+      });
+    }
+  }
+
+  courants = fusionnerGabarits(courants, [...appris.values()]);
+  return { gabarits: courants, appris: appris.size, examinees, rejetees };
+}
+
 /**
  * Apprend tout ce que l'historique permet d'étiqueter.
  *
