@@ -9,7 +9,7 @@
 // Ces tests vérifient donc surtout ce que le module REFUSE de faire.
 import {
   observation, siegesDeLaMain, observationDeLaMain, relierIdentites, appliquerIdentites,
-  placesDepuisHero, relierParPlaces, TOLERANCE_MS,
+  placesDepuisHero, relierParPlaces, observationsPossibles, TOLERANCE_MS,
 } from "../src/lib/identitesCash.js";
 
 let ok = 0, ko = 0;
@@ -276,6 +276,67 @@ const enBB = observation("200588", T0, [
 T("les tapis en blindes sont convertis ici aussi",
   relierParPlaces([m6], [enBB]).liens.size === 5,
   "1,94 jeton à 0,02 de blinde fait bien 97 BB");
+
+
+// ---------------------------------------------------------------------------
+// QUAND L'IDENTIFIANT DE TABLE MANQUE
+// ---------------------------------------------------------------------------
+//
+// Il venait du TITRE de la fenetre — « NLH 1318782 ». Sauf que ce titre
+// appartient au CONTENU : CoinPoker dessine sa propre barre de titre, et
+// Windows nomme ces fenetres « CoinPoker », sans plus. L'identifiant n'est donc
+// pas toujours connu, et le magasin d'observations rejetait alors TOUT releve
+// — rien n'etait enregistre, et le pont ne pouvait evidemment rien relier.
+//
+// Sans identifiant, ON NE DEVINE PAS : tous les candidats de l'instant sont
+// essayes, et les TAPIS departagent. Plusieurs alignements verifies valent un
+// refus, exactement comme pour le sens de rotation.
+{
+  const sousFenetre = observation("window:12345:0", T0, [
+    { place: 1, nom: "Un", tapis: 1.94 },
+    { place: 2, nom: "Deux", tapis: 2.0 },
+    { place: 3, nom: "Trois", tapis: 4.91 },
+    { place: 4, nom: "Quatre", tapis: 2.01 },
+    { place: 5, nom: "Cinq", tapis: 1.99 },
+  ], { unite: "jetons" });
+
+  const r = relierParPlaces([m6], [sousFenetre]);
+  T("SANS IDENTIFIANT DE TABLE, LES TAPIS SUFFISENT A RELIER",
+    r.liens.get("h6:cccccccc") === "Trois" && r.liens.size === 5,
+    JSON.stringify([...r.liens]));
+
+  const autreTable = observation("window:99999:0", T0 + 2000, [
+    { place: 1, nom: "Alpha", tapis: 7.5 },
+    { place: 2, nom: "Beta", tapis: 8.25 },
+    { place: 3, nom: "Gamma", tapis: 3.1 },
+    { place: 4, nom: "Delta", tapis: 9.4 },
+    { place: 5, nom: "Epsilon", tapis: 6.05 },
+  ], { unite: "jetons" });
+
+  const r2 = relierParPlaces([m6], [autreTable, sousFenetre]);
+  T("UNE TABLE VOISINE AUX TAPIS DIFFERENTS EST ECARTEE, PAS CONFONDUE",
+    r2.liens.get("h6:cccccccc") === "Trois" && r2.liens.size === 5,
+    JSON.stringify([...r2.liens]));
+
+  const jumelle = observation("window:77777:0", T0 + 3000, [
+    { place: 1, nom: "Autre1", tapis: 1.94 },
+    { place: 2, nom: "Autre2", tapis: 2.0 },
+    { place: 3, nom: "Autre3", tapis: 4.91 },
+    { place: 4, nom: "Autre4", tapis: 2.01 },
+    { place: 5, nom: "Autre5", tapis: 1.99 },
+  ], { unite: "jetons" });
+
+  const r3 = relierParPlaces([m6], [sousFenetre, jumelle]);
+  T("DEUX OBSERVATIONS QUI CONCORDENT VALENT UN REFUS",
+    r3.liens.size === 0 && /impossible de trancher/.test(r3.refus[0]?.motif ?? ""),
+    JSON.stringify(r3.refus));
+
+  const { candidats } = observationsPossibles(m6, [jumelle, direct]);
+  T("un identifiant connu des deux cotes filtre a lui seul",
+    candidats.length === 1 && candidats[0].table === "200588",
+    JSON.stringify(candidats.map((c) => c.table)));
+}
+
 
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

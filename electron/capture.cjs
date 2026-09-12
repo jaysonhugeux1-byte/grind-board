@@ -46,7 +46,22 @@ const TABLE_TITLE =
 // CoinPoker est TOUJOURS dans ce cas : une fenetre par table, jamais de
 // mosaique. Son titre porte l'identifiant de table — « NLH 1312476 » — ce qui
 // vaut mieux que de le lire a l'ecran : un titre ne se trompe pas de caractere.
-const FENETRE_DE_TABLE = /Spin\s*&\s*(?:Rush|Go)|\b(?:NLH|PLO\d?|NLHE)\b\s*\d/i;
+//
+// ET LE TITRE VISIBLE N'EST PAS LE TITRE DE LA FENETRE.
+//
+// CoinPoker dessine sa propre barre de titre A L'INTERIEUR de la fenetre : le
+// « NLH 1318782 - 0.01/0.02 » qu'on lit a l'ecran appartient au CONTENU.
+// Windows, lui, nomme ces fenetres « CoinPoker », tout simplement.
+//
+// Consequence, et elle a coute cher : le motif ci-dessous ne reconnaissait pas
+// ces fenetres comme des TABLES. Chacune etait donc prise pour la fenetre d'un
+// client et decoupee selon les regions par defaut — deux rectangles de 40 % de
+// large, herites de la mosaique Betclic. Toutes les zones tombaient a cote, et
+// l'ecran annoncait « rien de lisible » sur HUIT demi-fenetres au lieu de lire
+// quatre tables. Aucun reglage de cadre ne pouvait rattraper cela.
+//
+// Une fenetre CoinPoker EST une table : ce client n'a pas de mosaique.
+const FENETRE_DE_TABLE = /CoinPoker|Spin\s*&\s*(?:Rush|Go)|\b(?:NLH|PLO\d?|NLHE)\b\s*\d/i;
 
 // L'identifiant de table, tel que l'historique l'ecrit dans « Table '1312476' ».
 // C'est la cle qui rapproche ce que le lecteur voit de ce que l'export raconte.

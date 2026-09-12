@@ -236,6 +236,40 @@ export function alignerParPlaces(main, obs, { exigerTapis = true } = {}) {
  * Même contrat que `relierIdentites`, mais sans numéro de siège : c'est celui
  * que le lecteur peut réellement alimenter.
  */
+/**
+ * Les observations qui pourraient decrire cette main.
+ *
+ * ---------------------------------------------------------------------------
+ * POURQUOI L'IDENTIFIANT DE TABLE NE SUFFIT PLUS
+ * ---------------------------------------------------------------------------
+ *
+ * Il venait du TITRE de la fenetre — « NLH 1318782 » — ce qui valait mieux que
+ * de le lire a l'ecran : un titre ne se trompe pas de caractere. Sauf que ce
+ * titre appartient au CONTENU de la fenetre : CoinPoker dessine sa propre barre
+ * de titre, et Windows nomme ces fenetres « CoinPoker », sans plus.
+ *
+ * L'identifiant n'est donc pas toujours connu. Quand il l'est, il tranche seul.
+ * Quand il ne l'est pas, ON NE DEVINE PAS : on laisse passer tous les candidats
+ * de l'instant, et ce sont les TAPIS qui departagent — exactement comme pour le
+ * sens de rotation. Plusieurs alignements verifies valent un refus.
+ */
+export function observationsPossibles(main, observations, { toleranceMs = TOLERANCE_MS } = {}) {
+  const table = String(main?.table ?? "");
+  const ts = Number(main?.ts) || 0;
+  if (!ts) return { candidats: [], motif: "main sans instant" };
+
+  const proches = observations
+    .filter((o) => Math.abs(o.ts - ts) <= toleranceMs)
+    .sort((a, b) => Math.abs(a.ts - ts) - Math.abs(b.ts - ts));
+  if (!proches.length) return { candidats: [], motif: "aucune observation a cet instant" };
+
+  // L'identifiant, quand il est connu des deux cotes, reste le meilleur filtre.
+  const memeTable = proches.filter((o) => table && o.table === table);
+  if (memeTable.length) return { candidats: memeTable, motif: null };
+
+  return { candidats: proches, motif: null };
+}
+
 export function relierParPlaces(mains = [], observations = [], {
   toleranceMs = TOLERANCE_MS,
   exigerTapis = true,
@@ -245,12 +279,30 @@ export function relierParPlaces(mains = [], observations = [], {
   let mainsReliees = 0;
 
   for (const main of mains) {
-    const { obs, motif } = observationDeLaMain(main, observations, { toleranceMs });
-    if (!obs) { refus.push({ main: main?.id ?? null, motif }); continue; }
+    const { candidats, motif } = observationsPossibles(main, observations, { toleranceMs });
+    if (!candidats.length) { refus.push({ main: main?.id ?? null, motif }); continue; }
 
-    const { paires, motif: m2 } = alignerParPlaces(main, obs, { exigerTapis });
-    if (!paires) { refus.push({ main: main.id, motif: m2 }); continue; }
+    // ON ESSAIE TOUS LES CANDIDATS ET ON EXIGE QU'UN SEUL TIENNE. Les tapis
+    // doivent concorder sur TOUS les sieges a deux pour cent pres : deux tables
+    // differentes qui satisferaient cela au meme instant seraient une
+    // coincidence, mais une coincidence suffirait a melanger deux joueurs. Deux
+    // alignements valides valent donc un refus, comme partout ici.
+    const retenus = [];
+    let dernierMotif = null;
+    for (const obs of candidats) {
+      const { paires, motif: m2 } = alignerParPlaces(main, obs, { exigerTapis });
+      if (paires) retenus.push(paires);
+      else dernierMotif = m2;
+      if (retenus.length > 1) break;
+    }
 
+    if (!retenus.length) { refus.push({ main: main.id, motif: dernierMotif }); continue; }
+    if (retenus.length > 1) {
+      refus.push({ main: main.id, motif: "deux observations concordent : impossible de trancher" });
+      continue;
+    }
+
+    const paires = retenus[0];
     for (const { alias, nom } of paires) liens.set(`${main.id}:${alias}`, nom);
     if (paires.length) mainsReliees++;
   }

@@ -629,8 +629,10 @@ export default function LecteurDirect() {
 
       const nouvellesFiches = [...termines];
 
+      let numeroFenetre = 0;
       for (const capture of captures) {
         if (capture.erreur || !capture.bitmap) continue;
+        numeroFenetre++;
         // Le tampon arrive en BGRA. Aucune conversion : la carte d'encre mesure
         // un écart à la couleur dominante, distance euclidienne insensible à
         // l'ordre des canaux. Les gabarits appris sur un PNG restent valables.
@@ -748,7 +750,14 @@ export default function LecteurDirect() {
                 tapis: Number.isFinite(tapis) ? tapis : null,
               });
             }
-            const idTable = idTableCourante;
+            // UNE CLE DE TABLE, TOUJOURS. L'identifiant du titre est le
+            // meilleur quand il existe, mais CoinPoker nomme ses fenetres
+            // « CoinPoker » et garde le numero pour sa barre de titre dessinee.
+            // Sans cle, le magasin d'observations rejetait TOUT : rien n'etait
+            // enregistre, et le pont ne pouvait evidemment rien relier.
+            // L'identifiant de fenetre tient lieu de cle a defaut ; ce sont les
+            // tapis qui rapprocheront la main de l'observation.
+            const idTable = idTableCourante || capture.id;
             if (idTable && sieges.length) {
               identitesRef.current.push(observationTable(idTable, maintenant, sieges));
             }
@@ -866,7 +875,16 @@ export default function LecteurDirect() {
           if (!estCash && tournoiTermine) nouvellesFiches.push(tournoiTermine);
           if (i === regionActive) setLectureLive(lu);
           etats.push({
-            table: capture.estTable ? capture.titre : `Table ${i + 1}`,
+            // DE QUOI DISTINGUER QUATRE FENETRES QUI PORTENT LE MEME NOM.
+            // Windows les appelle toutes « CoinPoker » ; le numero de table,
+            // lui, est dessine dans la fenetre et n'arrive pas jusqu'ici. On
+            // ajoute donc le rang de la fenetre, sans quoi les quatre lignes du
+            // tableau seraient indiscernables.
+            table: capture.estTable
+              ? (capture.idTable
+                ? `Table ${capture.idTable}`
+                : `${capture.titre} ${numeroFenetre}`)
+              : `${capture.titre} — zone ${i + 1}`,
             buyIn: lu.buyIn ?? suivi.buyIn,
             dotation: lu.dotation ?? suivi.dotation,
             tapis: lu.tapisHero,
@@ -1136,7 +1154,7 @@ export default function LecteurDirect() {
             <tbody>
               {etatTables.map((e) => (
                 <tr key={e.table}>
-                  <td>Table {e.table}</td>
+                  <td>{e.table}</td>
                   <td className={e.phase === "rien de lisible" ? "loss" : e.fin ? "win" : ""}>
                     {e.phase}
                   </td>
