@@ -1,6 +1,6 @@
 import {
   extraireZone, nouveauSuivi, integrerLecture, deduireResultat, cloturer,
-  synchroniserTables, dotationPlausible, partDeHero, clesDeCalibrage, libelleZone,
+  synchroniserTables, dotationPlausible, partDeHero, clesDeCalibrage, libelleZone, zonesALire,
 } from "../src/lib/tableReader.js";
 
 let ok = 0, ko = 0;
@@ -292,6 +292,53 @@ console.log("=== les zones offertes au calibrage ===");
     && libelleZone("adversaire5") === "Tapis siège 5",
     `${libelleZone("nomAdversaire5")} / ${libelleZone("adversaire5")}`);
   T("et les zones connues gardent le leur", libelleZone("pot") === "Pot");
+}
+
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("=== ce qu'on refuse de lire, et ce qu'on refuse de proposer ===");
+// ---------------------------------------------------------------------------
+//
+// CHAQUE ZONE LUE COUTE, A CHAQUE TOUR, SUR CHAQUE TABLE. Extraction, carte
+// d'encre, seuil d'Otsu, decoupage, puis comparaison de chaque signe a tous les
+// gabarits. Quatorze zones sur quatre tables deux fois par seconde font cent
+// douze lectures par seconde.
+//
+// Et une partie de cash n'a ni buy-in affiche, ni dotation, ni ecran de fin :
+// ce sont des notions de TOURNOI. Les proposer au reglage promet une lecture
+// impossible, et le lecteur les compte ensuite parmi les cadres « sur du vide ».
+{
+  const toutes = {
+    buyIn: 1, dotation: 1, finGain: 1, finRejouer: 1,
+    pot: 1, miseAPayer: 1, tapisHero: 1,
+    nomAdversaire1: 1, adversaire1: 1, nomAdversaire5: 1, adversaire5: 1,
+  };
+
+  const cash = clesDeCalibrage(toutes, { cash: true });
+  T("LES ZONES DE TOURNOI NE SONT PAS PROPOSEES EN CASH",
+    !["buyIn", "dotation", "finGain", "finRejouer"].some((c) => cash.includes(c)),
+    JSON.stringify(cash));
+  T("mais les sieges et le pot le restent",
+    cash.includes("tapisHero") && cash.includes("pot") && cash.includes("adversaire5"));
+  T("et le spin les garde", clesDeCalibrage(toutes).includes("dotation"));
+
+  const sansHud = Object.keys(zonesALire(toutes, { cash: true }));
+  T("SANS AFFICHAGE SUPERPOSE, NI POT NI MONTANT A SUIVRE",
+    !sansHud.includes("pot") && !sansHud.includes("miseAPayer"),
+    "ils n'alimentent que le HUD : les lire quand il est eteint, c'est payer pour rien");
+  T("les pseudonymes et les tapis, eux, sont toujours lus",
+    sansHud.includes("tapisHero") && sansHud.includes("nomAdversaire1")
+    && sansHud.includes("adversaire5"),
+    "c'est d'eux que depend tout l'alignement des identites");
+
+  const avecHud = Object.keys(zonesALire(toutes, { cash: true, hud: true }));
+  T("avec l'affichage, le pot et le montant reviennent",
+    avecHud.includes("pot") && avecHud.includes("miseAPayer"));
+  T("les zones de tournoi ne sont jamais lues en cash",
+    !avecHud.includes("dotation") && !avecHud.includes("finRejouer"));
+
+  T("en spin, on lit tout ce qui est calibre",
+    Object.keys(zonesALire(toutes)).length === Object.keys(toutes).length);
 }
 
 console.log("");

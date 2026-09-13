@@ -81,6 +81,39 @@ export function ajouterObservation(tampon, obs) {
 }
 
 /**
+ * Ajoute tout un tour de releves d'un coup.
+ *
+ * RECOPIER LE TAMPON ENTIER PAR OBSERVATION COUTE CHER. Le lecteur en ajoute
+ * une par table et par tour ; avec un tampon plein a quatre mille, c'etait
+ * quatre recopies de quatre mille elements a chaque tour, pour ajouter quatre
+ * lignes. On ajoute donc en une fois, et on ne coupe qu'a la fin.
+ */
+export function ajouterObservations(tampon, nouvelles = []) {
+  if (!nouvelles.length) return tampon;
+  const out = tampon.concat(nouvelles);
+  return out.length > MAX_OBSERVATIONS ? out.slice(out.length - MAX_OBSERVATIONS) : out;
+}
+
+/**
+ * L'empreinte grossiere d'un releve, pour reconnaitre un doublon sans comparer
+ * des milliers de flottants.
+ *
+ * POURQUOI DEDOUBLONNER. Ton tapis ne bouge pas pendant une main : le meme
+ * nombre est photographie a chaque tour, parfois des dizaines de fois. Ces
+ * copies n'apprennent rien de plus, et elles chassent du tampon les releves
+ * VRAIMENT differents — ceux d'avant et d'apres, qui portent d'autres chiffres.
+ *
+ * Le rapport largeur/hauteur de chaque signe suffit a les distinguer : deux
+ * textes differents ne donnent pas la meme suite de proportions, et deux photos
+ * du meme texte la donnent identique a l'arrondi pres.
+ */
+export function empreinteDeReleve(obs) {
+  if (!obs?.signes?.length) return null;
+  return `${obs.zone}|${obs.table ?? ""}|`
+    + obs.signes.map((s) => (Number.isFinite(s?.ratio) ? s.ratio.toFixed(2) : "?")).join(",");
+}
+
+/**
  * Quel tournoi se jouait à cet instant ?
  *
  * Les tournois importés portent leur heure de début ; leur fin est l'heure de

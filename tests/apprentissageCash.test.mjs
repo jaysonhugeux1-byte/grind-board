@@ -25,7 +25,7 @@
 // empoisonne ensuite toutes les lectures.
 import {
   contexteCashDepuisMains, etiquetteCash, formaterBB, apprendreCashDepuisHistorique,
-  PAUSE_MAX_MS, zoneApprenable,
+  PAUSE_MAX_MS, zoneApprenable, ajouterObservations, empreinteDeReleve, MAX_OBSERVATIONS,
 } from "../src/lib/apprentissageAuto.js";
 
 let ok = 0, ko = 0;
@@ -227,6 +227,46 @@ T("en spin, ce sont la dotation, le bouton et le board",
 
 T("une zone absente n'est jamais memorisee",
   !zoneApprenable(null, { cash: true }) && !zoneApprenable("", { cash: true }));
+
+
+
+// ---------------------------------------------------------------------------
+// LE TAMPON : AJOUTER SANS TOUT RECOPIER, ET RECONNAITRE UN DOUBLON
+// ---------------------------------------------------------------------------
+//
+// Le lecteur ajoute un releve par table et par tour. Recopier le tampon entier
+// a chaque observation revenait, avec quatre tables et un tampon plein, a
+// quatre recopies de quatre mille elements pour ajouter quatre lignes.
+{
+  const faux = (i) => ({ zone: "tapisHero", ts: i, table: "t", signes: [{ ratio: 0.6 }] });
+  T("un lot s'ajoute en une fois",
+    ajouterObservations([faux(1)], [faux(2), faux(3)]).length === 3);
+  T("un lot vide ne change rien", ajouterObservations([faux(1)], []).length === 1);
+
+  const trop = Array.from({ length: MAX_OBSERVATIONS + 50 }, (_, i) => faux(i));
+  const coupe = ajouterObservations([], trop);
+  T("LE PLAFOND TIENT, ET CE SONT LES PLUS RECENTES QUI RESTENT",
+    coupe.length === MAX_OBSERVATIONS && coupe[coupe.length - 1].ts === trop[trop.length - 1].ts);
+}
+
+// UN TAPIS QUI N'A PAS BOUGE N'APPREND RIEN DE PLUS. Il ne change pas pendant
+// une main : le meme nombre etait photographie des dizaines de fois, et ces
+// copies chassaient du tampon les releves vraiment differents.
+{
+  const avec = (ratios) => ({
+    zone: "tapisHero", table: "200588",
+    signes: ratios.map((r) => ({ ratio: r, empreinte: [] })),
+  });
+  T("DEUX PHOTOS DU MEME TEXTE ONT LA MEME EMPREINTE",
+    empreinteDeReleve(avec([0.601, 0.402])) === empreinteDeReleve(avec([0.6014, 0.4022])),
+    "sinon chaque tour memoriserait le meme tapis");
+  T("deux textes differents non",
+    empreinteDeReleve(avec([0.6, 0.4])) !== empreinteDeReleve(avec([0.6, 0.4, 0.5])));
+  T("la zone et la table font partie de l'empreinte",
+    empreinteDeReleve({ ...avec([0.6]), zone: "pot" }) !== empreinteDeReleve(avec([0.6])));
+  T("un releve sans signe n'a pas d'empreinte",
+    empreinteDeReleve({ zone: "tapisHero", signes: [] }) === null);
+}
 
 
 console.log(`\n${ok} OK, ${ko} FAIL`);

@@ -129,6 +129,13 @@ const PARFAIT = zoneDe(Y_TAPIS - 2, H_LIGNE + 4);
 T("un tapis vise la ligne basse", preferenceDeZone("tapisHero") === "bas"
   && preferenceDeZone("adversaire3") === "bas");
 T("un pseudonyme vise la ligne haute", preferenceDeZone("nomAdversaire3") === "haut");
+// LE BOUTON D'ACTION PORTE « Appeler » AU-DESSUS DU MONTANT, exactement comme
+// une plaque porte le pseudonyme au-dessus du tapis. Vise au centre, le cadre
+// choisissait au hasard de l'arrondi entre le mot et le nombre — et un mot dans
+// une zone numerique la rend definitivement illisible.
+T("LE MONTANT A SUIVRE VISE LA LIGNE BASSE, COMME UN TAPIS",
+  preferenceDeZone("miseAPayer") === "bas",
+  "le bouton porte « Appeler » au-dessus du nombre");
 T("le reste vise le plus proche", preferenceDeZone("pot") === "centre");
 
 // ---------------------------------------------------------------------------

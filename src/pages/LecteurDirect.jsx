@@ -9,14 +9,16 @@ import { PageHeader, EmptyState } from "../components/ui";
 import { apprendreZone, fusionnerGabarits, carteEncre, binariser, lireZone } from "../lib/vision";
 import {
   ZONES_PAR_DEFAUT, libelleZone, clesDeCalibrage, REGIONS_PAR_DEFAUT, extraireZone, lireTable,
-  accrocherLesZones, accrocherSurTexte, preferenceDeZone, estZoneTexte,
+  accrocherLesZones, accrocherSurTexte, preferenceDeZone, estZoneTexte, zonesALire,
   imageDepuisDataUrl, synchroniserTables, integrerLecture, partDeHero,
   deduireResultat, zonesAbsolues, zoneDansRegion, lireCartesTable,
 } from "../lib/tableReader";
 import { addSpinTournament, enregistrerMainsLecteur } from "../lib/supabaseData";
 import calibrageBetclic from "../calibrages/betclic-4tables.json";
 import { integrerImage, cloturerMain, mainExploitable, notation, evDeAbattage } from "../lib/mainEnDirect";
-import { observation, ajouterObservation, zoneApprenable } from "../lib/apprentissageAuto";
+import {
+  observation, ajouterObservations as ajouterAuTampon, zoneApprenable, empreinteDeReleve,
+} from "../lib/apprentissageAuto";
 import { listerAdversaires, trouverPseudo, styleAdversaire } from "../lib/adversaires";
 import { useMode } from "../contexts/ModeContext";
 import calibrageCoinPoker from "../calibrages/coinpoker-cash-6max.json";
@@ -24,7 +26,7 @@ import { hudCash } from "../lib/hudCash";
 // `observation` est deja pris par l'apprentissage des signes : on renomme, sinon
 // l'un des deux ecraserait l'autre en silence.
 import { observation as observationTable } from "../lib/identitesCash";
-import { ajouterObservations } from "../lib/observationsTable";
+import { ajouterObservations, etatObservations, oublierObservations } from "../lib/observationsTable";
 import { clesAdversaires, clesNoms } from "../lib/tableReader";
 import { observerPopulation } from "../lib/populationCash";
 import { signatureNom, nomOuEtiquette } from "../lib/signatureNom";
@@ -44,6 +46,14 @@ const CLE_HUD = "gl_lecteur_hud";
 const CLE_DECALAGE = "gl_lecteur_decalage";
 const CLE_MAINS = "gl_lecteur_mains";
 const CLE_OBSERVATIONS = "gl_lecteur_observations";
+
+/**
+ * A quel rythme les tampons sont poses sur le disque.
+ *
+ * Assez rare pour que la serialisation ne pese plus sur un tour de lecture,
+ * assez frequent pour qu'une coupure ne coute que quelques secondes de releves.
+ */
+const PERIODE_ECRITURE_MS = 20_000;
 
 // Rythmes proposés. Un demi-tour de seconde est le réglage utile : ce qui
 // décide de l'issue d'un tournoi, c'est la toute dernière image avant que la
@@ -273,6 +283,11 @@ export default function LecteurDirect() {
     () => lireLocal(CLE_OBSERVATIONS, []).length,
   );
   const [intervalReel, setIntervalReel] = useState(null);
+  // CE QUE LE LECTEUR A DEJA MIS DE COTE. Deux magasins distincts : les FORMES,
+  // que l'historique nommera, et les RELEVES D'IDENTITE, qui portent les noms
+  // vus a table. Rien n'affichait les seconds, alors que ce sont eux qui relient
+  // les adversaires.
+  const [etatIdentites, setEtatIdentites] = useState(() => etatObservations());
   // Les cadres recales, par fenetre et par taille de fenetre.
   const accrochesRef = useRef(new Map());
   const [file, setFile] = useState([]);
@@ -315,6 +330,12 @@ export default function LecteurDirect() {
   // stockage a la fin du tour, pas a chaque table : quatre tables feraient
   // quatre ecritures par seconde pour la meme information.
   const identitesRef = useRef([]);
+  // Quand les tampons ont ete poses sur le disque pour la derniere fois.
+  const derniereEcritureRef = useRef(0);
+  // La derniere forme vue par zone et par table, pour ecarter les doublons.
+  const dernieresFormesRef = useRef(new Map());
+  // Les dernieres pastilles envoyees au HUD, pour ne pas les renvoyer inchangees.
+  const dernieresPastillesRef = useRef(null);
   // Le profil du pool, calcule une fois sur les mains deja importees. Le
   // recalculer a chaque tour couterait plus cher que tout le reste du lecteur.
   const populationRef = useRef(null);
@@ -584,52 +605,91 @@ export default function LecteurDirect() {
    * tombent les cadres, combien de bandes d'encre ils trouvent, ce qui est
    * decoupe. Ce rapport dit tout cela en toutes lettres, et se copie.
    */
-  function rapportDiagnostic() {
+  /**
+   * Un rapport que le lecteur ecrit sur lui-meme, sur TOUTES ses tables.
+   *
+   * ---------------------------------------------------------------------------
+   * POURQUOI IL EXISTE
+   * ---------------------------------------------------------------------------
+   *
+   * Ce lecteur a passe des versions entieres a etre repare a l'aveugle : on
+   * voyait « rien de lisible » et il fallait deviner lequel des dix maillons
+   * avait lache. Chaque correction laissait le meme symptome, donc paraissait
+   * inutile.
+   *
+   * Une capture d'ecran ne suffit pas a trancher : elle montre ce que l'oeil
+   * voit, pas ce que le lecteur MESURE — la taille reelle de chaque fenetre, ou
+   * tombent les cadres, de combien ils se recalent, ce qui est decoupe dessous.
+   *
+   * IL LES PARCOURT TOUTES. N'en regarder qu'une laissait passer le cas le plus
+   * courant : trois tables qui lisent et une qui ne lit pas, parce qu'elle n'a
+   * pas la meme taille que les autres.
+   */
+  async function rapportDiagnostic() {
     const lignes = [];
-    const px = (z) => (z && image
-      ? `x${Math.round(z.x * image.largeur)} y${Math.round(z.y * image.hauteur)} `
-        + `l${Math.round(z.l * image.largeur)} h${Math.round(z.h * image.hauteur)}`
-      : "—");
-
-    lignes.push(`GrindBoard — rapport du lecteur`);
-    lignes.push(`mode ${estCash ? "cash" : "spin"} · fenetre « ${image?.titre ?? tableChoisie ?? "?"} »`);
-    lignes.push(`capture ${image ? `${image.largeur}x${image.hauteur}` : "aucune"}`
-      + ` · ${regions.length} region(s) · region active ${regionActive + 1}`);
+    lignes.push("GrindBoard — rapport du lecteur");
+    lignes.push(`mode ${estCash ? "cash" : "spin"} · ${regions.length} region(s) par fenetre`);
     lignes.push(`signes appris : ${gabarits.length} (${signesConnus.join("") || "aucun"})`);
-    lignes.push(`formes en attente d'import : ${formesEnAttente}`);
+    lignes.push(`en attente : ${formesEnAttente} forme(s), ${etatIdentites.observations} releve(s) d'identite`
+      + ` sur ${etatIdentites.joueurs} joueur(s)`);
     if (cadence) {
       lignes.push(`cadence : ${cadence.tables} table(s) en ${cadence.duree} ms`
         + (cadence.photo != null ? ` (photo ${cadence.photo}, lecture ${cadence.duree - cadence.photo})` : "")
         + ` pour un rythme demande de ${periodeMs} ms`);
     }
-    lignes.push("");
 
-    if (!image) {
-      lignes.push("Aucune capture : clique d'abord sur « Capturer ».");
+    let captures = [];
+    try {
+      captures = await window.grandLivre.capturerTables(null);
+    } catch (e) {
+      lignes.push(`capture impossible : ${e.message}`);
+      return lignes.join("\n");
+    }
+    if (!captures.length) {
+      lignes.push("");
+      lignes.push("Aucune fenetre de table detectee.");
       return lignes.join("\n");
     }
 
-    const region = regions[regionActive] ?? { x: 0, y: 0, l: 1, h: 1 };
-    const abs = zonesAbsolues(region, zones);
-    lignes.push("zone                 cadre pose            cadre accroche        etat");
-    for (const cle of clesDeCalibrage(zones)) {
-      const z = abs[cle];
-      if (!z) { lignes.push(`${cle.padEnd(20)} desactivee`); continue; }
-      const recale = accrocherSurTexte(image, z, { preference: preferenceDeZone(cle) });
-      const bouge = recale !== z;
-      const morceau = extraireZone(image, recale);
-      let etat = "hors cadre";
-      if (morceau) {
-        const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits, {
-          suffixeTolere: !estZoneTexte(cle),
-        });
-        etat = lu.vide
-          ? "VIDE — cadre a deplacer"
-          : lu.fiable
-            ? `lu « ${lu.texte} »`
-            : `${lu.signes?.length ?? 0} forme(s), non reconnues « ${lu.texte} »`;
+    for (const capture of captures) {
+      lignes.push("");
+      lignes.push(`--- ${capture.titre} · ${capture.largeur}x${capture.hauteur}`
+        + ` · ${capture.estTable ? "lue entiere" : "decoupee en regions"}`
+        + (capture.idTable ? ` · table ${capture.idTable}` : ""));
+      if (capture.erreur || !capture.bitmap) {
+        lignes.push(`  ${capture.erreur || "aucune image"}`);
+        continue;
       }
-      lignes.push(`${cle.padEnd(20)} ${px(z).padEnd(21)} ${(bouge ? px(recale) : "inchange").padEnd(21)} ${etat}`);
+      const image = { data: capture.bitmap, largeur: capture.largeur, hauteur: capture.hauteur };
+      const px = (z) => `x${Math.round(z.x * image.largeur)} y${Math.round(z.y * image.hauteur)} `
+        + `l${Math.round(z.l * image.largeur)} h${Math.round(z.h * image.hauteur)}`;
+
+      const aLire = capture.estTable ? [{ x: 0, y: 0, l: 1, h: 1 }] : regions;
+      aLire.forEach((region, i) => {
+        if (!region) return;
+        if (aLire.length > 1) lignes.push(`  region ${i + 1}`);
+        const abs = zonesALire(zonesAbsolues(region, zones), { cash: estCash, hud: hudActif });
+        lignes.push("  zone                 cadre pose            cadre accroche        etat");
+        for (const cle of clesDeCalibrage(zones, { cash: estCash })) {
+          const z = abs[cle];
+          if (!z) { lignes.push(`  ${cle.padEnd(20)} non lue`); continue; }
+          const recale = accrocherSurTexte(image, z, { preference: preferenceDeZone(cle) });
+          const morceau = extraireZone(image, recale);
+          let etat = "hors cadre";
+          if (morceau) {
+            const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits, {
+              suffixeTolere: !estZoneTexte(cle),
+            });
+            etat = lu.vide
+              ? "VIDE — cadre a deplacer"
+              : lu.fiable
+                ? `lu « ${lu.texte} »`
+                : `${lu.signes?.length ?? 0} forme(s), non reconnues « ${lu.texte} »`;
+          }
+          lignes.push(`  ${cle.padEnd(20)} ${px(z).padEnd(21)} `
+            + `${(recale !== z ? px(recale) : "inchange").padEnd(21)} ${etat}`);
+        }
+      });
     }
     return lignes.join("\n");
   }
@@ -639,7 +699,7 @@ export default function LecteurDirect() {
     const abs = zonesAbsolues(regions[regionActive], zones);
     const lu = lireTable(image, abs, gabarits);
     const vues = {};
-    for (const cle of clesDeCalibrage(zones)) {
+    for (const cle of clesDeCalibrage(zones, { cash: estCash })) {
       if (!abs[cle]) continue;
       try { vues[cle] = vignetteDeZone(abs[cle]); } catch { vues[cle] = null; }
     }
@@ -748,7 +808,20 @@ export default function LecteurDirect() {
       const { suivis, termines } = synchroniserTables(suivisRef.current, ouvertes, maintenant);
       suivisRef.current = suivis;
 
-      const nouvellesFiches = [...termines];
+      // EN CASH, AUCUNE FICHE, JAMAIS.
+      //
+      // `synchroniserTables` cloture les fenetres disparues et rend une fiche
+      // par table fermee. Le garde-fou existait pour `integrerLecture` — « le
+      // laisser remonter remplirait la base de tournois qui n'ont jamais eu
+      // lieu » — mais PAS pour cette voie-la : fermer une table de cash pouvait
+      // donc inscrire un tournoi fantome dans la bankroll.
+      //
+      // Il fallait pour cela que la fiche soit jugee exploitable, ce qui
+      // supposait une dotation qu'une table de cash n'affiche pas. La faute ne
+      // se produisait donc probablement jamais — mais elle ne tenait qu'a une
+      // chaine de valeurs nulles, et une bankroll ne se protege pas par
+      // accident.
+      const nouvellesFiches = estCash ? [] : [...termines];
 
       let numeroFenetre = 0;
       for (const capture of captures) {
@@ -786,7 +859,13 @@ export default function LecteurDirect() {
           // fenetre. Une fois par fenetre et par taille : la mise en page ne
           // bouge pas tant que la fenetre ne bouge pas, et refaire ce travail a
           // chaque tour couterait autant que la lecture elle-meme.
-          const cleAccroche = `${capture.id}:${capture.largeur}x${capture.hauteur}#${i}`;
+          // ON NE LIT QUE CE QUI SERT. Le pot et le montant a suivre n'alimentent
+          // que l'affichage superpose ; les lire quand il est eteint, c'est
+          // payer quatorze lectures par table et par tour pour un resultat que
+          // personne ne regarde.
+          zonesAbs = zonesALire(zonesAbs, { cash: estCash, hud: hudActif });
+
+          const cleAccroche = `${capture.id}:${capture.largeur}x${capture.hauteur}#${i}:${hudActif ? "h" : "-"}`;
           const deja = accrochesRef.current.get(cleAccroche);
           if (deja) {
             zonesAbs = deja;
@@ -857,7 +936,22 @@ export default function LecteurDirect() {
             ?? String(capture.titre ?? "").match(/(?:NLH|PLO\d?|NLHE)\s*(\d{4,})/i)?.[1]
             ?? null;
 
-          const { suivi, tournoiTermine } = integrerLecture(suivis.get(cle), lu, maintenant);
+          // ------------------------------------------------------------------
+          // AUCUNE COMPTABILITE DE TOURNOI EN CASH
+          // ------------------------------------------------------------------
+          //
+          // `integrerLecture` tient le journal d'un SPIN : la part de tapis de
+          // Hero, la dotation, le moment ou le tournoi se termine, et jusqu'a
+          // deux cent quarante instantanes gardes par table. Rien de tout cela
+          // n'existe en cash — il n'y a ni dotation, ni classement, ni fin.
+          //
+          // Son resultat etait d'ailleurs jete : « if (!estCash && tournoiTermine) ».
+          // On payait donc le travail a chaque tour et sur chaque table pour
+          // n'en rien faire. Pire, c'est sa `dotation` toujours vide qui a
+          // longtemps fait afficher « rien de lisible » quoi que le lecteur lise.
+          const { suivi, tournoiTermine } = estCash
+            ? { suivi: suivis.get(cle) ?? {}, tournoiTermine: null }
+            : integrerLecture(suivis.get(cle), lu, maintenant);
           let formesRelevees = 0;
 
           // ---------------------------------------------------------------
@@ -905,6 +999,16 @@ export default function LecteurDirect() {
             // Elles remplissaient le tampon douze fois trop vite et en
             // chassaient les seules utiles.
             if (!zoneApprenable(cle2, { cash: estCash })) continue;
+
+            // UN TAPIS QUI N'A PAS BOUGE N'APPREND RIEN DE PLUS. Il ne change
+            // pas pendant une main : le meme nombre etait photographie a chaque
+            // tour, parfois des dizaines de fois, et ces copies chassaient du
+            // tampon les releves vraiment differents — ceux d'avant et d'apres,
+            // qui portent d'autres chiffres.
+            const empreinteReleve = `${cle}|${cle2}|`
+              + lect.signes.map((x) => (Number.isFinite(x?.ratio) ? x.ratio.toFixed(2) : "?")).join(",");
+            if (dernieresFormesRef.current.get(cle2 + cle) === empreinteReleve) continue;
+            dernieresFormesRef.current.set(cle2 + cle, empreinteReleve);
             // LA LIMITE ETAIT DE SIX SIGNES, taillee pour une dotation de spin.
             // Un tapis de cash s'affiche « 115.5BB » ou « 243.5BB » : sept a
             // huit signes. La moitie des relevés etait donc jetee avant meme
@@ -1101,12 +1205,19 @@ export default function LecteurDirect() {
                 ? `Table ${capture.idTable}`
                 : `${capture.titre} ${numeroFenetre}`)
               : `${capture.titre} — zone ${i + 1}`,
-            buyIn: lu.buyIn ?? suivi.buyIn,
-            dotation: lu.dotation ?? suivi.dotation,
+            buyIn: estCash ? null : (lu.buyIn ?? suivi.buyIn),
+            dotation: estCash ? null : (lu.dotation ?? suivi.dotation),
             tapis: lu.tapisHero,
-            fin: lu.finRejouer != null,
-            gain: lu.finGain,
-            part: suivi.part,
+            fin: !estCash && lu.finRejouer != null,
+            gain: estCash ? null : lu.finGain,
+            part: estCash ? null : suivi.part,
+            // Ce qui compte vraiment en cash : combien de tapis adverses se
+            // lisent. C'est d'eux que depend TOUT l'alignement des identites —
+            // sans eux, aucun adversaire ne sera jamais relie a son vrai nom.
+            tapisAdverses: estCash
+              ? clesAdversaires(zonesAbs).filter((c) => Number.isFinite(lu[c])).length
+              : null,
+            siegesAdverses: estCash ? clesAdversaires(zonesAbs).length : null,
             // LA PHASE SE LISAIT SUR LA DOTATION — UN CHAMP DE SPIN.
             //
             // En cash il n'y a pas de dotation, et le calibrage CoinPoker n'a
@@ -1182,31 +1293,61 @@ export default function LecteurDirect() {
       }
 
       if (aRetenir.length) {
-        observationsRef.current = aRetenir.reduce(ajouterObservation, observationsRef.current);
+        observationsRef.current = ajouterAuTampon(observationsRef.current, aRetenir);
         // CE COMPTEUR EST LA SEULE PREUVE QUE LE LECTEUR TRAVAILLE avant qu'un
         // seul signe soit appris. Sans lui, « rien de lisible » partout est
         // indiscernable d'une panne — alors que c'est l'etat de depart prevu.
         setFormesEnAttente(observationsRef.current.length);
-        // Écriture différée : sauvegarder à chaque tour userait le stockage pour
-        // rien, et une session perdue ne coûte qu'un apprentissage.
-        if (observationsRef.current.length % 40 < aRetenir.length) {
-          try {
-            localStorage.setItem(CLE_OBSERVATIONS, JSON.stringify(observationsRef.current));
-          } catch {
-            // Stockage plein : on continue sans mémoriser plutôt que d'échouer.
-          }
-        }
       }
 
-      // Les identites relevees pendant ce tour, ecrites en une fois.
-      if (identitesRef.current.length) {
+      // ------------------------------------------------------------------
+      // ON N'ECRIT SUR LE DISQUE QUE DE TEMPS EN TEMPS
+      // ------------------------------------------------------------------
+      //
+      // L'ECRITURE ETAIT CENSEE ETRE DIFFEREE et ne l'etait pas. La condition
+      // « longueur modulo 40 » est TOUJOURS VRAIE une fois le tampon plein a
+      // quatre mille : 4000 modulo 40 vaut zero. On serialisait donc quatre
+      // mille releves — soit des millions de nombres — a CHAQUE TOUR, et cela
+      // empirait jusqu'a saturation puis restait au maximum.
+      //
+      // Le magasin d'identites, lui, etait relu ET reecrit en entier a chaque
+      // tour, sans meme cette condition, avec un plafond cinq fois plus haut.
+      //
+      // Les deux sont desormais gardes en memoire et poses sur le disque au
+      // rythme ci-dessous. Une coupure de courant coute alors quelques secondes
+      // de releves ; l'ancien comportement coutait la moitie du temps de chaque
+      // tour, en permanence.
+      const doitEcrire = maintenant - derniereEcritureRef.current >= PERIODE_ECRITURE_MS;
+      if (doitEcrire) {
+        derniereEcritureRef.current = maintenant;
+        try {
+          localStorage.setItem(CLE_OBSERVATIONS, JSON.stringify(observationsRef.current));
+        } catch { /* stockage plein : on continue sans memoriser */ }
+      }
+
+      // Les identites relevees depuis la derniere ecriture.
+      if (identitesRef.current.length && doitEcrire) {
         ajouterObservations(identitesRef.current);
         setIdentitesVues((n) => n + identitesRef.current.length);
         identitesRef.current = [];
+        setEtatIdentites(etatObservations());
       }
 
       setEtatTables(etats);
-      if (hudActif) window.grandLivre.hudAfficher?.(pastilles);
+
+      // LE HUD NE REDESSINE QUE CE QUI A CHANGE. Les pastilles traversent le
+      // pont Electron a chaque tour ; entre deux captures d'une meme main elles
+      // sont identiques, et la fenetre superposee se redessinait pour rien —
+      // quatre tables, deux fois par seconde, toute la session.
+      if (hudActif) {
+        const signature = JSON.stringify(pastilles);
+        if (signature !== dernieresPastillesRef.current) {
+          dernieresPastillesRef.current = signature;
+          window.grandLivre.hudAfficher?.(pastilles);
+        }
+      } else {
+        dernieresPastillesRef.current = null;
+      }
     } catch (e) {
       setErreur(e.message || "Erreur pendant la surveillance.");
     }
@@ -1241,6 +1382,19 @@ export default function LecteurDirect() {
     };
     boucle();
 
+    // ON ECRIT EN S'ARRETANT. Sans cela les releves des dernieres secondes
+    // seraient perdus — et on s'arrete justement en fin de session, au moment
+    // ou l'on va importer.
+    const poser = () => {
+      try {
+        localStorage.setItem(CLE_OBSERVATIONS, JSON.stringify(observationsRef.current));
+      } catch { /* stockage plein */ }
+      if (identitesRef.current.length) {
+        ajouterObservations(identitesRef.current);
+        identitesRef.current = [];
+      }
+    };
+
     // Le systeme ne doit pas suspendre l'application au milieu d'une session.
     // On le demande UNIQUEMENT pendant la surveillance : garder un poste
     // eveille en permanence n'est pas au logiciel d'en decider.
@@ -1249,6 +1403,7 @@ export default function LecteurDirect() {
     return () => {
       vivant = false;
       clearTimeout(boucleRef.current);
+      poser();
       window.grandLivre?.empecherVeille?.(false);
       setIntervalReel(null);
     };
@@ -1403,7 +1558,7 @@ export default function LecteurDirect() {
                     && ` — rythme réel ${intervalReel} ms au lieu de ${periodeMs}`}
                   {" · "}
                   {estCash
-                    ? `${formesEnAttente} forme(s) en attente d'être nommées par l'import`
+                    ? `${formesEnAttente} forme(s) et ${etatIdentites.observations} relevé(s) d'identité en attente`
                     : `${enregistres} tournoi(s)`}
                   {lireLesMains && !estCash ? ` · ${mainsLues} main(s) enregistrée(s)` : ""}
                 </span>
@@ -1445,9 +1600,16 @@ export default function LecteurDirect() {
 
           <table className="table">
             <thead>
+              {/* QUATRE COLONNES DE TOURNOI POUR RIEN.
+                  Buy-in, dotation, part et gain de fin n'existent pas en cash :
+                  elles affichaient « — » sur toute la largeur et noyaient la
+                  seule qui compte. Les tapis adverses, eux, decident de TOUT
+                  l'alignement des identites — et rien ne les montrait. */}
               <tr>
-                <th>Table</th><th>Phase</th><th>Buy-in</th><th>Dotation</th>
-                <th>Ton tapis</th><th>Part</th><th>Gain de fin</th>
+                <th>Table</th><th>Phase</th><th>Ton tapis</th>
+                {estCash
+                  ? <th>Tapis adverses lus</th>
+                  : <><th>Buy-in</th><th>Dotation</th><th>Part</th><th>Gain de fin</th></>}
               </tr>
             </thead>
             <tbody>
@@ -1457,11 +1619,19 @@ export default function LecteurDirect() {
                   <td className={e.phase === "rien de lisible" ? "loss" : e.fin ? "win" : ""}>
                     {e.phase}
                   </td>
-                  <td className="mono">{e.buyIn == null ? "—" : `${e.buyIn} €`}</td>
-                  <td className="mono">{e.dotation == null ? "—" : `${e.dotation} €`}</td>
                   <td className="mono">{e.tapis == null ? "—" : e.tapis}</td>
-                  <td className="mono">{e.part == null ? "—" : `${(e.part * 100).toFixed(0)} %`}</td>
-                  <td className="mono">{e.gain == null ? "—" : `${e.gain} €`}</td>
+                  {estCash ? (
+                    <td className={`mono ${e.tapisAdverses ? "" : "loss"}`}>
+                      {e.siegesAdverses ? `${e.tapisAdverses} / ${e.siegesAdverses}` : "—"}
+                    </td>
+                  ) : (
+                    <>
+                      <td className="mono">{e.buyIn == null ? "—" : `${e.buyIn} €`}</td>
+                      <td className="mono">{e.dotation == null ? "—" : `${e.dotation} €`}</td>
+                      <td className="mono">{e.part == null ? "—" : `${(e.part * 100).toFixed(0)} %`}</td>
+                      <td className="mono">{e.gain == null ? "—" : `${e.gain} €`}</td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -1565,7 +1735,7 @@ export default function LecteurDirect() {
                       sur une table de cash a six joueurs, il n'affichait que
                       deux sieges sur cinq. Les trois autres etaient lus par le
                       lecteur mais impossibles a regler et a verifier. */}
-                  {clesDeCalibrage(zones).map((cle) => (
+                  {clesDeCalibrage(zones, { cash: estCash }).map((cle) => (
                     <button
                       key={cle}
                       className={zoneActive === cle ? "active" : ""}
@@ -1686,10 +1856,32 @@ export default function LecteurDirect() {
             <button
               className="btn-secondary"
               style={{ marginLeft: 8 }}
-              onClick={() => setRapport(rapportDiagnostic())}
-              disabled={!image}
+              onClick={async () => setRapport(await rapportDiagnostic())}
+              disabled={!bureau}
             >
               Rapport de diagnostic
+            </button>
+            {/* DE QUOI REPARTIR DE ZERO.
+                Les deux magasins sont plafonnes : des releves faits avec un
+                mauvais calibrage y restent et CHASSENT ceux d'une session
+                propre. Sans moyen de les vider, un essai rate empoisonnait tous
+                les suivants, et rien ne permettait de faire la difference. */}
+            <button
+              className="btn-secondary"
+              style={{ marginLeft: 8 }}
+              disabled={!formesEnAttente && !etatIdentites.observations}
+              onClick={() => {
+                try { localStorage.setItem(CLE_OBSERVATIONS, "[]"); } catch { /* stockage */ }
+                observationsRef.current = [];
+                dernieresFormesRef.current.clear();
+                identitesRef.current = [];
+                oublierObservations();
+                setFormesEnAttente(0);
+                setEtatIdentites(etatObservations());
+                setMessage("Relevés effacés : la prochaine session repart sur une base propre.");
+              }}
+            >
+              Oublier les relevés
             </button>
             {rapport && (
               <div style={{ marginTop: 12 }}>
@@ -1720,7 +1912,7 @@ export default function LecteurDirect() {
             {lectureLive && (
               <>
                 <div className="lectures">
-                  {clesDeCalibrage(zones).map((cle) => {
+                  {clesDeCalibrage(zones, { cash: estCash }).map((cle) => {
                     const libelle = libelleZone(cle);
                     const l = lectureLive.lectures?.[cle];
                     if (!l) return null;

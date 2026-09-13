@@ -153,6 +153,18 @@ export default function Import() {
         periodStart: minimum(tsList),
         periodEnd: maximum(tsList),
       });
+      // ------------------------------------------------------------------
+      // LES RELEVES CONSOMMES SONT OUBLIES
+      // ------------------------------------------------------------------
+      //
+      // L'import du spin le faisait, celui du cash non : les formes relevees par
+      // le lecteur s'accumulaient indefiniment. Elles ont deja ete proposees a
+      // cet historique — celles qu'il savait nommer l'ont ete, les autres ne le
+      // seront jamais par lui. Les garder ne sert a rien et, le tampon etant
+      // plafonne, elles CHASSENT les releves de la prochaine session, qui sont
+      // les seuls a pouvoir encore apprendre quelque chose.
+      try { localStorage.setItem(CLE_OBSERVATIONS, "[]"); } catch { /* stockage */ }
+
       setPreview(null);
       await refresh();
     } catch (e) {

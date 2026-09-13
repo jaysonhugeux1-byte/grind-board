@@ -574,6 +574,39 @@ export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // UNE ETIQUETTE DEVANT LE NOMBRE
+  // ---------------------------------------------------------------------------
+  //
+  // La table n'ecrit pas « 4.5BB », elle ecrit « Pot 4.5BB ». Un cadre un peu
+  // large attrape donc le mot, et trois LETTRES entrent dans une zone qui ne
+  // doit contenir qu'un nombre. Elles ne seront jamais reconnues — rien
+  // n'enseigne les lettres, l'historique etant anonymise — et la zone reste
+  // illisible POUR TOUJOURS, quel que soit le reglage.
+  //
+  // L'accroche ne peut rien : elle recale en hauteur, et le mot est sur la meme
+  // ligne que le nombre. C'est donc ici qu'il faut le retirer.
+  //
+  // ON NE COUPE QUE PAR L'AVANT, et seulement sur un blanc nettement plus large
+  // que ceux qui separent les signes entre eux — le meme critere qui distingue
+  // deja un suffixe. Couper au milieu amputerait le nombre.
+  if (options.motFinal && boites.length > 1) {
+    const ecarts = boites.slice(1).map((b) => b.espaceAvant).sort((a, b) => a - b);
+    const typique = ecarts[Math.floor((ecarts.length - 1) / 2)] ?? 0;
+    let debut = 0;
+    for (let i = boites.length - 1; i > 0; i--) {
+      if (boites[i].espaceAvant > typique * 2 + 1) { debut = i; break; }
+    }
+    if (debut > 0) {
+      boites = boites.slice(debut);
+      // LE BLANC QUI PRECEDAIT LE NOMBRE NE LE PRECEDE PLUS. Le garder ferait
+      // ecrire un espace en tete — « 1093 » deviendrait «  1093 », qui n'est
+      // plus le texte attendu par l'apprentissage et ne correspondrait a aucune
+      // etiquette.
+      boites = [{ ...boites[0], espaceAvant: 0 }, ...boites.slice(1)];
+    }
+  }
+
   const signes = [];
   let texte = "";
   let fiable = boites.length > 0;

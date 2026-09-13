@@ -43,6 +43,7 @@ const POLICE = {
   u: ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
   g: [".####", "#....", "#....", "#..##", "#...#", "#...#", ".###."],
   a: [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+  " ": [".....", ".....", ".....", ".....", ".....", ".....", "....."],
 };
 
 const ECHELLE = 3;
@@ -184,6 +185,42 @@ const vide = cadrer(plaque("", "", { hauteur: 40, ecartLignes: 0 }), 8, 30);
 T("un cadre vide reste vide",
   lireZone(vide.data, vide.largeur, vide.hauteur, gabarits).vide !== false
   || lireZone(vide.data, vide.largeur, vide.hauteur, gabarits).texte === "");
+
+
+// ---------------------------------------------------------------------------
+// UNE ETIQUETTE DEVANT LE NOMBRE
+// ---------------------------------------------------------------------------
+//
+// La table n'ecrit pas « 4.5BB » mais « Pot 4.5BB », et le bouton « Appeler
+// 2.5BB ». Un cadre un peu large attrape donc le mot, et des LETTRES entrent
+// dans une zone qui ne doit contenir qu'un nombre.
+//
+// Elles ne seront jamais reconnues — rien n'enseigne les lettres, l'historique
+// etant anonymise — donc la zone reste illisible POUR TOUJOURS, quel que soit
+// le reglage. Et l'accroche n'y peut rien : elle recale en hauteur, le mot est
+// sur la meme ligne que le nombre.
+{
+  const avecEtiquette = plaque("sua 1093", "", { largeur: 320, hauteur: 40, ecartLignes: 0 });
+  const cadre = cadrer(avecEtiquette, 8, 30);
+
+  const brut = lireZone(cadre.data, cadre.largeur, cadre.hauteur, gabarits);
+  T("sans coupe, l'etiquette entre dans la lecture",
+    brut.texte.length > 4, `« ${brut.texte} »`);
+
+  const coupe = lireZone(cadre.data, cadre.largeur, cadre.hauteur, gabarits, { motFinal: true });
+  T("UNE ZONE NUMERIQUE NE GARDE QUE CE QUI SUIT LE DERNIER BLANC LARGE",
+    coupe.texte === "1093", `« ${coupe.texte} »`);
+
+  // ON NE COUPE QUE SUR UN BLANC NETTEMENT PLUS LARGE que ceux qui separent les
+  // signes. Couper au milieu amputerait le nombre — et un nombre ampute se lit
+  // comme un nombre, donc ne se signale pas.
+  const sansEtiquette = cadrer(plaque("1093", "", { hauteur: 40, ecartLignes: 0 }), 8, 30);
+  T("UN NOMBRE SEUL N'EST JAMAIS AMPUTE",
+    lireZone(sansEtiquette.data, sansEtiquette.largeur, sansEtiquette.hauteur, gabarits,
+      { motFinal: true }).texte === "1093",
+    "un nombre ampute se lit comme un nombre : il ne se signalerait pas");
+}
+
 
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

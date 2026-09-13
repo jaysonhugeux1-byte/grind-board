@@ -194,8 +194,18 @@ const QUEUE = ["finGain", "finRejouer"];
  *
  * C'est le calibrage courant qui fait foi, comme partout ailleurs.
  */
-export function clesDeCalibrage(zones = {}) {
+/**
+ * Les zones qui n'existent pas en cash.
+ *
+ * Une partie de cash n'a ni buy-in affiche, ni dotation, ni ecran de fin : ce
+ * sont des notions de TOURNOI. Les proposer au reglage promet une lecture
+ * impossible, et le lecteur les compte ensuite parmi les cadres « sur du vide ».
+ */
+const ZONES_DE_TOURNOI = new Set(["buyIn", "dotation", "finGain", "finRejouer"]);
+
+export function clesDeCalibrage(zones = {}, { cash = false } = {}) {
   const toutes = new Set([...Object.keys(LIBELLES_ZONES), ...Object.keys(zones)]);
+  if (cash) for (const c of ZONES_DE_TOURNOI) toutes.delete(c);
   const sieges = [...toutes].filter((c) => /^(?:nom)?adversaire\d+$/i.test(c));
   const parPlace = sieges.sort((a, b) => {
     const na = Number(a.match(/\d+$/)?.[0] ?? 0);
@@ -352,7 +362,9 @@ export const RAYON_ACCROCHE = 1.6;
 /** Quelle ligne vise une zone, quand son cadre en attrape plusieurs. */
 export function preferenceDeZone(cle) {
   if (/^nomAdversaire\d+$/.test(cle)) return "haut";
-  if (/^adversaire\d+$/.test(cle) || cle === "tapisHero") return "bas";
+  // Le bouton d'action porte « Appeler » AU-DESSUS du montant, exactement comme
+  // une plaque porte le pseudonyme au-dessus du tapis.
+  if (/^adversaire\d+$/.test(cle) || cle === "tapisHero" || cle === "miseAPayer") return "bas";
   return "centre";
 }
 
@@ -463,6 +475,34 @@ export function accrocherLesZones(image, zones, { rayon = RAYON_ACCROCHE } = {})
 }
 
 /**
+ * Les zones qu'il faut vraiment lire, selon ce qu'on en fait.
+ *
+ * ---------------------------------------------------------------------------
+ * CHAQUE ZONE LUE COUTE, A CHAQUE TOUR, SUR CHAQUE TABLE
+ * ---------------------------------------------------------------------------
+ *
+ * Lire une zone n'est pas gratuit : extraction, carte d'encre, seuil d'Otsu,
+ * decoupage, puis comparaison de chaque signe a tous les gabarits. Quatorze
+ * zones sur quatre tables, deux fois par seconde, cela fait cent douze lectures
+ * par seconde.
+ *
+ * En cash, l'identite ne demande que les PSEUDONYMES et les TAPIS. Le pot et le
+ * montant a suivre ne servent qu'a l'affichage superpose : les lire quand il est
+ * eteint, c'est payer pour un resultat que personne ne regarde. Les zones de
+ * tournoi, elles, ne decrivent rien du tout sur une table de cash.
+ */
+export function zonesALire(zones = {}, { cash = false, hud = false } = {}) {
+  if (!cash) return zones;
+  const sortie = {};
+  for (const [cle, z] of Object.entries(zones)) {
+    if (ZONES_DE_TOURNOI.has(cle)) continue;
+    if (!hud && (cle === "pot" || cle === "miseAPayer")) continue;
+    sortie[cle] = z;
+  }
+  return sortie;
+}
+
+/**
  * Lit toutes les zones calibrées d'une capture.
  *
  * @returns { dotation, tapisHero, pot, lectures } — chaque valeur vaut null si
@@ -484,6 +524,9 @@ export function lireTable(image, zones, gabarits) {
     // On tolère donc que la fin reste illisible, jamais le milieu.
     const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits, {
       suffixeTolere: !estZoneTexte(cle),
+      // « Pot 4.5BB », « Appeler 2.5BB » : l'etiquette precede le nombre. Une
+      // zone numerique ne garde que ce qui suit le dernier blanc large.
+      motFinal: !estZoneTexte(cle),
     });
     lectures[cle] = { texte: lu.texte, fiable: lu.fiable, vide: lu.vide, signes: lu.signes };
     if (estZoneTexte(cle)) {
