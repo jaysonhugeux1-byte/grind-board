@@ -116,7 +116,48 @@ T("une zone qui n'est pas le tapis de Hero n'est pas étiquetée",
   etiquetteCash({ zone: "adversaire1", ts: T0 + 50_000, table: "200588" }, ctx) === null,
   "le tapis d'un adversaire supposerait de savoir qui est assis où");
 
-T("sans table, rien", etiquetteCash({ zone: "tapisHero", ts: T0 + 50_000 }, ctx) === null);
+// ---------------------------------------------------------------------------
+// QUAND LA TABLE N'EST PAS CONNUE
+// ---------------------------------------------------------------------------
+//
+// L'identifiant venait du TITRE de la fenetre. CoinPoker dessinant sa propre
+// barre de titre, Windows nomme ces fenetres « CoinPoker » et le numero reste
+// dans le contenu : l'observation n'a plus de table, et l'apprentissage
+// s'arretait la — il ne pouvait plus rien enseigner, sur la seule salle ou il
+// servait.
+//
+// On essaie alors TOUTES les tables, et une seule doit repondre.
+T("SANS TABLE, UNE SEULE CANDIDATE SUFFIT A ETIQUETER",
+  etiquetteCash({ zone: "tapisHero", ts: T0 + 50_000 }, ctx) === "103.5BB",
+  String(etiquetteCash({ zone: "tapisHero", ts: T0 + 50_000 }, ctx)));
+
+// DEUX TABLES ENTRE DEUX MAINS AU MEME INSTANT : ON NE TRANCHE PAS. Deux tapis
+// differents etiquetteraient les memes formes, et un signe mal appris
+// empoisonne ensuite toutes les lectures.
+{
+  const deux = contexteCashDepuisMains([
+    ...mains,
+    main(T0, iso(T0 + 40_000), 3.0, "777777"),
+    main(T0 + 60_000, iso(T0 + 100_000), 3.14, "777777"),
+  ]);
+  T("DEUX TABLES CANDIDATES VALENT UN REFUS",
+    etiquetteCash({ zone: "tapisHero", ts: T0 + 50_000 }, deux) === null,
+    String(etiquetteCash({ zone: "tapisHero", ts: T0 + 50_000 }, deux)));
+
+  // Mais si les deux annoncent LE MEME tapis, il n'y a rien a trancher.
+  const jumelles = contexteCashDepuisMains([
+    ...mains,
+    main(T0, iso(T0 + 40_000), 2.0, "777777"),
+    main(T0 + 60_000, iso(T0 + 100_000), 2.07, "777777"),
+  ]);
+  T("deux tables qui annoncent le meme tapis ne posent pas de probleme",
+    etiquetteCash({ zone: "tapisHero", ts: T0 + 50_000 }, jumelles) === "103.5BB");
+}
+
+// UNE TABLE ANNONCEE MAIS INCONNUE RESTE UN REFUS. Ce n'est pas une absence
+// d'information, c'est une information qui ne concorde pas.
+T("une table annoncee mais inconnue de l'historique reste un refus",
+  etiquetteCash({ zone: "tapisHero", ts: T0 + 50_000, table: "999999" }, ctx) === null);
 
 // ---------------------------------------------------------------------------
 // L'APPRENTISSAGE LUI-MÊME

@@ -174,7 +174,26 @@ export function contexteCashDepuisMains(mains = []) {
  * @param contexte   ce que rend `contexteCashDepuisMains`
  */
 export function etiquetteCash(obs, contexte) {
-  if (obs?.zone !== "tapisHero" || !obs.table) return null;
+  if (obs?.zone !== "tapisHero") return null;
+
+  // QUAND LA TABLE N'EST PAS CONNUE, ON LES ESSAIE TOUTES — ET UNE SEULE DOIT
+  // REPONDRE.
+  //
+  // L'identifiant de table venait du TITRE de la fenetre. CoinPoker dessinant sa
+  // propre barre de titre, Windows nomme ces fenetres « CoinPoker » et le numero
+  // reste dans le contenu : l'observation n'a donc plus de table, et
+  // l'apprentissage automatique s'arretait la. Il ne pouvait plus rien
+  // enseigner, sur la seule salle ou il servait.
+  //
+  // Une main dure une demi-minute, la pause entre deux quelques secondes : a un
+  // instant donne, il est rare que DEUX tables soient entre deux mains. Quand
+  // c'est le cas on ne tranche pas — deux tapis differents pourraient etiqueter
+  // les memes formes, et un signe mal appris empoisonne toutes les lectures.
+  //
+  // Une table ANNONCEE mais inconnue de l'historique reste un refus : ce n'est
+  // pas une absence d'information, c'est une information qui ne concorde pas.
+  if (!obs.table) return etiquetteParElimination(obs, contexte);
+
   const liste = contexte?.get(String(obs.table));
   if (!liste?.length) return null;
 
@@ -194,6 +213,25 @@ export function etiquetteCash(obs, contexte) {
   const bb = suivante.tapisHero / suivante.bb;
   if (!Number.isFinite(bb) || bb <= 0) return null;
   return `${formaterBB(bb)}BB`;
+}
+
+/**
+ * L'etiquette deduite quand la table n'est pas connue.
+ *
+ * Une seule table doit pouvoir repondre. Zero, on ne sait rien ; deux, on ne
+ * saurait pas laquelle — et se tromper ici apprend une forme sous le mauvais
+ * nom, definitivement et en silence.
+ */
+function etiquetteParElimination(obs, contexte) {
+  if (!contexte?.size) return null;
+  let trouvee = null;
+  for (const table of contexte.keys()) {
+    const e = etiquetteCash({ ...obs, table }, contexte);
+    if (!e) continue;
+    if (trouvee && e !== trouvee) return null;
+    trouvee = e;
+  }
+  return trouvee;
 }
 
 /**
