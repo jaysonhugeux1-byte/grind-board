@@ -333,8 +333,21 @@ export function extraireZone(image, zone) {
 // pseudonyme la ligne haute — et cette regle-la ne depend d'aucune taille de
 // fenetre.
 
-/** Le rayon de recherche, en multiples de la hauteur du cadre. */
-export const RAYON_ACCROCHE = 1.2;
+/**
+ * Le rayon de recherche, en multiples de la hauteur du cadre.
+ *
+ * MESURE, PAS CHOISI. Plus il est large, plus un cadre mal pose est rattrape —
+ * mais au-dela d'un certain point il attrape la ligne voisine et le cadre du
+ * pseudonyme finit par deborder sur le tapis.
+ *
+ *   1,2  ->  -46 / +24 px      tous les garde-fous tiennent
+ *   1,6  ->  -56 / +24 px      tous les garde-fous tiennent
+ *   2,0  ->  -60 / +24 px      le pseudonyme mord sur le tapis
+ *   2,6  ->    -0 / +24 px     s'effondre
+ *
+ * 1,6 est donc le plus large qui conserve toutes les garanties.
+ */
+export const RAYON_ACCROCHE = 1.6;
 
 /** Quelle ligne vise une zone, quand son cadre en attrape plusieurs. */
 export function preferenceDeZone(cle) {
