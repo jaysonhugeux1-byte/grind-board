@@ -807,7 +807,24 @@ export default function LecteurDirect() {
           // Cartes : board, main de Hero, et abattage si l'instant est attrapé.
           // Le tampon est en BGRA — la teinte n'étant pas symétrique, s'en
           // remettre au hasard échangerait cœur et carreau.
-          if (lireLesMains) {
+          // ------------------------------------------------------------------
+          // PAS DE RECONSTITUTION DE MAINS EN CASH
+          // ------------------------------------------------------------------
+          //
+          // LES POSITIONS DES CARTES NE SONT PAS CALIBRABLES. Elles sont ecrites
+          // en dur — « mesure sur une table reelle de 1033 x 648 » — et decrivent
+          // une table de spin BETCLIC. Sur une table de cash CoinPoker elles
+          // visent le feutre : aucune carte n'est jamais lue, et le compteur
+          // reste a zero pour toujours sans que rien n'explique pourquoi.
+          //
+          // Le travail, lui, est bien fait a chaque tour : sept cartes par table,
+          // rang et fond, soit autant de lectures que toutes les autres zones
+          // reunies. On payait donc le prix fort pour un resultat impossible.
+          //
+          // Et c'est inutile : en cash, les mains viennent de l'export texte, qui
+          // les donne exactes. Le lecteur sert a relever ce que l'export N'A PAS
+          // — les vrais noms des adversaires.
+          if (lireLesMains && !estCash) {
             const vues = lireCartesTable(image, region, gabarits, { bgr: true });
             const r = integrerImage(mainsRef.current.get(cle), { ...lu, ...vues }, maintenant);
             mainsRef.current.set(cle, r.main);
@@ -1324,8 +1341,20 @@ export default function LecteurDirect() {
               >
                 {surveillance ? <><Square size={13} /> Arrêter</> : <><Play size={13} /> Surveiller</>}
               </button>
-              <label className="bascule" title="Reconstituer tes mains à partir des cartes affichées">
-                <input type="checkbox" checked={lireLesMains} onChange={(e) => setLireLesMains(e.target.checked)} />
+              <label
+                className="bascule"
+                title={estCash
+                  ? "Inutile en cash : tes mains viennent de l'export texte, qui les donne exactes. "
+                    + "Les positions des cartes ne sont d'ailleurs calibrées que pour une table de spin."
+                  : "Reconstituer tes mains à partir des cartes affichées"}
+                style={estCash ? { opacity: 0.5 } : undefined}
+              >
+                <input
+                  type="checkbox"
+                  checked={lireLesMains && !estCash}
+                  disabled={estCash}
+                  onChange={(e) => setLireLesMains(e.target.checked)}
+                />
                 Enregistrer les mains
               </label>
               <label className="bascule" title="Poser les statistiques des adversaires par-dessus tes tables">
@@ -1376,7 +1405,7 @@ export default function LecteurDirect() {
                   {estCash
                     ? `${formesEnAttente} forme(s) en attente d'être nommées par l'import`
                     : `${enregistres} tournoi(s)`}
-                  {lireLesMains ? ` · ${mainsLues} main(s) enregistrée(s)` : ""}
+                  {lireLesMains && !estCash ? ` · ${mainsLues} main(s) enregistrée(s)` : ""}
                 </span>
               )}
             </div>
