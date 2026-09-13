@@ -26,6 +26,7 @@
 // dont on ne peut rien reapprendre. D'ou le second magasin de ce fichier.
 
 import { etiquetteDeSignature, hachage } from "./signatureNom.js";
+import { encoderEmpreinte, decoderEmpreinte } from "./apprentissageAuto.js";
 
 const CLE_NOMS = "gl_noms_joueurs";
 const CLE_ATTRIBUES = "gl_noms_attribues";
@@ -40,31 +41,46 @@ const CLE_SIGNES = "gl_signes_de_noms";
  */
 export const MAX_SIGNATURES = 200;
 
-// Les empreintes sont des niveaux de gris entre 0 et 1. Deux decimales suffisent
-// tres largement a l'appariement — son seuil de rejet est a 0,32 — et divisent
-// par trois la place occupee.
-const QUANTUM = 100;
+// ---------------------------------------------------------------------------
+// LE STOCKAGE EST LU UNE FOIS, PAS A CHAQUE APPEL
+// ---------------------------------------------------------------------------
+//
+// Ces fonctions sont appelees pour CHAQUE SIEGE de CHAQUE TABLE a CHAQUE TOUR
+// de lecture : cinq adversaires sur quatre tables font vingt appels par tour.
+// Chacun relisait et reanalysait tout le magasin — et celui des formes contient
+// jusqu'a deux cents pseudonymes de huit signes, chacun porteur de cent
+// quarante nombres. Soit plusieurs megaoctets reanalyses vingt fois par tour.
+//
+// On garde donc une copie en memoire. Le stockage reste la source au premier
+// acces et la destination a chaque changement — mais un changement est RARE :
+// un joueur n'est vu pour la premiere fois qu'une fois.
+const cache = new Map();
 
 function lireJSON(cle, defaut) {
+  if (cache.has(cle)) return cache.get(cle);
+  let valeur = defaut;
   try {
     const brut = localStorage.getItem(cle);
-    if (!brut) return defaut;
-    const v = JSON.parse(brut);
-    return v && typeof v === "object" ? v : defaut;
+    if (brut) {
+      const v = JSON.parse(brut);
+      if (v && typeof v === "object") valeur = v;
+    }
   } catch {
     // Stockage illisible ou indisponible : on repart de rien plutot que
     // d'empecher l'ecran de s'afficher.
-    return defaut;
   }
+  cache.set(cle, valeur);
+  return valeur;
 }
 
 function ecrireJSON(cle, valeur) {
+  cache.set(cle, valeur);
   try {
     localStorage.setItem(cle, JSON.stringify(valeur));
     return true;
   } catch {
     // Stockage plein : perdre un bapteme coute un nom manquant, lever une
-    // erreur ici casserait l'ecran.
+    // erreur ici casserait l'ecran. La copie en memoire, elle, reste juste.
     return false;
   }
 }
@@ -103,7 +119,10 @@ export function retenirSignes(signature, signes) {
     const e = s?.empreinte;
     if (!e) return null;
     return {
-      empreinte: Array.from(e, (v) => Math.round(v * QUANTUM) / QUANTUM),
+      // MEME ECRITURE COURTE QUE LE TAMPON D'APPRENTISSAGE. Deux cents
+      // pseudonymes de huit signes en nombres a virgule approchent le megaoctet
+      // pour rien ; un caractere par valeur suffit tres largement.
+      empreinte: encoderEmpreinte(e),
       ratio: s.ratio,
       lu: s.lu ?? s.signe ?? null,
     };
@@ -126,7 +145,10 @@ export function retenirSignes(signature, signes) {
 /** Les formes gardees pour un pseudonyme, ou null. */
 export function signesDe(signature) {
   const entree = lireJSON(CLE_SIGNES, {})[signature];
-  return entree?.signes?.length ? entree.signes : null;
+  if (!entree?.signes?.length) return null;
+  // On rend des empreintes numeriques : c'est ce qu'attend l'apprentissage.
+  // Les anciennes, deja numeriques, traversent sans etre touchees.
+  return entree.signes.map((s) => ({ ...s, empreinte: decoderEmpreinte(s.empreinte) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +289,7 @@ export function traducteurDeNoms() {
 
 /** Efface tout : baptemes et formes. */
 export function oublierTousLesNoms() {
+  cache.clear();
   try {
     localStorage.removeItem(CLE_NOMS);
     localStorage.removeItem(CLE_SIGNES);

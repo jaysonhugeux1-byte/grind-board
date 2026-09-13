@@ -7,7 +7,7 @@
 // rapport apparent avec la cause.
 import {
   lireObservations, ajouterObservations, oublierObservations, etatObservations,
-  RETENTION_JOURS, MAX_OBSERVATIONS,
+  RETENTION_JOURS, MAX_OBSERVATIONS, ecritureRefusee,
 } from "../src/lib/observationsTable.js";
 
 let ok = 0, ko = 0;
@@ -130,6 +130,42 @@ try {
 plein = false;
 T("UN STOCKAGE PLEIN NE LÈVE PAS D'ERREUR", !aPlante,
   "le lecteur doit continuer à tourner, quitte à ne plus mémoriser");
+
+// MAIS ON NE LE TAIT PLUS.
+//
+// Echouer ici ne doit pas arreter le lecteur. Le taire, en revanche, signifiait
+// qu'il tournait pour rien : l'ecran annoncait des milliers de releves en
+// memoire dont aucun n'atteignait le disque, et tout disparaissait a la
+// fermeture sans qu'un seul message l'ait laisse entendre.
+T("UN REFUS D'ECRITURE SE DIT", ecritureRefusee() === true,
+  "sinon le lecteur tourne pour rien sans que personne le sache");
+
+ajouterObservations([obs("1312456", Date.now(), troisSieges)]);
+T("et cesse de se dire quand l'ecriture repasse", ecritureRefusee() === false);
+
+// ---------------------------------------------------------------------------
+// LE PLAFOND EST DIMENSIONNE SUR LA PLACE REELLE
+// ---------------------------------------------------------------------------
+//
+// Il valait vingt mille, ce qui representait TRENTE-SEPT MEGAOCTETS — contre
+// cinq a dix acceptes par le stockage. Au-dela de quelques milliers, l'ecriture
+// etait refusee : le magasin cessait d'etre alimente, et l'import ne trouvait
+// plus que de vieux releves.
+{
+  const releve = {
+    table: "1312456", ts: Date.now(), unite: "bb",
+    sieges: Array.from({ length: 5 }, (_, i) => ({
+      place: i + 1, nom: "Joueur 7a3f", signature: "128d36401f78ce5b", tapis: 104.5,
+    })),
+  };
+  const octets = JSON.stringify(releve).length;
+  T("UN MAGASIN PLEIN TIENT DANS LE STOCKAGE",
+    octets * MAX_OBSERVATIONS < 4 * 1024 * 1024,
+    `${(octets / 1024).toFixed(2)} Ko par relevé, `
+    + `${((octets * MAX_OBSERVATIONS) / 1024 / 1024).toFixed(2)} Mo au plafond`);
+  console.log(`      → ${(octets / 1024).toFixed(2)} Ko par relevé `
+    + `(1.88 Ko avant), ${((octets * MAX_OBSERVATIONS) / 1024 / 1024).toFixed(2)} Mo au plafond`);
+}
 
 // ---------------------------------------------------------------------------
 // L'ÉTAT LISIBLE, pour que l'écran puisse dire ce qu'il a en mémoire

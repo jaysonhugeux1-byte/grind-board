@@ -71,9 +71,63 @@ export function zoneApprenable(zone, { cash = false } = {}) {
   return zone === "dotation" || zone === "finRejouer" || String(zone).startsWith("board");
 }
 
-// Au-delà, on jette les plus anciennes : elles auront de toute façon été
-// apprises, et un tampon sans limite finirait par saturer le stockage local.
-export const MAX_OBSERVATIONS = 4000;
+// ---------------------------------------------------------------------------
+// L'EMPREINTE, ECRITE COURT
+// ---------------------------------------------------------------------------
+//
+// LE DEFAUT SILENCIEUX QUE CECI REPARE, ET QUI RENDAIT TOUT LE RESTE VAIN.
+//
+// Une empreinte est une grille de 140 niveaux de gris. Ecrits en JSON, ils
+// donnent « 0.5372549019607843 » — dix-huit caracteres chacun. Un seul releve de
+// tapis, sept signes, pese donc DIX-HUIT KILO-OCTETS, et un tampon de quatre
+// mille, SOIXANTE-TREIZE MEGAOCTETS.
+//
+// Le stockage du navigateur en accepte cinq a dix. Au-dela de deux cent
+// soixante-treize releves, l'ecriture levait donc une erreur de quota — avalee
+// en silence, parce qu'echouer la ne doit pas arreter le lecteur. Resultat :
+// le tampon grossissait en memoire, l'ecran annoncait quatre mille formes en
+// attente, et RIEN n'etait jamais ecrit. A la fermeture, tout disparaissait.
+//
+// Soixante-quatre niveaux suffisent tres largement : l'appariement rejette
+// au-dela d'un ecart de 0,32, et quantifier a un soixante-troisieme ajoute une
+// erreur de l'ordre de 0,005. Un caractere par valeur, et le meme releve pese
+// un kilo-octet au lieu de dix-huit.
+const ALPHABET_EMPREINTE =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-";
+const NIVEAUX_EMPREINTE = ALPHABET_EMPREINTE.length - 1;
+
+/** Une empreinte ecrite en un caractere par valeur. */
+export function encoderEmpreinte(empreinte) {
+  if (!empreinte?.length) return "";
+  let out = "";
+  for (let i = 0; i < empreinte.length; i++) {
+    const v = Math.min(1, Math.max(0, empreinte[i] || 0));
+    out += ALPHABET_EMPREINTE[Math.round(v * NIVEAUX_EMPREINTE)];
+  }
+  return out;
+}
+
+/** L'inverse. Une empreinte deja numerique traverse sans etre touchee. */
+export function decoderEmpreinte(valeur) {
+  if (typeof valeur !== "string") return valeur;
+  const out = new Array(valeur.length);
+  for (let i = 0; i < valeur.length; i++) {
+    const rang = ALPHABET_EMPREINTE.indexOf(valeur[i]);
+    out[i] = rang < 0 ? 0 : rang / NIVEAUX_EMPREINTE;
+  }
+  return out;
+}
+
+/**
+ * Au-dela, on jette les plus anciennes.
+ *
+ * DIMENSIONNE SUR LA PLACE DISPONIBLE, pas au hasard. Un releve encode pese
+ * environ un kilo-octet : deux mille tiennent dans deux megaoctets, ce qui
+ * laisse de la marge sous le quota du navigateur. Et deux mille couvrent une
+ * tres longue session — les releves identiques etant deja ecartes, un tapis
+ * n'en produit qu'un ou deux par main.
+ */
+export const MAX_OBSERVATIONS = 2000;
 
 export function ajouterObservation(tampon, obs) {
   const out = [...tampon, obs];
@@ -107,10 +161,16 @@ export function ajouterObservations(tampon, nouvelles = []) {
  * textes differents ne donnent pas la meme suite de proportions, et deux photos
  * du meme texte la donnent identique a l'arrondi pres.
  */
-export function empreinteDeReleve(obs) {
-  if (!obs?.signes?.length) return null;
-  return `${obs.zone}|${obs.table ?? ""}|`
-    + obs.signes.map((s) => (Number.isFinite(s?.ratio) ? s.ratio.toFixed(2) : "?")).join(",");
+export function empreinteDeReleve(zone, cleTable, signes) {
+  if (!signes?.length) return null;
+  // LA CLE EST CELLE DE LA FENETRE, PAS LE NUMERO DE TABLE.
+  //
+  // CoinPoker ne donne pas son numero de table dans le titre de la fenetre : il
+  // est nul sur toutes. Se servir de lui reviendrait a dedoublonner ENTRE les
+  // tables — le tapis de la table 2 ecarterait celui de la table 1 parce qu'ils
+  // portent le meme nombre, et trois tables sur quatre cesseraient d'apprendre.
+  return `${zone}|${cleTable}|`
+    + signes.map((s) => (Number.isFinite(s?.ratio) ? s.ratio.toFixed(2) : "?")).join(",");
 }
 
 /**
@@ -330,8 +390,8 @@ export function apprendreCashDepuisHistorique(observations = [], mains = [], gab
       const signe = attendu[k];
       const vu = obs.signes[k];
       if (!vu?.empreinte) continue;
-      appris.set(`${signe}:${vu.empreinte.join?.(",") ?? vu.empreinte}`, {
-        signe, empreinte: vu.empreinte, ratio: vu.ratio,
+      appris.set(`${signe}:${vu.empreinte}`, {
+        signe, empreinte: decoderEmpreinte(vu.empreinte), ratio: vu.ratio,
       });
     }
   }
@@ -374,7 +434,7 @@ export function apprendreDepuisHistorique(observations, historique, gabarits) {
       if (obs.signes[i].lu === signes[i]) continue;
       nouveaux.push({
         signe: signes[i],
-        empreinte: obs.signes[i].empreinte,
+        empreinte: decoderEmpreinte(obs.signes[i].empreinte),
         ratio: obs.signes[i].ratio,
       });
       appris.set(signes[i], (appris.get(signes[i]) || 0) + 1);

@@ -221,6 +221,14 @@ export function clesDeCalibrage(zones = {}, { cash = false } = {}) {
   ];
 }
 
+/**
+ * Les zones dont le nombre est precede d'un libelle a l'ecran.
+ *
+ * « Pot 4.5BB », « Appeler 2.5BB ». Un tapis, lui, s'affiche seul : lui
+ * appliquer la coupe reviendrait a jeter le montant pour garder l'unite.
+ */
+export const etiquetteDevant = (cle) => cle === "pot" || cle === "miseAPayer";
+
 /** Une zone dont le contenu est du TEXTE et non un nombre. */
 export const estZoneTexte = (cle) => /^nomAdversaire\d+$/.test(cle);
 
@@ -524,9 +532,10 @@ export function lireTable(image, zones, gabarits) {
     // On tolère donc que la fin reste illisible, jamais le milieu.
     const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits, {
       suffixeTolere: !estZoneTexte(cle),
-      // « Pot 4.5BB », « Appeler 2.5BB » : l'etiquette precede le nombre. Une
-      // zone numerique ne garde que ce qui suit le dernier blanc large.
-      motFinal: !estZoneTexte(cle),
+      // « Pot 4.5BB », « Appeler 2.5BB » : SEULES ces deux zones portent un
+      // libelle devant leur nombre. Un tapis n'en a pas — lui appliquer la
+      // coupe jetterait le montant pour garder l'unite.
+      etiquetteDevant: etiquetteDevant(cle),
     });
     lectures[cle] = { texte: lu.texte, fiable: lu.fiable, vide: lu.vide, signes: lu.signes };
     if (estZoneTexte(cle)) {

@@ -18,6 +18,7 @@ import calibrageBetclic from "../calibrages/betclic-4tables.json";
 import { integrerImage, cloturerMain, mainExploitable, notation, evDeAbattage } from "../lib/mainEnDirect";
 import {
   observation, ajouterObservations as ajouterAuTampon, zoneApprenable, empreinteDeReleve,
+  encoderEmpreinte,
 } from "../lib/apprentissageAuto";
 import { listerAdversaires, trouverPseudo, styleAdversaire } from "../lib/adversaires";
 import { useMode } from "../contexts/ModeContext";
@@ -26,7 +27,9 @@ import { hudCash } from "../lib/hudCash";
 // `observation` est deja pris par l'apprentissage des signes : on renomme, sinon
 // l'un des deux ecraserait l'autre en silence.
 import { observation as observationTable } from "../lib/identitesCash";
-import { ajouterObservations, etatObservations, oublierObservations } from "../lib/observationsTable";
+import {
+  ajouterObservations, etatObservations, oublierObservations, ecritureRefusee,
+} from "../lib/observationsTable";
 import { clesAdversaires, clesNoms } from "../lib/tableReader";
 import { observerPopulation } from "../lib/populationCash";
 import { signatureNom, nomOuEtiquette } from "../lib/signatureNom";
@@ -283,6 +286,7 @@ export default function LecteurDirect() {
     () => lireLocal(CLE_OBSERVATIONS, []).length,
   );
   const [intervalReel, setIntervalReel] = useState(null);
+  const [stockagePlein, setStockagePlein] = useState(false);
   // CE QUE LE LECTEUR A DEJA MIS DE COTE. Deux magasins distincts : les FORMES,
   // que l'historique nommera, et les RELEVES D'IDENTITE, qui portent les noms
   // vus a table. Rien n'affichait les seconds, alors que ce sont eux qui relient
@@ -1005,8 +1009,7 @@ export default function LecteurDirect() {
             // tour, parfois des dizaines de fois, et ces copies chassaient du
             // tampon les releves vraiment differents — ceux d'avant et d'apres,
             // qui portent d'autres chiffres.
-            const empreinteReleve = `${cle}|${cle2}|`
-              + lect.signes.map((x) => (Number.isFinite(x?.ratio) ? x.ratio.toFixed(2) : "?")).join(",");
+            const empreinteReleve = empreinteDeReleve(cle2, cle, lect.signes);
             if (dernieresFormesRef.current.get(cle2 + cle) === empreinteReleve) continue;
             dernieresFormesRef.current.set(cle2 + cle, empreinteReleve);
             // LA LIMITE ETAIT DE SIX SIGNES, taillee pour une dotation de spin.
@@ -1021,7 +1024,12 @@ export default function LecteurDirect() {
             // instant, qui donnera l'etiquette.
             aRetenir.push(
               observation(cle2, maintenant, lect.signes.map((x) => ({
-                empreinte: x.empreinte, ratio: x.ratio, lu: x.signe,
+                // L'EMPREINTE EST ECRITE COURT. En JSON, cent quarante nombres
+                // a virgule pesent dix-huit kilo-octets par releve : un tampon
+                // plein en faisait soixante-treize megaoctets, contre cinq a dix
+                // acceptes par le stockage. L'ecriture echouait donc en
+                // silence des le trois-centieme releve, et RIEN n'etait garde.
+                empreinte: encoderEmpreinte(x.empreinte), ratio: x.ratio, lu: x.signe,
               })), { table: idTableCourante })
             );
           }
@@ -1322,12 +1330,21 @@ export default function LecteurDirect() {
         derniereEcritureRef.current = maintenant;
         try {
           localStorage.setItem(CLE_OBSERVATIONS, JSON.stringify(observationsRef.current));
-        } catch { /* stockage plein : on continue sans memoriser */ }
+          setStockagePlein(false);
+        } catch {
+          // ON NE L'AVALE PLUS. Echouer ici ne doit pas arreter le lecteur —
+          // mais le taire signifiait qu'il tournait pour rien : les formes
+          // s'accumulaient en memoire, l'ecran en annoncait des milliers, et
+          // aucune n'atteignait jamais le disque. A la fermeture, tout
+          // disparaissait sans qu'un seul message l'ait laisse entendre.
+          setStockagePlein(true);
+        }
       }
 
       // Les identites relevees depuis la derniere ecriture.
       if (identitesRef.current.length && doitEcrire) {
         ajouterObservations(identitesRef.current);
+        if (ecritureRefusee()) setStockagePlein(true);
         setIdentitesVues((n) => n + identitesRef.current.length);
         identitesRef.current = [];
         setEtatIdentites(etatObservations());
@@ -1549,6 +1566,12 @@ export default function LecteurDirect() {
                         : "")
                     : "démarrage…"}
                   {cadence && cadence.duree > periodeMs && " — la machine ne suit pas ce rythme"}
+                  {stockagePlein && (
+                    <strong className="loss">
+                      {" — stockage plein : les relevés ne sont plus enregistrés. "}
+                      Importe ton historique ou vide-les.
+                    </strong>
+                  )}
                   {/* LE RYTHME REEL, quand il s'ecarte de celui demande. C'est
                       la seule facon de voir un bridage d'arriere-plan : le
                       lecteur ralentit sans rien dire, et les captures manquees

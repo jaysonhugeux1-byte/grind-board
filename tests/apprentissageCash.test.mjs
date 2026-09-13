@@ -26,6 +26,7 @@
 import {
   contexteCashDepuisMains, etiquetteCash, formaterBB, apprendreCashDepuisHistorique,
   PAUSE_MAX_MS, zoneApprenable, ajouterObservations, empreinteDeReleve, MAX_OBSERVATIONS,
+  encoderEmpreinte, decoderEmpreinte,
 } from "../src/lib/apprentissageAuto.js";
 
 let ok = 0, ko = 0;
@@ -253,19 +254,76 @@ T("une zone absente n'est jamais memorisee",
 // une main : le meme nombre etait photographie des dizaines de fois, et ces
 // copies chassaient du tampon les releves vraiment differents.
 {
-  const avec = (ratios) => ({
-    zone: "tapisHero", table: "200588",
-    signes: ratios.map((r) => ({ ratio: r, empreinte: [] })),
-  });
+  const sig = (ratios) => ratios.map((r) => ({ ratio: r, empreinte: [] }));
   T("DEUX PHOTOS DU MEME TEXTE ONT LA MEME EMPREINTE",
-    empreinteDeReleve(avec([0.601, 0.402])) === empreinteDeReleve(avec([0.6014, 0.4022])),
+    empreinteDeReleve("tapisHero", "w1", sig([0.601, 0.402]))
+    === empreinteDeReleve("tapisHero", "w1", sig([0.6014, 0.4022])),
     "sinon chaque tour memoriserait le meme tapis");
   T("deux textes differents non",
-    empreinteDeReleve(avec([0.6, 0.4])) !== empreinteDeReleve(avec([0.6, 0.4, 0.5])));
-  T("la zone et la table font partie de l'empreinte",
-    empreinteDeReleve({ ...avec([0.6]), zone: "pot" }) !== empreinteDeReleve(avec([0.6])));
+    empreinteDeReleve("tapisHero", "w1", sig([0.6, 0.4]))
+    !== empreinteDeReleve("tapisHero", "w1", sig([0.6, 0.4, 0.5])));
+  T("la zone fait partie de l'empreinte",
+    empreinteDeReleve("pot", "w1", sig([0.6])) !== empreinteDeReleve("tapisHero", "w1", sig([0.6])));
+
+  // LA CLE EST CELLE DE LA FENETRE, PAS LE NUMERO DE TABLE — que CoinPoker ne
+  // donne pas. S'en servir dedoublonnerait ENTRE les tables : le tapis de la
+  // table 2 ecarterait celui de la table 1 parce qu'ils portent le meme nombre,
+  // et trois tables sur quatre cesseraient d'apprendre.
+  T("DEUX TABLES AU MEME TAPIS RESTENT DEUX RELEVES",
+    empreinteDeReleve("tapisHero", "w1", sig([0.6]))
+    !== empreinteDeReleve("tapisHero", "w2", sig([0.6])),
+    "sinon trois tables sur quatre cesseraient d'apprendre");
+
   T("un releve sans signe n'a pas d'empreinte",
-    empreinteDeReleve({ zone: "tapisHero", signes: [] }) === null);
+    empreinteDeReleve("tapisHero", "w1", []) === null);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// L'EMPREINTE ECRITE COURT — LE DEFAUT QUI RENDAIT TOUT LE RESTE VAIN
+// ---------------------------------------------------------------------------
+//
+// Cent quarante niveaux de gris ecrits en JSON donnent « 0.5372549019607843 »,
+// dix-huit caracteres chacun. Un releve de tapis — sept signes — pesait donc
+// DIX-HUIT KILO-OCTETS, et un tampon plein SOIXANTE-TREIZE MEGAOCTETS.
+//
+// Le stockage du navigateur en accepte cinq a dix. Au-dela de deux cent
+// soixante-treize releves, l'ecriture levait une erreur de quota — avalee en
+// silence, parce qu'echouer la ne doit pas arreter le lecteur. Le tampon
+// grossissait en memoire, l'ecran annoncait des milliers de formes en attente,
+// et RIEN n'atteignait jamais le disque.
+{
+  const origine = Array.from({ length: 140 }, (_, i) => i / 139);
+  const code = encoderEmpreinte(origine);
+  T("UNE EMPREINTE TIENT EN UN CARACTERE PAR VALEUR",
+    typeof code === "string" && code.length === 140, `${typeof code} de ${code.length}`);
+
+  const relue = decoderEmpreinte(code);
+  let pire = 0;
+  for (let i = 0; i < 140; i++) pire = Math.max(pire, Math.abs(relue[i] - origine[i]));
+  T("et se relit assez fidelement pour l'appariement", pire < 0.02,
+    `erreur maximale ${pire.toFixed(4)} pour un seuil de rejet de 0,32`);
+
+  T("une empreinte deja numerique traverse sans etre touchee",
+    decoderEmpreinte(origine) === origine,
+    "les releves d'avant ce changement doivent rester exploitables");
+
+  // LA MESURE QUI COMPTE : ce que pese reellement un releve une fois ecrit.
+  const releve = {
+    zone: "tapisHero", ts: Date.now(), table: "w1",
+    signes: Array.from({ length: 7 }, () => ({ empreinte: code, ratio: 0.61 })),
+  };
+  const octets = JSON.stringify(releve).length;
+  T("UN TAMPON PLEIN TIENT DANS LE STOCKAGE",
+    octets * MAX_OBSERVATIONS < 4 * 1024 * 1024,
+    `${(octets / 1024).toFixed(2)} Ko par releve, `
+    + `${((octets * MAX_OBSERVATIONS) / 1024 / 1024).toFixed(2)} Mo au plafond`);
+  console.log(`      → ${(octets / 1024).toFixed(2)} Ko par releve `
+    + `(18.7 Ko avant), ${((octets * MAX_OBSERVATIONS) / 1024 / 1024).toFixed(2)} Mo au plafond`);
+
+  T("les signes appris le sont a partir de l'empreinte decodee",
+    Array.isArray(decoderEmpreinte(code)));
 }
 
 

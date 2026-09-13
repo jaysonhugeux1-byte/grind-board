@@ -253,14 +253,44 @@ export function alignerParPlaces(main, obs, { exigerTapis = true } = {}) {
  * de l'instant, et ce sont les TAPIS qui departagent — exactement comme pour le
  * sens de rotation. Plusieurs alignements verifies valent un refus.
  */
+/**
+ * Les observations rangees par instant, pour ne plus les balayer toutes.
+ *
+ * CHAQUE MAIN NE REGARDE QU'UNE FENETRE DE QUATRE-VINGT-DIX SECONDES. Les
+ * parcourir en entier pour chacune coutait, sur un historique de cinq mille
+ * mains et un magasin de vingt mille releves, cent millions de comparaisons —
+ * pour n'en retenir que quelques centaines a chaque fois.
+ *
+ * Une fois triees par instant, la fenetre se trouve par dichotomie.
+ */
+export function indexerObservations(observations = []) {
+  return [...observations].sort((a, b) => a.ts - b.ts);
+}
+
+/** Le premier indice dont l'instant atteint `borne`. */
+function premierApres(triees, borne) {
+  let bas = 0, haut = triees.length;
+  while (bas < haut) {
+    const milieu = (bas + haut) >> 1;
+    if (triees[milieu].ts < borne) bas = milieu + 1;
+    else haut = milieu;
+  }
+  return bas;
+}
+
 export function observationsPossibles(main, observations, { toleranceMs = TOLERANCE_MS } = {}) {
   const table = String(main?.table ?? "");
   const ts = Number(main?.ts) || 0;
   if (!ts) return { candidats: [], motif: "main sans instant" };
 
-  const proches = observations
-    .filter((o) => Math.abs(o.ts - ts) <= toleranceMs)
-    .sort((a, b) => Math.abs(a.ts - ts) - Math.abs(b.ts - ts));
+  // Deja triees par `relierParPlaces` ; un appel isole trie a la volee.
+  const triees = observations.triees ? observations : indexerObservations(observations);
+  const debut = premierApres(triees, ts - toleranceMs);
+  const proches = [];
+  for (let i = debut; i < triees.length && triees[i].ts <= ts + toleranceMs; i++) {
+    proches.push(triees[i]);
+  }
+  proches.sort((a, b) => Math.abs(a.ts - ts) - Math.abs(b.ts - ts));
   if (!proches.length) return { candidats: [], motif: "aucune observation a cet instant" };
 
   // L'identifiant, quand il est connu des deux cotes, reste le meilleur filtre.
@@ -278,8 +308,12 @@ export function relierParPlaces(mains = [], observations = [], {
   const refus = [];
   let mainsReliees = 0;
 
+  // On trie UNE FOIS, pas une fois par main.
+  const triees = indexerObservations(observations);
+  triees.triees = true;
+
   for (const main of mains) {
-    const { candidats, motif } = observationsPossibles(main, observations, { toleranceMs });
+    const { candidats, motif } = observationsPossibles(main, triees, { toleranceMs });
     if (!candidats.length) { refus.push({ main: main?.id ?? null, motif }); continue; }
 
     // ON ESSAIE TOUS LES CANDIDATS ET ON EXIGE QU'UN SEUL TIENNE. Les tapis

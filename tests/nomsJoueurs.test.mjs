@@ -87,10 +87,31 @@ T("sans signature ou sans forme, rien",
   retenirSignes(null, signesDeTexte("ab")) === false
   && retenirSignes("sig", []) === false);
 
-// Les empreintes sont arrondies : deux decimales suffisent a l'appariement,
-// dont le seuil de rejet est a 0,32, et divisent par trois la place occupee.
-T("les empreintes sont arrondies pour tenir dans le stockage",
-  signesDe("sig-szuga")[0].empreinte.every((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-9));
+// ---------------------------------------------------------------------------
+// L'EMPREINTE EST ECRITE COURT
+// ---------------------------------------------------------------------------
+//
+// Cent quarante niveaux de gris ecrits en JSON donnent « 0.5372549019607843 »,
+// dix-huit caracteres chacun. Deux cents pseudonymes de huit signes
+// approcheraient le megaoctet pour rien — et le meme defaut, sur le tampon
+// d'apprentissage, faisait SOIXANTE-TREIZE megaoctets contre cinq acceptes par
+// le stockage : l'ecriture echouait en silence et rien n'etait jamais garde.
+//
+// Un caractere par valeur suffit : l'appariement rejette au-dela d'un ecart de
+// 0,32, et quantifier a un soixante-troisieme ajoute moins d'un centieme.
+{
+  const brut = JSON.parse(memoire.get("gl_signes_de_noms"))["sig-szuga"];
+  T("STOCKEE, L'EMPREINTE TIENT EN UN CARACTERE PAR VALEUR",
+    typeof brut.signes[0].empreinte === "string" && brut.signes[0].empreinte.length === 140,
+    typeof brut.signes[0].empreinte);
+
+  const relue = signesDe("sig-szuga")[0].empreinte;
+  const origine = empreinte("s");
+  let pire = 0;
+  for (let i = 0; i < 140; i++) pire = Math.max(pire, Math.abs(relue[i] - origine[i]));
+  T("et se relit assez fidelement pour l'appariement", pire < 0.02,
+    `erreur maximale ${pire.toFixed(4)} pour un seuil de rejet de 0,32`);
+}
 
 // ---------------------------------------------------------------------------
 // LE PLAFOND

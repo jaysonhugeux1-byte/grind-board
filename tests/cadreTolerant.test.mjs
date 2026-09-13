@@ -23,6 +23,7 @@
 // D'ou ce fichier : rendre le cadrage TOLERANT, pour qu'un reglage unique
 // serve sur des fenetres de tailles differentes.
 import { lireZone, bandesDeTexte, isolerLigne, ECART_MEME_LIGNE } from "../src/lib/vision.js";
+import { etiquetteDevant } from "../src/lib/tableReader.js";
 import { apprendreDepuisBapteme } from "../src/lib/apprentissageAuto.js";
 
 let ok = 0, ko = 0;
@@ -207,8 +208,9 @@ T("un cadre vide reste vide",
   T("sans coupe, l'etiquette entre dans la lecture",
     brut.texte.length > 4, `« ${brut.texte} »`);
 
-  const coupe = lireZone(cadre.data, cadre.largeur, cadre.hauteur, gabarits, { motFinal: true });
-  T("UNE ZONE NUMERIQUE NE GARDE QUE CE QUI SUIT LE DERNIER BLANC LARGE",
+  const coupe = lireZone(cadre.data, cadre.largeur, cadre.hauteur, gabarits,
+    { etiquetteDevant: true });
+  T("LE LIBELLE QUI PRECEDE LE NOMBRE EST RETIRE",
     coupe.texte === "1093", `« ${coupe.texte} »`);
 
   // ON NE COUPE QUE SUR UN BLANC NETTEMENT PLUS LARGE que ceux qui separent les
@@ -217,8 +219,37 @@ T("un cadre vide reste vide",
   const sansEtiquette = cadrer(plaque("1093", "", { hauteur: 40, ecartLignes: 0 }), 8, 30);
   T("UN NOMBRE SEUL N'EST JAMAIS AMPUTE",
     lireZone(sansEtiquette.data, sansEtiquette.largeur, sansEtiquette.hauteur, gabarits,
-      { motFinal: true }).texte === "1093",
+      { etiquetteDevant: true }).texte === "1093",
     "un nombre ampute se lit comme un nombre : il ne se signalerait pas");
+
+  // ---------------------------------------------------------------------------
+  // LE PIEGE QUE LA PREMIERE VERSION AURAIT TENDU
+  // ---------------------------------------------------------------------------
+  //
+  // Elle gardait « ce qui suit le DERNIER blanc large ». Sur « Pot 4.5BB » elle
+  // donnait le bon resultat ; sur « Pot 4.5 BB » elle aurait garde « BB » — le
+  // montant jete, l'unite gardee. On ne retire donc que le PREMIER groupe.
+  const troisGroupes = cadrer(
+    plaque("sua 1093 za", "", { largeur: 420, hauteur: 40, ecartLignes: 0 }), 8, 30,
+  );
+  const luTrois = lireZone(troisGroupes.data, troisGroupes.largeur, troisGroupes.hauteur,
+    gabarits, { etiquetteDevant: true });
+  T("UN LIBELLE, UN NOMBRE ET UNE UNITE : SEUL LE LIBELLE PART",
+    luTrois.texte.replace(/\s/g, "").startsWith("1093"),
+    `« ${luTrois.texte} » — garder l'unite et jeter le montant serait invisible`);
+
+  // ET LA COUPE NE S'APPROCHE JAMAIS D'UN TAPIS.
+  //
+  // C'est le second garde-fou, et le plus important : un tapis s'affiche seul,
+  // sans libelle. Lui retirer son premier groupe jetterait le montant. Le degat
+  // ne se verrait pas — l'apprentissage compterait deux formes au lieu de sept
+  // et rejetterait le releve sans rien expliquer.
+  T("AUCUNE COUPE SUR UN TAPIS NI SUR UN PSEUDONYME",
+    !etiquetteDevant("tapisHero") && !etiquetteDevant("adversaire3")
+    && !etiquetteDevant("nomAdversaire1"),
+    "un tapis n'a pas de libelle : lui couper son premier groupe jetterait le montant");
+  T("mais bien sur le pot et le montant a suivre",
+    etiquetteDevant("pot") && etiquetteDevant("miseAPayer"));
 }
 
 

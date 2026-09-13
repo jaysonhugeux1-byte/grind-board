@@ -467,6 +467,9 @@ export function apparier(empreinte, ratio, gabarits, seuilRejet = 0.32, margeMax
  */
 /**
  * @param options.suffixeTolere  accepte des signes illisibles À LA FIN.
+ * @param options.etiquetteDevant retire le libellé qui précède le nombre
+ *        (« Pot 4.5BB »). RÉSERVÉ aux zones dont on sait qu'un mot les précède :
+ *        appliqué à un tapis, il jetterait le montant et garderait l'unité.
  *
  * Betclic écrit ses tapis « 23,5 BB ». Le « B » gras a exactement la silhouette
  * d'un « 5 » une fois ramené à la grille de comparaison, et les confondre
@@ -580,30 +583,31 @@ export function lireZone(data, largeur, hauteur, gabarits, options = {}) {
   //
   // La table n'ecrit pas « 4.5BB », elle ecrit « Pot 4.5BB ». Un cadre un peu
   // large attrape donc le mot, et trois LETTRES entrent dans une zone qui ne
-  // doit contenir qu'un nombre. Elles ne seront jamais reconnues — rien
-  // n'enseigne les lettres, l'historique etant anonymise — et la zone reste
-  // illisible POUR TOUJOURS, quel que soit le reglage.
+  // doit contenir qu'un nombre. Rien ne les enseignera — l'historique donne des
+  // montants, pas des libelles — et la zone reste illisible POUR TOUJOURS,
+  // quel que soit le reglage. L'accroche n'y peut rien : elle recale en hauteur,
+  // et le mot est sur la meme ligne que le nombre.
   //
-  // L'accroche ne peut rien : elle recale en hauteur, et le mot est sur la meme
-  // ligne que le nombre. C'est donc ici qu'il faut le retirer.
+  // ON NE RETIRE QUE LE PREMIER GROUPE, ET SEULEMENT S'IL Y EN A PLUSIEURS.
   //
-  // ON NE COUPE QUE PAR L'AVANT, et seulement sur un blanc nettement plus large
-  // que ceux qui separent les signes entre eux — le meme critere qui distingue
-  // deja un suffixe. Couper au milieu amputerait le nombre.
-  if (options.motFinal && boites.length > 1) {
+  // La premiere version gardait « ce qui suit le DERNIER blanc large ». Sur
+  // « Pot 4.5BB » elle donnait le bon resultat ; sur un tapis affiche
+  // « 194.5 BB » elle aurait garde « BB » — le montant jete, l'unite gardee.
+  // Et le degat ne se serait pas vu : l'apprentissage compare le nombre de
+  // formes a la longueur de l'etiquette attendue, aurait trouve deux au lieu de
+  // sept, et aurait REJETE le releve sans que rien ne dise pourquoi.
+  //
+  // D'ou les deux garde-fous : cette coupe ne s'applique qu'aux zones dont on
+  // sait qu'un libelle les precede, et elle ne retire jamais plus d'un groupe.
+  if (options.etiquetteDevant && boites.length > 1) {
     const ecarts = boites.slice(1).map((b) => b.espaceAvant).sort((a, b) => a - b);
     const typique = ecarts[Math.floor((ecarts.length - 1) / 2)] ?? 0;
-    let debut = 0;
-    for (let i = boites.length - 1; i > 0; i--) {
-      if (boites[i].espaceAvant > typique * 2 + 1) { debut = i; break; }
-    }
-    if (debut > 0) {
-      boites = boites.slice(debut);
-      // LE BLANC QUI PRECEDAIT LE NOMBRE NE LE PRECEDE PLUS. Le garder ferait
-      // ecrire un espace en tete — « 1093 » deviendrait «  1093 », qui n'est
-      // plus le texte attendu par l'apprentissage et ne correspondrait a aucune
-      // etiquette.
-      boites = [{ ...boites[0], espaceAvant: 0 }, ...boites.slice(1)];
+    const premiere = boites.findIndex((b, i) => i > 0 && b.espaceAvant > typique * 2 + 1);
+    if (premiere > 0) {
+      // Le blanc qui precedait le nombre ne le precede plus : le garder ferait
+      // ecrire un espace en tete, et «  1093 » ne correspond a aucune etiquette.
+      const reste = boites.slice(premiere);
+      boites = [{ ...reste[0], espaceAvant: 0 }, ...reste.slice(1)];
     }
   }
 

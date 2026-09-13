@@ -9,7 +9,7 @@
 // Ces tests vérifient donc surtout ce que le module REFUSE de faire.
 import {
   observation, siegesDeLaMain, observationDeLaMain, relierIdentites, appliquerIdentites,
-  placesDepuisHero, relierParPlaces, observationsPossibles, TOLERANCE_MS,
+  placesDepuisHero, relierParPlaces, observationsPossibles, indexerObservations, TOLERANCE_MS,
 } from "../src/lib/identitesCash.js";
 
 let ok = 0, ko = 0;
@@ -335,6 +335,44 @@ T("les tapis en blindes sont convertis ici aussi",
   T("un identifiant connu des deux cotes filtre a lui seul",
     candidats.length === 1 && candidats[0].table === "200588",
     JSON.stringify(candidats.map((c) => c.table)));
+}
+
+
+
+// ---------------------------------------------------------------------------
+// L'ECHELLE — CE QUI SE CASSE QUAND L'HISTORIQUE GROSSIT
+// ---------------------------------------------------------------------------
+//
+// Chaque main ne regarde qu'une fenetre de quatre-vingt-dix secondes. Les
+// parcourir TOUTES pour chacune coutait, sur un historique de cinq mille mains
+// et un magasin de vingt mille releves, cent millions de comparaisons — pour
+// n'en retenir que quelques centaines a chaque fois.
+{
+  // Vingt mille releves etales sur une nuit de jeu.
+  const beaucoup = [];
+  for (let i = 0; i < 20000; i++) {
+    beaucoup.push(observation("bruit", T0 - 8 * 3600_000 + i * 1400, [
+      { place: 1, nom: "X", tapis: 1 + (i % 7) },
+    ], { unite: "jetons" }));
+  }
+  beaucoup.push(direct);
+
+  const debut = Date.now();
+  const r = relierParPlaces([m6], beaucoup);
+  const duree = Date.now() - debut;
+
+  T("LE BON RELEVE EST RETROUVE DANS VINGT MILLE",
+    r.liens.get("h6:cccccccc") === "Trois", JSON.stringify([...r.liens]));
+  T("et sans balayer le magasin entier pour chaque main", duree < 2000, `${duree} ms`);
+  console.log(`      → vingt mille releves parcourus en ${duree} ms`);
+
+  // Le tri prealable ne change aucun resultat : c'est la meme fenetre, trouvee
+  // autrement.
+  const triees = indexerObservations(beaucoup);
+  triees.triees = true;
+  T("l'index rend exactement la meme fenetre",
+    observationsPossibles(m6, triees).candidats.length
+    === observationsPossibles(m6, beaucoup).candidats.length);
 }
 
 

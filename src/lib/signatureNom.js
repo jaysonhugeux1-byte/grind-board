@@ -89,7 +89,32 @@ export function signatureNom(signes) {
     if (!d) return null;
     parties.push(d);
   }
-  return parties.join("-");
+
+  // ELLE NE SERT QUE DE CLE, ON N'A DONC PAS BESOIN DE LA GARDER EN ENTIER.
+  //
+  // La suite des descripteurs fait pres de trois cents caracteres. Multipliee
+  // par cinq sieges et vingt mille releves, elle portait le magasin d'identites
+  // a TRENTE-SEPT MEGAOCTETS — contre cinq a dix acceptes par le stockage du
+  // navigateur. Les ecritures echouaient donc, en silence.
+  //
+  // Rien ne relit jamais la geometrie : elle sert a dire « c'est le meme
+  // joueur », et une empreinte de soixante-quatre bits le dit aussi bien. Deux
+  // formes differentes qui la partageraient est un evenement de l'ordre de un
+  // sur dix-huit milliards de milliards.
+  return empreinte64(parties.join("-"));
+}
+
+/** Deux hachages independants, pour que la collision reste hors de portee. */
+function empreinte64(texte) {
+  let a = 2166136261 >>> 0;
+  let b = 3581357891 >>> 0;
+  for (let i = 0; i < texte.length; i++) {
+    const c = texte.charCodeAt(i);
+    a = Math.imul(a ^ c, 16777619) >>> 0;
+    b = Math.imul(b ^ c, 2246822519) >>> 0;
+    b = ((b << 13) | (b >>> 19)) >>> 0;
+  }
+  return (a >>> 0).toString(16).padStart(8, "0") + (b >>> 0).toString(16).padStart(8, "0");
 }
 
 /**

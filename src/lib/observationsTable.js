@@ -13,6 +13,8 @@
 // d'écrire — et ce jour-là c'est le lecteur qui cesserait de fonctionner, sans
 // rapport apparent avec la cause.
 
+import { minimum, maximum } from "./grandsTableaux.js";
+
 const CLE = "gl_observations_table";
 
 /** Au-delà, une observation ne sera plus rapprochée de quoi que ce soit. */
@@ -21,13 +23,27 @@ export const RETENTION_JOURS = 30;
 /**
  * Plafond dur, pour que le stockage ne puisse pas déborder.
  *
- * Une session de quatre tables à deux tours par seconde produit vite des
- * milliers de relevés. On garde les plus récents : ce sont ceux qu'un import
- * à venir cherchera.
+ * DIMENSIONNE SUR LA PLACE REELLE, PAS SUR UNE INTUITION. Il valait vingt
+ * mille, ce qui representait TRENTE-SEPT MEGAOCTETS — contre cinq a dix
+ * acceptes par le stockage du navigateur. Au-dela de quelques milliers de
+ * relevés, l'ecriture levait donc une erreur de quota, avalee en silence : le
+ * magasin cessait d'etre alimente sans que rien ne le dise, et l'import ne
+ * trouvait plus que de vieux relevés.
+ *
+ * Un relevé de cinq sieges pese environ quatre cents octets depuis que la
+ * signature est une empreinte courte. Huit mille tiennent donc dans trois
+ * megaoctets et demi — et huit mille couvrent des milliers de mains, les
+ * relevés identiques etant deja ecartes.
  */
-export const MAX_OBSERVATIONS = 20000;
+export const MAX_OBSERVATIONS = 8000;
 
 const maintenant = () => Date.now();
+
+// Vrai si la derniere ecriture a ete refusee faute de place.
+let derniereEcritureRefusee = false;
+
+/** L'écran doit pouvoir dire que plus rien n'est enregistré. */
+export const ecritureRefusee = () => derniereEcritureRefusee;
 
 function lireBrut() {
   try {
@@ -74,11 +90,15 @@ export function ajouterObservations(nouvelles = [], { retentionJours = RETENTION
   // On coupe par le début : les plus anciennes sont celles dont l'historique
   // est déjà importé, ou ne le sera plus.
   const gardees = liste.slice(-MAX_OBSERVATIONS);
+  derniereEcritureRefusee = false;
   try {
     localStorage.setItem(CLE, JSON.stringify(gardees));
   } catch {
-    // Stockage plein : on continue sans mémoriser. Perdre un relevé coûte un
-    // lien manquant ; échouer ici arrêterait le lecteur.
+    // ON CONTINUE, MAIS ON NE LE TAIT PLUS. Échouer ici ne doit pas arrêter le
+    // lecteur — perdre un relevé coûte un lien manquant. Mais le taire
+    // signifiait qu'il tournait pour rien : l'écran annonçait des milliers de
+    // relevés en mémoire dont aucun n'atteignait le disque.
+    derniereEcritureRefusee = true;
   }
   return gardees;
 }
@@ -108,7 +128,12 @@ export function etatObservations({ retentionJours = RETENTION_JOURS } = {}) {
     observations: liste.length,
     tables: tables.size,
     joueurs: noms.size,
-    depuis: liste.length ? Math.min(...liste.map((o) => o.ts)) : null,
-    jusqua: liste.length ? Math.max(...liste.map((o) => o.ts)) : null,
+    // SANS ETALEMENT. Ce magasin monte a vingt mille releves, et `Math.min(...t)`
+    // passe chaque element comme un argument d'appel separe : au-dela de
+    // quelques dizaines de milliers le moteur leve « Maximum call stack size
+    // exceeded », avec un message qui ne designe ni l'ecran ni la cause. Le
+    // projet a deja paye cette erreur a l'import d'un gros historique.
+    depuis: minimum(liste.map((o) => o.ts)),
+    jusqua: maximum(liste.map((o) => o.ts)),
   };
 }
