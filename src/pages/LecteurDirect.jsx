@@ -420,6 +420,39 @@ export default function LecteurDirect() {
   // decoupe des quatre tables, position du bouton « Rejouer », et gabarits du
   // chiffre et du symbole qui s'y trouvent. Evite a l'utilisateur la partie la
   // plus ingrate — tracer quatre rectangles a la souris sur une image reduite.
+  // ---------------------------------------------------------------------------
+  // LE CALIBRAGE DE LA SALLE, SANS AVOIR A LE DEMANDER
+  // ---------------------------------------------------------------------------
+  //
+  // Les zones par defaut decrivent une table de SPIN : deux sieges, poses aux
+  // positions de Betclic. Sur une table de cash a six joueurs elles ne designent
+  // rien, et le lecteur annonce « rien de lisible » sans dire que le calibrage
+  // n'est simplement pas le bon.
+  //
+  // Le bouton « Charger le calibrage CoinPoker » existait deja — encore
+  // fallait-il savoir qu'il fallait cliquer dessus. On le fait donc tout seul
+  // quand les zones en place ne peuvent manifestement pas decrire une table de
+  // cash, c'est-a-dire quand les sieges au-dela du deuxieme manquent.
+  //
+  // ON NE TOUCHE A RIEN D'AUTRE. Un calibrage qui comporte deja ces sieges a ete
+  // charge ou regle volontairement : l'ecraser effacerait le travail de
+  // l'utilisateur.
+  const calibrageApplique = useRef(false);
+  useEffect(() => {
+    if (!estCash || calibrageApplique.current) return;
+    const aLesSiegesDuCash = Boolean(zones.nomAdversaire3 || zones.nomAdversaire5);
+    if (aLesSiegesDuCash) { calibrageApplique.current = true; return; }
+    calibrageApplique.current = true;
+    setZones((z) => ({ ...z, ...calibrageCoinPoker.zones }));
+    setRegions(calibrageCoinPoker.regions);
+    setGabarits((g) => fusionnerGabarits(g, calibrageCoinPoker.gabarits));
+    setMessage(
+      `Calibrage ${calibrageCoinPoker.nom} applique tout seul : les zones en place `
+      + `decrivaient une table de spin, qui ne compte que deux sieges. `
+      + `Verifie-les avec « Voir ce que lisent les cadres ».`
+    );
+  }, [estCash, zones.nomAdversaire3, zones.nomAdversaire5]);
+
   function chargerCalibragePrepare() {
     // Chaque salle a sa table : charger celui de Betclic sur une table
     // CoinPoker placerait toutes les zones a cote, et l'ecran n'afficherait que
