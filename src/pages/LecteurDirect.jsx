@@ -727,7 +727,12 @@ export default function LecteurDirect() {
           // justement ceux-là qu'il faut garder.
           for (const [cle2, lect] of Object.entries(lu.lectures || {})) {
             if (!lect || lect.vide || lect.fiable || !lect.signes?.length) continue;
-            if (lect.signes.length > 6) continue;
+            // LA LIMITE ETAIT DE SIX SIGNES, taillee pour une dotation de spin.
+            // Un tapis de cash s'affiche « 115.5BB » ou « 243.5BB » : sept a
+            // huit signes. La moitie des relevés etait donc jetee avant meme
+            // d'etre proposee a l'historique — et ce sont precisement les
+            // tapis qui enseignent les chiffres.
+            if (lect.signes.length > 10) continue;
             // LA TABLE VOYAGE AVEC L'OBSERVATION. Sans elle, l'apprentissage
             // automatique du cash ne saurait pas a quelle partie rapporter ce
             // qu'il a vu : c'est le tapis de Hero SUR CETTE TABLE, a cet
@@ -1095,8 +1100,18 @@ export default function LecteurDirect() {
               <button
                 className={surveillance ? "btn-danger" : "btn-secondary"}
                 onClick={() => setSurveillance((s) => !s)}
-                disabled={!gabarits.length}
-                title={!gabarits.length ? "Apprends d'abord les chiffres au lecteur" : ""}
+                // LE VERROU EMPECHAIT EXACTEMENT CE QUI LE LEVERAIT.
+                //
+                // Le lecteur enregistre les formes qu'il NE SAIT PAS nommer ;
+                // l'historique les etiquette a l'import. Partir de zero signe
+                // est donc le cas normal, pas une erreur — mais le bouton
+                // refusait de demarrer sans signe, et rien ne pouvait plus
+                // jamais etre appris tout seul. Il ne restait que la lecon
+                // manuelle, que l'apprentissage automatique existe justement
+                // pour eviter.
+                title={!gabarits.length
+                  ? "Aucun signe appris : le lecteur va relever les formes sans savoir les nommer. L'import leur donnera un nom."
+                  : ""}
               >
                 {surveillance ? <><Square size={13} /> Arrêter</> : <><Play size={13} /> Surveiller</>}
               </button>
