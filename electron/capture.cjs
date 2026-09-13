@@ -146,13 +146,62 @@ function versSortie(source, { encoderPng }) {
  *                   false pour recevoir les pixels bruts (surveillance)
  */
 async function captureTables(sourceIds = null, { encoderPng = false } = {}) {
-  const sources = await desktopCapturer.getSources({
+  const voulus = sourceIds && sourceIds.length ? new Set(sourceIds.map(String)) : null;
+  const garde = (s) => (voulus ? voulus.has(s.id) : TABLE_TITLE.test(s.name));
+
+  // ---------------------------------------------------------------------------
+  // DEUX PASSES, ET C'EST LA SECONDE QUI COUTE
+  // ---------------------------------------------------------------------------
+  //
+  // `getSources` fabrique une vignette pour CHAQUE FENETRE DU BUREAU — le
+  // navigateur, la messagerie, l'editeur — puis nous filtrons les quatre tables.
+  // On demandait ces vignettes a la taille de l'ECRAN : sur une session reelle,
+  // 2589 ms pour quatre tables, contre 468 ms pour toute la lecture qui suit.
+  //
+  // Or une table de poker fait quelques centaines de pixels, pas la taille de
+  // l'ecran. On repere donc d'abord les fenetres voulues avec des vignettes de
+  // 1x1 — ce que fait deja la liste des tables, sans que personne s'en plaigne —
+  // pour connaitre leur taille reelle, puis on ne demande QUE cette taille.
+  //
+  // On ne descend jamais en dessous de la taille d'une fenetre : une vignette
+  // reduite flouterait le texte, et c'est exactement ce qu'il faut lire.
+  const reperage = await desktopCapturer.getSources({
     types: ["window"],
-    thumbnailSize: maxThumbnailSize(),
+    thumbnailSize: { width: 1, height: 1 },
   });
 
-  const voulus = sourceIds && sourceIds.length ? new Set(sourceIds.map(String)) : null;
-  const retenues = sources.filter((s) => (voulus ? voulus.has(s.id) : TABLE_TITLE.test(s.name)));
+  let taille = maxThumbnailSize();
+  try {
+    const cibles = reperage.filter(garde);
+    const mesures = await cadresDesFenetres(cibles.map((s) => s.id));
+    if (mesures.size) {
+      const facteur = screen.getPrimaryDisplay().scaleFactor || 1;
+      let l = 0, h = 0;
+      for (const c of mesures.values()) {
+        l = Math.max(l, Math.ceil(c.largeur * facteur));
+        h = Math.max(h, Math.ceil(c.hauteur * facteur));
+      }
+      // Une marge : les cadres viennent d'un cache, et une fenetre qu'on vient
+      // d'agrandir serait rendue trop petite le temps d'un tour.
+      const max = maxThumbnailSize();
+      if (l > 0 && h > 0) {
+        taille = {
+          width: Math.min(max.width, Math.round(l * 1.1)),
+          height: Math.min(max.height, Math.round(h * 1.1)),
+        };
+      }
+    }
+  } catch {
+    // Mesure impossible : on retombe sur la taille de l'ecran, qui ne tronque
+    // jamais rien. Plus lent, jamais faux.
+  }
+
+  const sources = await desktopCapturer.getSources({
+    types: ["window"],
+    thumbnailSize: taille,
+  });
+
+  const retenues = sources.filter(garde);
 
   // LES COORDONNÉES DE CHAQUE FENÊTRE, sans quoi un affichage superposé ne peut
   // que deviner. Elles arrivent d'un cache : une fenêtre de poker ne se déplace
