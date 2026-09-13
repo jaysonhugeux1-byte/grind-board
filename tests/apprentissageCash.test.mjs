@@ -25,7 +25,7 @@
 // empoisonne ensuite toutes les lectures.
 import {
   contexteCashDepuisMains, etiquetteCash, formaterBB, apprendreCashDepuisHistorique,
-  PAUSE_MAX_MS,
+  PAUSE_MAX_MS, zoneApprenable,
 } from "../src/lib/apprentissageAuto.js";
 
 let ok = 0, ko = 0;
@@ -198,6 +198,36 @@ T("sans observation, rien ne casse",
   apprendreCashDepuisHistorique([], mains, []).appris === 0);
 T("sans historique non plus",
   apprendreCashDepuisHistorique([{ zone: "tapisHero", ts: T0, table: "x", signes: [] }], [], []).appris === 0);
+
+
+// ---------------------------------------------------------------------------
+// CE QU'ON REFUSE DE MEMORISER — ET POURQUOI CE N'EST PAS UN DETAIL
+// ---------------------------------------------------------------------------
+//
+// Le lecteur relevait TOUTES les zones qu'il ne savait pas lire : treize par
+// table en cash. Or une seule peut recevoir une etiquette — le tapis de Hero,
+// que l'historique donne exactement. Les douze autres, pseudonymes et tapis
+// adverses, ne seront JAMAIS nommees : l'export est anonymise.
+//
+// Elles remplissaient donc le tampon douze fois trop vite et en chassaient les
+// seules utiles. Mesure sur une session reelle : quatre tables, un tour toutes
+// les 2,6 s, soit vingt releves par seconde — le plafond de 4000 atteint en
+// TROIS MINUTES. D'une session de dix-huit minutes, l'import n'aurait vu que
+// les trois dernieres.
+T("EN CASH, SEUL LE TAPIS DE HERO EST MEMORISE",
+  zoneApprenable("tapisHero", { cash: true })
+  && !zoneApprenable("nomAdversaire3", { cash: true })
+  && !zoneApprenable("adversaire3", { cash: true })
+  && !zoneApprenable("pot", { cash: true }),
+  "les autres zones ne peuvent recevoir aucune etiquette et chassent les utiles");
+
+T("en spin, ce sont la dotation, le bouton et le board",
+  zoneApprenable("dotation") && zoneApprenable("finRejouer") && zoneApprenable("board1")
+  && !zoneApprenable("tapisHero"));
+
+T("une zone absente n'est jamais memorisee",
+  !zoneApprenable(null, { cash: true }) && !zoneApprenable("", { cash: true }));
+
 
 console.log(`\n${ok} OK, ${ko} FAIL`);
 if (ko) process.exit(1);

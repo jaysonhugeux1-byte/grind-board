@@ -43,6 +43,34 @@ export function observation(zone, ts, signes, contexte = {}) {
   };
 }
 
+/**
+ * Les zones dont l'historique peut donner le contenu.
+ *
+ * ---------------------------------------------------------------------------
+ * POURQUOI FILTRER, ET CE QUE COUTAIT DE NE PAS LE FAIRE
+ * ---------------------------------------------------------------------------
+ *
+ * Le lecteur relevait TOUTES les zones qu'il ne savait pas lire — treize par
+ * table en cash. Or une seule d'entre elles peut recevoir une etiquette : le
+ * tapis de Hero, que l'historique donne exactement. Les douze autres — les
+ * pseudonymes et les tapis adverses — ne seront JAMAIS nommees, l'export etant
+ * anonymise.
+ *
+ * Elles remplissaient donc le tampon douze fois plus vite que necessaire, et en
+ * chassaient les seules utiles. Mesure sur une session reelle : quatre tables,
+ * un tour toutes les 2,6 s, soit vingt relevés par seconde — le plafond de 4000
+ * etait atteint en TROIS MINUTES. D'une session de dix-huit minutes, l'import
+ * n'aurait vu que les trois dernieres, et n'aurait pu y nommer presque rien.
+ *
+ * En ne gardant que ce qui est etiquetable, le meme tampon couvre la session
+ * entiere.
+ */
+export function zoneApprenable(zone, { cash = false } = {}) {
+  if (!zone) return false;
+  if (cash) return zone === "tapisHero";
+  return zone === "dotation" || zone === "finRejouer" || String(zone).startsWith("board");
+}
+
 // Au-delà, on jette les plus anciennes : elles auront de toute façon été
 // apprises, et un tampon sans limite finirait par saturer le stockage local.
 export const MAX_OBSERVATIONS = 4000;

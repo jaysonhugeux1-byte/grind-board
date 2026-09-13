@@ -15,7 +15,7 @@ import {
 import { addSpinTournament, enregistrerMainsLecteur } from "../lib/supabaseData";
 import calibrageBetclic from "../calibrages/betclic-4tables.json";
 import { integrerImage, cloturerMain, mainExploitable, notation, evDeAbattage } from "../lib/mainEnDirect";
-import { observation, ajouterObservation } from "../lib/apprentissageAuto";
+import { observation, ajouterObservation, zoneApprenable } from "../lib/apprentissageAuto";
 import { listerAdversaires, trouverPseudo, styleAdversaire } from "../lib/adversaires";
 import { useMode } from "../contexts/ModeContext";
 import calibrageCoinPoker from "../calibrages/coinpoker-cash-6max.json";
@@ -638,7 +638,13 @@ export default function LecteurDirect() {
       // l'écran entier : quatre tables coûteraient quatre fois le prix d'une.
       // Et pas de PNG sur ce chemin — les pixels bruts évitent un encodage
       // suivi d'un décodage, à chaque tour et pour chaque table.
+      // ON MESURE LA PHOTO A PART DE LA LECTURE. Un tour trop lent peut venir
+      // de deux endroits tres differents — photographier quatre fenetres, ou
+      // analyser leurs zones — et les remedes n'ont rien a voir. Sans cette
+      // separation, « la machine ne suit pas ce rythme » ne dit pas quoi faire.
+      const avantPhoto = performance.now();
       const captures = await window.grandLivre.capturerTables(null);
+      const dureePhoto = Math.round(performance.now() - avantPhoto);
       const maintenant = Date.now();
       const etats = [];
       const pastilles = [];
@@ -730,6 +736,12 @@ export default function LecteurDirect() {
           // justement ceux-là qu'il faut garder.
           for (const [cle2, lect] of Object.entries(lu.lectures || {})) {
             if (!lect || lect.vide || lect.fiable || !lect.signes?.length) continue;
+            // ON NE GARDE QUE CE QUE L'HISTORIQUE POURRA NOMMER. Les douze
+            // autres zones d'une table de cash — pseudonymes et tapis adverses
+            // — ne recevront jamais d'etiquette, l'export etant anonymise.
+            // Elles remplissaient le tampon douze fois trop vite et en
+            // chassaient les seules utiles.
+            if (!zoneApprenable(cle2, { cash: estCash })) continue;
             // LA LIMITE ETAIT DE SIX SIGNES, taillee pour une dotation de spin.
             // Un tapis de cash s'affiche « 115.5BB » ou « 243.5BB » : sept a
             // huit signes. La moitie des relevés etait donc jetee avant meme
@@ -989,7 +1001,11 @@ export default function LecteurDirect() {
         if (aRecharger) await refresh();
       }
 
-      setCadence({ duree: Math.round(performance.now() - depart), tables: captures.length });
+      setCadence({
+        duree: Math.round(performance.now() - depart),
+        photo: dureePhoto,
+        tables: captures.length,
+      });
       // Meme raison : `enregistrerMainsLecteur` ecrit dans les mains de SPIN.
       if (!estCash && mainsFinies.length) {
         try {
@@ -1196,6 +1212,9 @@ export default function LecteurDirect() {
                 <span className="muted" style={{ alignSelf: "center", fontSize: 12 }}>
                   {cadence
                     ? `${cadence.tables} table(s) lue(s) en ${cadence.duree} ms`
+                      + (cadence.photo != null
+                        ? ` (photo ${cadence.photo} ms, lecture ${cadence.duree - cadence.photo} ms)`
+                        : "")
                     : "démarrage…"}
                   {cadence && cadence.duree > periodeMs && " — la machine ne suit pas ce rythme"}
                   {/* LE RYTHME REEL, quand il s'ecarte de celui demande. C'est
