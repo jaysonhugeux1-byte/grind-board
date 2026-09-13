@@ -265,7 +265,11 @@ export default function LecteurDirect() {
   const [surveillance, setSurveillance] = useState(false);
   const [lectureLive, setLectureLive] = useState(null);
   const [vignettes, setVignettes] = useState(null);
-  const [formesEnAttente, setFormesEnAttente] = useState(0);
+  // Il part de ce qui est DEJA en memoire. Affiche a zero alors que le tampon en
+  // contient des milliers, il faisait croire a une perte.
+  const [formesEnAttente, setFormesEnAttente] = useState(
+    () => lireLocal(CLE_OBSERVATIONS, []).length,
+  );
   const [intervalReel, setIntervalReel] = useState(null);
   const [file, setFile] = useState([]);
   const [enregistres, setEnregistres] = useState(0);
@@ -731,11 +735,45 @@ export default function LecteurDirect() {
           const { suivi, tournoiTermine } = integrerLecture(suivis.get(cle), lu, maintenant);
           let formesRelevees = 0;
 
+          // ---------------------------------------------------------------
+          // LE RECENSEMENT DES CADRES
+          // ---------------------------------------------------------------
+          //
+          // « Rien de lisible » melange deux situations qui n'ont rien a voir
+          // et qui ne se reparent pas pareil :
+          //
+          //   — un cadre pose sur du VIDE (fond de tapis, decoration) : il faut
+          //     le DEPLACER, aucun apprentissage n'y changera jamais rien ;
+          //   — un cadre pose sur du TEXTE que le lecteur ne sait pas encore
+          //     nommer : il est bien place, il ne manque que les signes.
+          //
+          // Les confondre fait chercher la panne du mauvais cote — ce qui est
+          // arrive a chaque etape de ce lecteur.
+          let zonesLues = 0, zonesAvecEncre = 0, zonesVides = 0;
+          for (const lect of Object.values(lu.lectures || {})) {
+            if (!lect || lect.horsCadre) continue;
+            if (lect.fiable) zonesLues++;
+            else if (lect.vide) zonesVides++;
+            else if (lect.signes?.length) zonesAvecEncre++;
+          }
+          void zonesLues;
+
           // Mémoire des signes non reconnus. Le lecteur ne sait pas les nommer
           // aujourd'hui ; l'historique de demain le fera pour lui, et ce sont
           // justement ceux-là qu'il faut garder.
           for (const [cle2, lect] of Object.entries(lu.lectures || {})) {
             if (!lect || lect.vide || lect.fiable || !lect.signes?.length) continue;
+
+            // COMPTER TOUT CE QUI EST VU, NE STOCKER QUE CE QUI EST NOMMABLE.
+            //
+            // Les deux avaient ete confondus, et le filtre les a supprimes tous
+            // les deux : le compteur est tombe a zero et l'ecran a cesse de dire
+            // que le lecteur voyait quoi que ce soit. Ces deux informations
+            // repondent pourtant a des questions differentes — « mes cadres
+            // tombent-ils sur du texte ? » et « l'import aura-t-il de quoi
+            // travailler ? » — et c'est la premiere qu'on regarde d'abord.
+            formesRelevees += lect.signes.length;
+
             // ON NE GARDE QUE CE QUE L'HISTORIQUE POURRA NOMMER. Les douze
             // autres zones d'une table de cash — pseudonymes et tapis adverses
             // — ne recevront jamais d'etiquette, l'export etant anonymise.
@@ -752,7 +790,6 @@ export default function LecteurDirect() {
             // automatique du cash ne saurait pas a quelle partie rapporter ce
             // qu'il a vu : c'est le tapis de Hero SUR CETTE TABLE, a cet
             // instant, qui donnera l'etiquette.
-            formesRelevees += lect.signes.length;
             aRetenir.push(
               observation(cle2, maintenant, lect.signes.map((x) => ({
                 empreinte: x.empreinte, ratio: x.ratio, lu: x.signe,
@@ -962,9 +999,12 @@ export default function LecteurDirect() {
               ? "écran de fin"
               : (estCash ? (lu.pot != null || lu.tapisHero != null) : suivi.dotation != null)
                 ? "en cours"
-                : formesRelevees
-                  ? `${formesRelevees} formes relevées, pas encore nommées`
-                  : "rien de lisible",
+                : zonesAvecEncre
+                  ? `${zonesAvecEncre} cadre(s) sur du texte, ${formesRelevees} formes`
+                    + (zonesVides ? ` · ${zonesVides} sur du vide` : "")
+                  : zonesVides
+                    ? `${zonesVides} cadre(s) sur du vide — à déplacer`
+                    : "rien de lisible",
           });
         });
       }
