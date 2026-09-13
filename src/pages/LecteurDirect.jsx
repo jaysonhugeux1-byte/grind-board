@@ -265,6 +265,7 @@ export default function LecteurDirect() {
   const [surveillance, setSurveillance] = useState(false);
   const [lectureLive, setLectureLive] = useState(null);
   const [vignettes, setVignettes] = useState(null);
+  const [formesEnAttente, setFormesEnAttente] = useState(0);
   const [file, setFile] = useState([]);
   const [enregistres, setEnregistres] = useState(0);
   const [periodeMs, setPeriodeMs] = useState(() => lireLocal(CLE_PERIODE, PERIODE_DEFAUT));
@@ -721,6 +722,7 @@ export default function LecteurDirect() {
             ?? null;
 
           const { suivi, tournoiTermine } = integrerLecture(suivis.get(cle), lu, maintenant);
+          let formesRelevees = 0;
 
           // Mémoire des signes non reconnus. Le lecteur ne sait pas les nommer
           // aujourd'hui ; l'historique de demain le fera pour lui, et ce sont
@@ -737,6 +739,7 @@ export default function LecteurDirect() {
             // automatique du cash ne saurait pas a quelle partie rapporter ce
             // qu'il a vu : c'est le tapis de Hero SUR CETTE TABLE, a cet
             // instant, qui donnera l'etiquette.
+            formesRelevees += lect.signes.length;
             aRetenir.push(
               observation(cle2, maintenant, lect.signes.map((x) => ({
                 empreinte: x.empreinte, ratio: x.ratio, lu: x.signe,
@@ -929,11 +932,26 @@ export default function LecteurDirect() {
             fin: lu.finRejouer != null,
             gain: lu.finGain,
             part: suivi.part,
+            // LA PHASE SE LISAIT SUR LA DOTATION — UN CHAMP DE SPIN.
+            //
+            // En cash il n'y a pas de dotation, et le calibrage CoinPoker n'a
+            // meme pas de zone pour en lire une. La phase valait donc « rien de
+            // lisible » EN PERMANENCE, y compris quand le lecteur lisait
+            // parfaitement. C'est la colonne que l'utilisateur regarde pour
+            // juger si son reglage marche : elle lui mentait.
+            //
+            // Et « formes relevees » n'est pas un detail d'affichage. Tant
+            // qu'aucun signe n'est appris, RIEN ne se lit — c'est normal, c'est
+            // meme le point de depart prevu. Ce qui compte alors est que le
+            // lecteur VOIE de l'encre et la mette de cote pour l'import. Sans
+            // ce compteur, cet etat est indiscernable d'une panne.
             phase: lu.finRejouer != null
               ? "écran de fin"
-              : suivi.dotation != null
+              : (estCash ? (lu.pot != null || lu.tapisHero != null) : suivi.dotation != null)
                 ? "en cours"
-                : "rien de lisible",
+                : formesRelevees
+                  ? `${formesRelevees} formes relevées, pas encore nommées`
+                  : "rien de lisible",
           });
         });
       }
@@ -983,6 +1001,10 @@ export default function LecteurDirect() {
 
       if (aRetenir.length) {
         observationsRef.current = aRetenir.reduce(ajouterObservation, observationsRef.current);
+        // CE COMPTEUR EST LA SEULE PREUVE QUE LE LECTEUR TRAVAILLE avant qu'un
+        // seul signe soit appris. Sans lui, « rien de lisible » partout est
+        // indiscernable d'une panne — alors que c'est l'etat de depart prevu.
+        setFormesEnAttente(observationsRef.current.length);
         // Écriture différée : sauvegarder à chaque tour userait le stockage pour
         // rien, et une session perdue ne coûte qu'un apprentissage.
         if (observationsRef.current.length % 40 < aRetenir.length) {
@@ -1154,7 +1176,10 @@ export default function LecteurDirect() {
                     : "démarrage…"}
                   {cadence && cadence.duree > periodeMs && " — la machine ne suit pas ce rythme"}
                   {" · "}
-                  {enregistres} tournoi(s){lireLesMains ? ` · ${mainsLues} main(s)` : ""} enregistré(s)
+                  {estCash
+                    ? `${formesEnAttente} forme(s) en attente d'être nommées par l'import`
+                    : `${enregistres} tournoi(s)`}
+                  {lireLesMains ? ` · ${mainsLues} main(s) enregistrée(s)` : ""}
                 </span>
               )}
             </div>
