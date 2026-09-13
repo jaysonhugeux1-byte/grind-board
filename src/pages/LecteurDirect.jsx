@@ -266,6 +266,7 @@ export default function LecteurDirect() {
   const [lectureLive, setLectureLive] = useState(null);
   const [vignettes, setVignettes] = useState(null);
   const [formesEnAttente, setFormesEnAttente] = useState(0);
+  const [intervalReel, setIntervalReel] = useState(null);
   const [file, setFile] = useState([]);
   const [enregistres, setEnregistres] = useState(0);
   const [periodeMs, setPeriodeMs] = useState(() => lireLocal(CLE_PERIODE, PERIODE_DEFAUT));
@@ -1033,20 +1034,42 @@ export default function LecteurDirect() {
   useEffect(() => {
     if (!surveillance) return undefined;
     let vivant = true;
-    // Le tour suivant n'est planifié qu'une fois le précédent terminé : si la
-    // machine ne suit pas, le lecteur ralentit de lui-même au lieu d'empiler
-    // des captures qu'il ne traitera jamais.
+    let precedent = null;
+
+    // ------------------------------------------------------------------------
+    // ON MESURE L'INTERVALLE REEL, PAS CELUI QU'ON A DEMANDE
+    // ------------------------------------------------------------------------
+    //
+    // Chromium bride les minuteurs d'une fenetre qui n'est pas visible. Or on
+    // joue au poker : les tables sont devant, et le lecteur travaille derriere
+    // pendant toute la session. Le reglage a 0,5 s ne tenait donc jamais, et
+    // rien ne le disait — le lecteur ralentissait en silence.
+    //
+    // Le bridage est desactive cote Electron, mais une promesse de ce genre ne
+    // vaut rien sans mesure : on releve donc l'ecart entre deux tours, et
+    // l'ecran l'affiche quand il s'eloigne trop du rythme demande.
     const boucle = async () => {
-      const depart = performance.now();
+      const debutTour = performance.now();
+      const ecart = precedent == null ? null : debutTour - precedent;
+      precedent = debutTour;
       await tick();
       if (!vivant) return;
-      const reste = Math.max(0, periodeMs - (performance.now() - depart));
+      if (ecart != null) setIntervalReel(Math.round(ecart));
+      const reste = Math.max(0, periodeMs - (performance.now() - debutTour));
       boucleRef.current = setTimeout(boucle, reste);
     };
     boucle();
+
+    // Le systeme ne doit pas suspendre l'application au milieu d'une session.
+    // On le demande UNIQUEMENT pendant la surveillance : garder un poste
+    // eveille en permanence n'est pas au logiciel d'en decider.
+    window.grandLivre?.empecherVeille?.(true);
+
     return () => {
       vivant = false;
       clearTimeout(boucleRef.current);
+      window.grandLivre?.empecherVeille?.(false);
+      setIntervalReel(null);
     };
   }, [surveillance, tick, periodeMs]);
 
@@ -1175,6 +1198,13 @@ export default function LecteurDirect() {
                     ? `${cadence.tables} table(s) lue(s) en ${cadence.duree} ms`
                     : "démarrage…"}
                   {cadence && cadence.duree > periodeMs && " — la machine ne suit pas ce rythme"}
+                  {/* LE RYTHME REEL, quand il s'ecarte de celui demande. C'est
+                      la seule facon de voir un bridage d'arriere-plan : le
+                      lecteur ralentit sans rien dire, et les captures manquees
+                      ne laissent aucune trace. */}
+                  {intervalReel != null && intervalReel > periodeMs * 1.5 && cadence
+                    && cadence.duree <= periodeMs
+                    && ` — rythme réel ${intervalReel} ms au lieu de ${periodeMs}`}
                   {" · "}
                   {estCash
                     ? `${formesEnAttente} forme(s) en attente d'être nommées par l'import`

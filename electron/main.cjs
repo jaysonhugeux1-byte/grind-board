@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, session, dialog, ipcMain, shell, powerSaveBlocker } = require("electron");
 const path = require("path");
 const http = require("http");
 const fs = require("fs");
@@ -176,6 +176,39 @@ ipcMain.handle("open-external", async (_event, rawUrl) => {
 // n'obtient aucun accès direct à l'écran ni au système.
 hud.enregistrerIpc();
 
+// ---------------------------------------------------------------------------
+// EMPECHER LA MISE EN VEILLE PENDANT UNE SESSION
+// ---------------------------------------------------------------------------
+//
+// Desactiver le bridage ne suffit pas si le systeme, lui, suspend
+// l'application. On demande donc a Windows de ne pas le faire — mais SEULEMENT
+// pendant que le lecteur tourne : garder un poste eveille en permanence est une
+// chose qu'un logiciel n'a pas a decider a la place de son utilisateur.
+//
+// « prevent-app-suspension » et non « prevent-display-sleep » : on veut
+// continuer a travailler, pas empecher l'ecran de s'eteindre.
+let blocageVeille = null;
+
+ipcMain.handle("veille:empecher", async (_event, actif) => {
+  const veut = Boolean(actif);
+  if (veut && blocageVeille == null) {
+    blocageVeille = powerSaveBlocker.start("prevent-app-suspension");
+  } else if (!veut && blocageVeille != null) {
+    if (powerSaveBlocker.isStarted(blocageVeille)) powerSaveBlocker.stop(blocageVeille);
+    blocageVeille = null;
+  }
+  return blocageVeille != null;
+});
+
+// Une application qui se ferme en laissant le systeme eveille laisserait une
+// trace invisible et durable.
+app.on("will-quit", () => {
+  if (blocageVeille != null && powerSaveBlocker.isStarted(blocageVeille)) {
+    powerSaveBlocker.stop(blocageVeille);
+  }
+  blocageVeille = null;
+});
+
 ipcMain.handle("tables:lister", async () => listTables());
 ipcMain.handle("tables:capturer", async (_event, sourceId) => captureTable(String(sourceId)));
 // Chemin rapide de la surveillance : toutes les tables en un seul appel
@@ -196,6 +229,19 @@ function createWindow(startUrl) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // ---------------------------------------------------------------------
+      // LE LECTEUR TRAVAILLE PRECISEMENT QUAND ON NE LE REGARDE PAS
+      // ---------------------------------------------------------------------
+      //
+      // On joue au poker : les tables sont au premier plan, et GrindBoard est
+      // derriere pendant toute la session. Or Chromium BRIDE les minuteurs
+      // d'une fenetre qui n'est pas visible — a une execution par seconde, puis
+      // bien moins encore apres quelques minutes.
+      //
+      // La boucle de capture est un `setTimeout`. Un reglage a 0,5 s ne tenait
+      // donc jamais des que l'utilisateur cliquait sur une table, c'est-a-dire
+      // toujours. Le lecteur ralentissait en silence, et rien ne le disait.
+      backgroundThrottling: false,
     },
   });
 

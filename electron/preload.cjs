@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld("grandLivre", {
   },
 
   // Renvoie la liste des fenêtres de table ouvertes.
+  // Empeche le systeme de suspendre l'application pendant une session de
+  // lecture. Arme et desarme par l'ecran, jamais laisse actif en permanence.
+  empecherVeille: (actif) => ipcRenderer.invoke("veille:empecher", Boolean(actif)),
+
   listerTables: () => ipcRenderer.invoke("tables:lister"),
 
   // Capture une table et renvoie une image PNG en data URL. Pour le calibrage,
