@@ -9,6 +9,7 @@ import { PageHeader, EmptyState } from "../components/ui";
 import { apprendreZone, fusionnerGabarits, carteEncre, binariser } from "../lib/vision";
 import {
   ZONES_PAR_DEFAUT, libelleZone, clesDeCalibrage, REGIONS_PAR_DEFAUT, extraireZone, lireTable,
+  accrocherLesZones,
   imageDepuisDataUrl, synchroniserTables, integrerLecture, partDeHero,
   deduireResultat, zonesAbsolues, zoneDansRegion, lireCartesTable,
 } from "../lib/tableReader";
@@ -271,6 +272,8 @@ export default function LecteurDirect() {
     () => lireLocal(CLE_OBSERVATIONS, []).length,
   );
   const [intervalReel, setIntervalReel] = useState(null);
+  // Les cadres recales, par fenetre et par taille de fenetre.
+  const accrochesRef = useRef(new Map());
   const [file, setFile] = useState([]);
   const [enregistres, setEnregistres] = useState(0);
   const [periodeMs, setPeriodeMs] = useState(() => lireLocal(CLE_PERIODE, PERIODE_DEFAUT));
@@ -320,6 +323,12 @@ export default function LecteurDirect() {
   useEffect(() => { localStorage.setItem(CLE_REGIONS, JSON.stringify(regions)); }, [regions]);
   useEffect(() => { localStorage.setItem(CLE_GABARITS, JSON.stringify(gabarits)); }, [gabarits]);
   useEffect(() => { localStorage.setItem(CLE_PERIODE, JSON.stringify(periodeMs)); }, [periodeMs]);
+
+  // UN REGLAGE MANUEL DOIT REPRENDRE LA MAIN. Les cadres recales sont gardes par
+  // fenetre ; sans cet oubli, deplacer un cadre a la souris n'aurait aucun effet
+  // tant que la fenetre garde la meme taille — et l'utilisateur croirait son
+  // reglage ignore.
+  useEffect(() => { accrochesRef.current.clear(); }, [zones]);
   useEffect(() => { localStorage.setItem(CLE_AUTO, JSON.stringify(auto)); }, [auto]);
   useEffect(() => { localStorage.setItem(CLE_HUD, JSON.stringify(hudActif)); }, [hudActif]);
   useEffect(() => { localStorage.setItem(CLE_DECALAGE, JSON.stringify(decalage)); }, [decalage]);
@@ -693,7 +702,39 @@ export default function LecteurDirect() {
         aLire.forEach((region, i) => {
           if (!region) return;
           const cle = `${capture.id}#${i}`;
-          const zonesAbs = zonesAbsolues(region, zones);
+          let zonesAbs = zonesAbsolues(region, zones);
+
+          // ------------------------------------------------------------------
+          // LES CADRES S'ACCROCHENT AU TEXTE, PAR FENETRE
+          // ------------------------------------------------------------------
+          //
+          // Un calibrage fixe ne peut pas servir deux tailles de table : la
+          // barre de titre a une hauteur CONSTANTE, elle ne represente donc pas
+          // la meme fraction d'une fenetre de 609 pixels que d'une de 692, et
+          // tout le contenu se decale d'autant. Le pseudonyme etant colle
+          // au-dessus du tapis, ce decalage suffit a lire le nom a la place du
+          // montant — ou le fond entre les deux.
+          //
+          // On recale donc les cadres sur les lignes de texte reelles de CETTE
+          // fenetre. Une fois par fenetre et par taille : la mise en page ne
+          // bouge pas tant que la fenetre ne bouge pas, et refaire ce travail a
+          // chaque tour couterait autant que la lecture elle-meme.
+          const cleAccroche = `${capture.id}:${capture.largeur}x${capture.hauteur}#${i}`;
+          const deja = accrochesRef.current.get(cleAccroche);
+          if (deja) {
+            zonesAbs = deja;
+          } else {
+            const r = accrocherLesZones(image, zonesAbs);
+            // ON NE RETIENT QU'UN RECALAGE QUI A TROUVE QUELQUE CHOSE. Pris au
+            // moment ou la table est vide — entre deux mains, sieges libres —
+            // il ne trouverait rien et figerait des cadres inchanges pour toute
+            // la session. On reessaie au tour suivant.
+            if (r.accrochees.length >= 2) {
+              accrochesRef.current.set(cleAccroche, r.zones);
+              zonesAbs = r.zones;
+            }
+          }
+
           const lu = lireTable(image, zonesAbs, gabarits);
 
           // Cartes : board, main de Hero, et abattage si l'instant est attrapé.

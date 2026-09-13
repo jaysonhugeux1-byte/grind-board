@@ -13,7 +13,7 @@
 // Le principe directeur : ne jamais inscrire un tournoi dont on n'est pas sûr.
 // Un doute part en file d'attente et se règle d'un clic, ce qui reste bien plus
 // rapide que la saisie manuelle et ne risque pas de fausser les statistiques.
-import { lireZone, versNombre } from "./vision.js";
+import { lireZone, versNombre, carteEncre, binariser, bandesDeTexte } from "./vision.js";
 import { lireCarte } from "./cartes.js";
 
 // Betclic affiche les tapis en grosses blindes, pas en jetons — et le total en
@@ -305,6 +305,149 @@ export function extraireZone(image, zone) {
 // ---------------------------------------------------------------------------
 // Lecture
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// ACCROCHER UN CADRE SUR LE TEXTE QU'IL VISE
+// ---------------------------------------------------------------------------
+//
+// POURQUOI UN CADRE FIXE NE PEUT PAS MARCHER.
+//
+// Les zones sont exprimees en fractions de la fenetre. Cela devrait suffire —
+// sauf que la barre de titre a une hauteur FIXE : elle ne represente pas la
+// meme fraction d'une fenetre de 609 pixels que d'une de 692, et tout le
+// contenu se decale d'autant. Un calibrage mesure sur une taille de table tombe
+// donc a cote sur une autre, et il n'existe aucun reglage qui serve aux deux.
+//
+// Pire : le pseudonyme est colle AU-DESSUS du tapis, a quelques pixels. Un
+// decalage de rien du tout fait lire le nom a la place du montant — ou le fond
+// du tapis, ou la decoration entre les deux.
+//
+// CE QU'ON FAIT A LA PLACE. Le cadre n'a plus besoin d'etre juste, seulement
+// d'etre dans le VOISINAGE. On cherche autour de lui les lignes de texte, et on
+// se cale sur celle qu'il vise.
+//
+// LA PREFERENCE DIT LAQUELLE. Une plaque de joueur porte deux lignes : le
+// pseudonyme au-dessus, le tapis en dessous. Les deux sont a quelques pixels
+// l'une de l'autre, et « la plus proche » choisirait au hasard de l'arrondi.
+// C'est la NATURE de la zone qui tranche — un tapis vise la ligne basse, un
+// pseudonyme la ligne haute — et cette regle-la ne depend d'aucune taille de
+// fenetre.
+
+/** Le rayon de recherche, en multiples de la hauteur du cadre. */
+export const RAYON_ACCROCHE = 1.2;
+
+/** Quelle ligne vise une zone, quand son cadre en attrape plusieurs. */
+export function preferenceDeZone(cle) {
+  if (/^nomAdversaire\d+$/.test(cle)) return "haut";
+  if (/^adversaire\d+$/.test(cle) || cle === "tapisHero") return "bas";
+  return "centre";
+}
+
+/**
+ * Recale un cadre sur la ligne de texte la plus plausible autour de lui.
+ *
+ * @returns la zone recalee, ou la zone d'origine si rien n'a ete trouve —
+ *          un cadre pose sur du vide reste sur du vide, et l'ecran le dit.
+ */
+export function accrocherSurTexte(image, zone, {
+  rayon = RAYON_ACCROCHE, preference = "centre", marge = 0.25,
+} = {}) {
+  if (!image || !zone || !(zone.h > 0)) return zone;
+
+  const yHaut = Math.max(0, zone.y - zone.h * rayon);
+  const yBas = Math.min(1, zone.y + zone.h * (1 + rayon));
+  const region = { x: zone.x, y: yHaut, l: zone.l, h: yBas - yHaut };
+  const morceau = extraireZone(image, region);
+  if (!morceau) return zone;
+
+  const binaire = binariser(carteEncre(morceau.data, morceau.largeur, morceau.hauteur));
+  const bandes = bandesDeTexte(binaire);
+  if (!bandes.length) return zone;
+
+  // En fractions de la fenetre, pour raisonner dans le meme repere que la zone.
+  const enFractions = bandes.map(([a, b]) => ({
+    y: yHaut + (a / morceau.hauteur) * region.h,
+    h: ((b - a + 1) / morceau.hauteur) * region.h,
+  }));
+
+  // UNE BANDE DEMESUREE N'EST PAS UNE LIGNE DE TEXTE. Une carte, un jeton ou un
+  // bandeau colore remplirait la recherche et ferait accrocher n'importe ou.
+  const plausibles = enFractions.filter((b) => b.h <= zone.h * 2.2 && b.h >= zone.h * 0.25);
+  if (!plausibles.length) return zone;
+
+  // ON PART DE LA BANDE LA PLUS PROCHE, PUIS ON GLISSE D'UN CRAN.
+  //
+  // Prendre simplement « la plus basse de la zone de recherche » etait tentant et
+  // dangereux : sous le tapis de Hero il y a la barre de mise et les boutons
+  // d'action. Un cadre deja bien pose serait alors DESCENDU sur « Suivre »,
+  // c'est-a-dire casse par le recalage cense le reparer.
+  //
+  // On ne bouge donc que d'une ligne, et seulement vers une ligne de la MEME
+  // PLAQUE. Deux lignes d'une meme plaque sont separees par moins que leur
+  // propre hauteur — c'est ce qui distingue le couple pseudo/tapis d'un bouton
+  // pose plus bas.
+  const centreZone = zone.y + zone.h / 2;
+  const centre = (b) => b.y + b.h / 2;
+  let i = 0;
+  for (let k = 1; k < plausibles.length; k++) {
+    if (Math.abs(centre(plausibles[k]) - centreZone) < Math.abs(centre(plausibles[i]) - centreZone)) i = k;
+  }
+
+  const memePlaque = (a, b) => {
+    const haut = a.y < b.y ? a : b;
+    const bas = a.y < b.y ? b : a;
+    return bas.y - (haut.y + haut.h) < Math.min(a.h, b.h);
+  };
+
+  if (preference === "bas" && plausibles[i + 1] && memePlaque(plausibles[i], plausibles[i + 1])) {
+    i += 1;
+  } else if (preference === "haut" && plausibles[i - 1] && memePlaque(plausibles[i], plausibles[i - 1])) {
+    i -= 1;
+  }
+  const choisie = plausibles[i];
+
+  // Une marge : la binarisation rogne les extremites d'un caractere, et un
+  // cadre colle au pixel pres tronquerait les jambages.
+  const m = choisie.h * marge;
+  const y = Math.max(0, choisie.y - m);
+  const recalee = { x: zone.x, l: zone.l, y, h: Math.min(1 - y, choisie.h + 2 * m) };
+
+  // UN PIXEL NE JUSTIFIE PAS DE BOUGER.
+  //
+  // La marge se recalcule sur la bande retrouvee et l'aller-retour entre
+  // fractions et pixels coute un arrondi : sans ce seuil, le cadre oscillait
+  // entre deux valeurs voisines a chaque recalage. Inoffensif pour la lecture,
+  // mais cela reecrivait le calibrage a chaque capture — et un reglage qui
+  // change tout seul n'inspire aucune confiance, a juste titre.
+  const dy = Math.abs(recalee.y - zone.y) * image.hauteur;
+  const dh = Math.abs(recalee.h - zone.h) * image.hauteur;
+  if (dy < 1 && dh < 1) return zone;
+
+  return recalee;
+}
+
+/**
+ * Recale TOUTES les zones d'une table sur le texte qu'elles visent.
+ *
+ * @returns { zones, accrochees, perdues } — `perdues` sont les cadres poses sur
+ *          du vide, que rien ne peut recaler et qu'il faut deplacer a la main.
+ */
+export function accrocherLesZones(image, zones, { rayon = RAYON_ACCROCHE } = {}) {
+  const sortie = {};
+  const accrochees = [];
+  const perdues = [];
+  for (const [cle, zone] of Object.entries(zones)) {
+    if (!zone) { sortie[cle] = zone; continue; }
+    const recalee = accrocherSurTexte(image, zone, {
+      rayon, preference: preferenceDeZone(cle),
+    });
+    sortie[cle] = recalee;
+    const bouge = Math.abs(recalee.y - zone.y) > 1e-6 || Math.abs(recalee.h - zone.h) > 1e-6;
+    if (bouge) accrochees.push(cle);
+    else if (recalee === zone) perdues.push(cle);
+  }
+  return { zones: sortie, accrochees, perdues };
+}
 
 /**
  * Lit toutes les zones calibrées d'une capture.
