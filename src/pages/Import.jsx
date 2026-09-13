@@ -27,7 +27,10 @@ function apprendreSignes(mains) {
     const gabarits = JSON.parse(localStorage.getItem(CLE_GABARITS) || "[]");
     const r = apprendreCashDepuisHistorique(observations, mains, Array.isArray(gabarits) ? gabarits : []);
     if (r.appris > 0) localStorage.setItem(CLE_GABARITS, JSON.stringify(r.gabarits));
-    return { appris: r.appris, examinees: r.examinees, rejetees: r.rejetees };
+    return {
+      appris: r.appris, examinees: r.examinees, rejetees: r.rejetees,
+      enMemoire: observations.length,
+    };
   } catch {
     // L'apprentissage est un bonus : son echec ne doit jamais empecher un import.
     return null;
@@ -236,11 +239,36 @@ export default function Import() {
                      + " tournait pendant la session, et sur les mêmes tables."}
               </p>
             )}
-            {preview.apprentissage?.appris > 0 && (
+            {/* UN ZERO DOIT SE DIRE, ET DIRE POURQUOI.
+                Cette ligne ne s'affichait que lorsqu'un signe au moins avait ete
+                appris. Un echec — le cas qu'on cherche a comprendre — ne laissait
+                donc AUCUNE trace a l'ecran, et c'est precisement le chiffre qu'on
+                regarde pour savoir si le lecteur sert a quelque chose.
+                Les trois nombres se lisent ensemble : des releves en memoire mais
+                zero examine veut dire que l'historique ne les rattache a aucune
+                main ; des releves examines mais rejetes veut dire que le cadre ne
+                rend pas le bon nombre de formes. */}
+            {preview.apprentissage && (
               <p className="dashboard-hint" style={{ marginTop: 10 }}>
-                <strong>{preview.apprentissage.appris} signe(s) appris</strong> automatiquement
-                depuis cet historique — le lecteur lira mieux les prochaines sessions, sans que
-                tu aies rien à taper.
+                {preview.apprentissage.appris > 0 ? (
+                  <>
+                    <strong>{preview.apprentissage.appris} signe(s) appris</strong> automatiquement
+                    depuis cet historique — le lecteur lira mieux les prochaines sessions, sans que
+                    tu aies rien à taper.
+                  </>
+                ) : (
+                  <>
+                    <strong>Aucun signe appris.</strong>{" "}
+                    {preview.apprentissage.enMemoire} relevé(s) du lecteur en mémoire,{" "}
+                    {preview.apprentissage.examinees} rattaché(s) à une main de cet historique,{" "}
+                    {preview.apprentissage.rejetees} écarté(s).{" "}
+                    {preview.apprentissage.examinees === 0
+                      ? "Aucun relevé ne tombe entre deux mains de ce fichier : vérifie que le lecteur "
+                        + "tournait pendant cette session-là."
+                      : "Le nombre de formes découpées ne correspond pas au tapis annoncé : "
+                        + "le cadre du tapis déborde ou tronque."}
+                  </>
+                )}
               </p>
             )}
             {!preview.identites && (
