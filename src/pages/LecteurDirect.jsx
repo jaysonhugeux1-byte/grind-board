@@ -6,10 +6,10 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
 import { PageHeader, EmptyState } from "../components/ui";
-import { apprendreZone, fusionnerGabarits, carteEncre, binariser } from "../lib/vision";
+import { apprendreZone, fusionnerGabarits, carteEncre, binariser, lireZone } from "../lib/vision";
 import {
   ZONES_PAR_DEFAUT, libelleZone, clesDeCalibrage, REGIONS_PAR_DEFAUT, extraireZone, lireTable,
-  accrocherLesZones,
+  accrocherLesZones, accrocherSurTexte, preferenceDeZone, estZoneTexte,
   imageDepuisDataUrl, synchroniserTables, integrerLecture, partDeHero,
   deduireResultat, zonesAbsolues, zoneDansRegion, lireCartesTable,
 } from "../lib/tableReader";
@@ -266,6 +266,7 @@ export default function LecteurDirect() {
   const [surveillance, setSurveillance] = useState(false);
   const [lectureLive, setLectureLive] = useState(null);
   const [vignettes, setVignettes] = useState(null);
+  const [rapport, setRapport] = useState(null);
   // Il part de ce qui est DEJA en memoire. Affiche a zero alors que le tampon en
   // contient des milliers, il faisait croire a une perte.
   const [formesEnAttente, setFormesEnAttente] = useState(
@@ -565,6 +566,72 @@ export default function LecteurDirect() {
       new ImageData(morceau.data, morceau.largeur, morceau.hauteur), 0, 0,
     );
     return toile.toDataURL();
+  }
+
+  /**
+   * Un rapport que le lecteur ecrit sur lui-meme.
+   *
+   * ---------------------------------------------------------------------------
+   * POURQUOI CET ECRAN EXISTE
+   * ---------------------------------------------------------------------------
+   *
+   * Ce lecteur a passe huit versions a etre repare a l'aveugle : on voyait
+   * « rien de lisible » et il fallait deviner lequel des dix maillons avait
+   * lache. Chaque correction laissait le meme symptome, donc paraissait inutile.
+   *
+   * Une capture d'ecran ne suffit pas a trancher : elle montre ce que l'oeil
+   * voit, pas ce que le lecteur mesure — la taille reelle de la fenetre, ou
+   * tombent les cadres, combien de bandes d'encre ils trouvent, ce qui est
+   * decoupe. Ce rapport dit tout cela en toutes lettres, et se copie.
+   */
+  function rapportDiagnostic() {
+    const lignes = [];
+    const px = (z) => (z && image
+      ? `x${Math.round(z.x * image.largeur)} y${Math.round(z.y * image.hauteur)} `
+        + `l${Math.round(z.l * image.largeur)} h${Math.round(z.h * image.hauteur)}`
+      : "—");
+
+    lignes.push(`GrindBoard — rapport du lecteur`);
+    lignes.push(`mode ${estCash ? "cash" : "spin"} · fenetre « ${image?.titre ?? tableChoisie ?? "?"} »`);
+    lignes.push(`capture ${image ? `${image.largeur}x${image.hauteur}` : "aucune"}`
+      + ` · ${regions.length} region(s) · region active ${regionActive + 1}`);
+    lignes.push(`signes appris : ${gabarits.length} (${signesConnus.join("") || "aucun"})`);
+    lignes.push(`formes en attente d'import : ${formesEnAttente}`);
+    if (cadence) {
+      lignes.push(`cadence : ${cadence.tables} table(s) en ${cadence.duree} ms`
+        + (cadence.photo != null ? ` (photo ${cadence.photo}, lecture ${cadence.duree - cadence.photo})` : "")
+        + ` pour un rythme demande de ${periodeMs} ms`);
+    }
+    lignes.push("");
+
+    if (!image) {
+      lignes.push("Aucune capture : clique d'abord sur « Capturer ».");
+      return lignes.join("\n");
+    }
+
+    const region = regions[regionActive] ?? { x: 0, y: 0, l: 1, h: 1 };
+    const abs = zonesAbsolues(region, zones);
+    lignes.push("zone                 cadre pose            cadre accroche        etat");
+    for (const cle of clesDeCalibrage(zones)) {
+      const z = abs[cle];
+      if (!z) { lignes.push(`${cle.padEnd(20)} desactivee`); continue; }
+      const recale = accrocherSurTexte(image, z, { preference: preferenceDeZone(cle) });
+      const bouge = recale !== z;
+      const morceau = extraireZone(image, recale);
+      let etat = "hors cadre";
+      if (morceau) {
+        const lu = lireZone(morceau.data, morceau.largeur, morceau.hauteur, gabarits, {
+          suffixeTolere: !estZoneTexte(cle),
+        });
+        etat = lu.vide
+          ? "VIDE — cadre a deplacer"
+          : lu.fiable
+            ? `lu « ${lu.texte} »`
+            : `${lu.signes?.length ?? 0} forme(s), non reconnues « ${lu.texte} »`;
+      }
+      lignes.push(`${cle.padEnd(20)} ${px(z).padEnd(21)} ${(bouge ? px(recale) : "inchange").padEnd(21)} ${etat}`);
+    }
+    return lignes.join("\n");
   }
 
   function essayerLecture() {
@@ -1582,6 +1649,45 @@ export default function LecteurDirect() {
             <button className="btn-secondary" onClick={essayerLecture} disabled={!image}>
               Voir ce que lisent les cadres
             </button>
+            {/* CE QUE LE LECTEUR MESURE, EN TOUTES LETTRES.
+                Une capture d'ecran montre ce que l'oeil voit ; elle ne dit ni la
+                taille reelle de la fenetre, ni ou tombent les cadres, ni combien
+                de bandes d'encre ils trouvent. C'est pourtant la-dessus que se
+                decide chaque panne de ce lecteur. */}
+            <button
+              className="btn-secondary"
+              style={{ marginLeft: 8 }}
+              onClick={() => setRapport(rapportDiagnostic())}
+              disabled={!image}
+            >
+              Rapport de diagnostic
+            </button>
+            {rapport && (
+              <div style={{ marginTop: 12 }}>
+                <p className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                  Tout est là-dedans : taille de la fenêtre, position de chaque cadre avant et
+                  après recalage, et ce qu&apos;il y a dessous. Copie ce texte si tu veux qu&apos;on
+                  regarde ensemble.
+                </p>
+                <textarea
+                  className="input"
+                  readOnly
+                  value={rapport}
+                  onFocus={(e) => e.target.select()}
+                  style={{
+                    width: "100%", height: 240, fontFamily: "var(--font-mono)",
+                    fontSize: 11.5, whiteSpace: "pre", overflowX: "auto",
+                  }}
+                />
+                <button
+                  className="btn-secondary btn-mini"
+                  style={{ marginTop: 6 }}
+                  onClick={() => navigator.clipboard?.writeText(rapport)}
+                >
+                  Copier
+                </button>
+              </div>
+            )}
             {lectureLive && (
               <>
                 <div className="lectures">
