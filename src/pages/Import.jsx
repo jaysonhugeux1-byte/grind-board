@@ -105,9 +105,11 @@ export default function Import() {
       // subsistait. On ne s'en sert que si l'historique nomme est absent.
       let lien = null;
       let source = null;
+      let recherche = null;
 
       try {
         const nommes = await window.grandLivre?.historiquesNommes?.();
+        recherche = nommes ?? null;
         if (nommes?.texte) {
           const table = tableDesNoms(nommes.texte);
           if (table.size) {
@@ -152,6 +154,7 @@ export default function Import() {
           ? { reliees: lien.mainsReliees, total: lien.mainsTotales, taux: lien.tauxLiaison, source }
           : null,
         apprentissage,
+        recherche,
         vues: etatObservations(),
       });
     } catch (e) {
@@ -336,6 +339,20 @@ export default function Import() {
                 au connecteur de la salle pendant que tu joues. À défaut, le lecteur d&apos;écran
                 peut servir de second recours.
               </p>
+            )}
+            {/* OU L'ON A CHERCHE, MEME QUAND ON N'A RIEN TROUVE.
+                « Aucun historique nommé » ne distingue pas « il n'y en a pas »
+                de « on n'a pas cherché au bon endroit ». Affiché, le chemin se
+                vérifie en dix secondes. */}
+            {!preview.identites && preview.recherche?.examines?.length > 0 && (
+              <details style={{ marginTop: 8 }}>
+                <summary className="muted" style={{ fontSize: 12, cursor: "pointer" }}>
+                  Dossiers examinés ({preview.recherche.examines.length})
+                </summary>
+                <ul className="muted" style={{ fontSize: 11.5, lineHeight: 1.8, margin: "6px 0 0 18px" }}>
+                  {preview.recherche.examines.map((d) => <li key={d} className="mono">{d}</li>)}
+                </ul>
+              </details>
             )}
 
             <label className="checkbox-row">

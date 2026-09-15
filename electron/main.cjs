@@ -227,14 +227,34 @@ app.on("will-quit", () => {
 // pont Electron pour le jeter aussitot.
 const LIGNE_UTILE = /^(?:CoinPoker Hand #\d+|Seat \d+: .+ \([^)]*in chips\))/;
 
-/** Les dossiers ou un tracker depose ses historiques CoinPoker. */
+/**
+ * Les dossiers ou un tracker depose ses historiques CoinPoker nommes.
+ *
+ * ON N'EN PRIVILEGIE AUCUN. Le premier qui a servi etait DriveHUD, parce que
+ * c'est celui qui tournait sur la machine ou le pont a ete trouve — mais tout
+ * tracker branche au connecteur de la salle ecrit le meme format, et le pont
+ * par numero de main ne demande rien d'autre.
+ *
+ * Y attacher un seul nom aurait fait dependre GrindBoard d'un concurrent
+ * precis. La liste est donc ouverte, et un dossier choisi a la main l'emporte
+ * sur tous : c'est le seul moyen de couvrir un tracker qu'on ne connait pas.
+ */
 function dossiersDHistorique() {
   const appData = process.env.APPDATA || "";
-  if (!appData) return [];
-  return [
-    path.join(appData, "DriveHUD 3", "ProcessedData", "CoinPoker"),
-    path.join(appData, "DriveHUD", "ProcessedData", "CoinPoker"),
-  ];
+  const local = process.env.LOCALAPPDATA || "";
+  const documents = process.env.USERPROFILE
+    ? path.join(process.env.USERPROFILE, "Documents")
+    : "";
+  const candidats = [];
+  const ajouter = (base, ...suite) => { if (base) candidats.push(path.join(base, ...suite)); };
+
+  ajouter(appData, "DriveHUD 3", "ProcessedData", "CoinPoker");
+  ajouter(appData, "DriveHUD", "ProcessedData", "CoinPoker");
+  ajouter(appData, "Hand2Note", "HandHistory", "CoinPoker");
+  ajouter(local, "PokerTracker 4", "HandHistory", "CoinPoker");
+  ajouter(documents, "CoinPoker", "HandHistory");
+  ajouter(documents, "HandHistory", "CoinPoker");
+  return candidats;
 }
 
 function fichiersRecents(racine, depuis) {
