@@ -370,8 +370,6 @@ export default function Adversaires() {
           : "Ce que tes historiques savent des joueurs que tu recroises"}
       />
 
-      {cash && <BaptemeJoueurs />}
-
       {!fiches.length ? (
         <div className="card">
           <EmptyState text={cash
@@ -483,6 +481,13 @@ export default function Adversaires() {
             )}
           </div>
 
+          {/* L'ANCIENNE VOIE, RANGEE APRES LA NOUVELLE.
+              Elle occupait le haut de la page : quatorze lignes de « Joueur
+              3776 » a faire defiler avant d'atteindre ses vrais adversaires.
+              Les noms viennent desormais de l'import, par numero de main et
+              exactement ; ce baptisement manuel n'est qu'un recours pour qui
+              n'a pas d'historique nomme. Il reste accessible, replie. */}
+          {cash && <BaptemeJoueurs replie />}
         </>
       )}
     </div>

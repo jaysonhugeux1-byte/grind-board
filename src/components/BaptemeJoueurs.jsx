@@ -59,11 +59,16 @@ function joueursVus() {
 const lettresConnues = (gabarits) =>
   new Set(gabarits.filter((g) => /[a-zA-Z]/.test(g?.signe || "")).map((g) => g.signe)).size;
 
-export default function BaptemeJoueurs() {
+export default function BaptemeJoueurs({ replie = false }) {
   const [baptemes, setBaptemes] = useState(() => lireBaptemes());
   const [gabarits, setGabarits] = useState(() => lireGabarits());
   const [saisies, setSaisies] = useState({});
   const [message, setMessage] = useState(null);
+  // REPLIE PAR DEFAUT DEPUIS QUE LES NOMS VIENNENT DE L'IMPORT. Cet ecran etait
+  // la seule voie quand on croyait l'information introuvable ; il n'est plus
+  // qu'un recours, et deplie il cachait la vraie liste sous quatorze lignes de
+  // « Joueur 3776 ».
+  const [ouvert, setOuvert] = useState(!replie);
 
   const vus = useMemo(joueursVus, [baptemes]);
   const lettres = lettresConnues(gabarits);
@@ -115,11 +120,31 @@ export default function BaptemeJoueurs() {
   return (
     <div className="card">
       <div className="card-title-row">
-        <h2><Tag size={15} style={{ verticalAlign: -2, marginRight: 6 }} />Donner un nom aux joueurs</h2>
+        <h2>
+          <Tag size={15} style={{ verticalAlign: -2, marginRight: 6 }} />
+          Donner un nom aux joueurs vus à l&apos;écran
+        </h2>
         <span className="muted" style={{ fontSize: 12 }}>
           {lettres} lettre{lettres > 1 ? "s" : ""} connue{lettres > 1 ? "s" : ""}
         </span>
       </div>
+
+      {!ouvert && (
+        <>
+          <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.7, marginTop: 4 }}>
+            Tes adversaires portent leurs vrais noms dès que l&apos;import trouve un
+            <strong> historique nommé</strong> — il les relie par numéro de main, exactement.
+            Ce baptême-ci n&apos;est qu&apos;un recours pour qui n&apos;en a pas :
+            il nomme les {anonymes.length} joueur(s) que le lecteur a vus à l&apos;écran.
+          </p>
+          <button className="btn-secondary btn-mini" onClick={() => setOuvert(true)}>
+            Les nommer quand même
+          </button>
+        </>
+      )}
+
+      {ouvert && (
+        <>
 
       <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.7, marginTop: 4 }}>
         Le lecteur distingue ces joueurs sans savoir lire leur pseudonyme : l'historique de
@@ -182,10 +207,12 @@ export default function BaptemeJoueurs() {
           </tbody>
         </table>
       )}
+        </>
+      )}
 
-      {nommes.length > 0 && (
+      {ouvert && nommes.length > 0 && (
         <>
-          <h3 style={{ fontSize: 13, marginTop: 18, marginBottom: 8 }}>Deja nommes</h3>
+          <h3 style={{ fontSize: 13, marginTop: 18, marginBottom: 8 }}>Déjà nommés</h3>
           <div className="liste-adv">
             {nommes.map((j) => (
               <div key={j.signature} className="ligne-adv" style={{ cursor: "default" }}>
