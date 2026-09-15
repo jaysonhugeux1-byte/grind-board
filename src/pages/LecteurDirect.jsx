@@ -1453,7 +1453,7 @@ export default function LecteurDirect() {
       <PageHeader
         title="Lecteur en direct"
         subtitle={estCash
-          ? "CoinPoker anonymise ses adversaires — le lecteur relève leurs vrais noms"
+          ? "Les vrais noms viennent de l'import ; le lecteur donne la cote du pot et le SPR"
           : "Betclic ne livre l'historique qu'une fois par jour — le lecteur comble l'attente"}
       />
 
@@ -2080,21 +2080,30 @@ export default function LecteurDirect() {
               historique est donc impossible.
             </p>
             <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
-              Mais le client, lui, affiche leurs <strong>vrais noms</strong>. Le lecteur les relève
-              pendant que tu joues, avec les tapis, et l'import les rattache aux mains anonymisées.
-              Tes fiches d'adversaires se construisent alors sur de vraies identités.
+              <strong>Ce n&apos;est pourtant pas ici qu&apos;on va les chercher.</strong> Le client
+              CoinPoker expose un <strong>connecteur</strong> auquel un tracker se branche pendant
+              la partie — DriveHUD, par exemple. Ce tracker écrit alors sur ton disque un historique
+              au format standard, <strong>avec les vrais noms</strong>, et portant le même numéro de
+              main que l&apos;export anonymisé.
             </p>
             <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
-              L'écran ne numérote pas les sièges : c'est toi qui sers de repère, toujours en bas.
-              Reste à savoir dans quel sens la table tourne — le lecteur ne le devine pas, il essaie
-              les deux et <strong>les tapis tranchent</strong>. Quand aucun sens ne concorde, ou
-              quand les deux concordent, il <strong>refuse</strong> plutôt que de choisir : une
-              identité mal attribuée verserait les mains d'un joueur dans la fiche d'un autre, sans
-              que rien ne le signale.
+              L&apos;import rapproche donc les deux <strong>par numéro de main</strong> : même
+              numéro, même siège, même joueur. C&apos;est exact, pas probable — rien à tolérer,
+              rien à départager. Mesuré sur des fichiers réels : 714 mains reliées sur 721, et pour
+              seul motif de refus des mains jouées quand le tracker ne tournait pas.
+              <strong> Tu n&apos;as rien à faire ici pour ça</strong> : va dans Importer.
             </p>
             <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
-              C'est la lecture des <strong>tapis</strong> qui décide de tout. Si l'import annonce
-              « 0 main reliée », ce sont les cadres des tapis qu'il faut affiner.
+              Le lecteur reste utile pour deux choses. Il sert de <strong>second recours</strong>
+              {" "}quand aucun historique nommé n&apos;existe — il relève alors les noms à l&apos;écran
+              et les rattache par les tapis, ce qui est bien moins sûr : il essaie les deux sens de
+              rotation, et <strong>refuse</strong> quand aucun ne concorde ou quand les deux
+              concordent, plutôt que de verser les mains d&apos;un joueur dans la fiche d&apos;un
+              autre.
+            </p>
+            <p style={{ fontSize: 13, lineHeight: 1.7, margin: "12px 0 0" }}>
+              Et il donne ce qu&apos;aucun historique ne peut donner : la <strong>cote du pot</strong>
+              {" "}et le <strong>SPR</strong> pendant que la main se joue.
             </p>
           </>
         ) : (
