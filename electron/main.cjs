@@ -209,6 +209,79 @@ app.on("will-quit", () => {
   blocageVeille = null;
 });
 
+// ---------------------------------------------------------------------------
+// L'HISTORIQUE NOMME, CELUI QUI PORTE LES VRAIS NOMS
+// ---------------------------------------------------------------------------
+//
+// L'export que CoinPoker met a disposition est anonymise — un pseudonyme neuf a
+// chaque main, aucun ne revenant jamais. Mais le client expose un CONNECTEUR
+// auquel un tracker se branche pendant la partie, et ce tracker ecrit un
+// historique au format standard avec les vrais noms.
+//
+// Les deux portent LE MEME NUMERO DE MAIN. Il suffit donc de lire le second
+// pour nommer les alias du premier — exactement, sans rien deviner.
+//
+// ON NE REMONTE QUE LES LIGNES UTILES. Un mois d'historique pese des dizaines
+// de megaoctets, dont on ne veut que l'en-tete et la liste des sieges : une
+// ligne sur vingt. Les transferer en entier ferait traverser tout ce poids au
+// pont Electron pour le jeter aussitot.
+const LIGNE_UTILE = /^(?:CoinPoker Hand #\d+|Seat \d+: .+ \([^)]*in chips\))/;
+
+/** Les dossiers ou un tracker depose ses historiques CoinPoker. */
+function dossiersDHistorique() {
+  const appData = process.env.APPDATA || "";
+  if (!appData) return [];
+  return [
+    path.join(appData, "DriveHUD 3", "ProcessedData", "CoinPoker"),
+    path.join(appData, "DriveHUD", "ProcessedData", "CoinPoker"),
+  ];
+}
+
+function fichiersRecents(racine, depuis) {
+  const sortie = [];
+  const visiter = (dossier, profondeur) => {
+    if (profondeur > 3) return;
+    let entrees = [];
+    try { entrees = fs.readdirSync(dossier, { withFileTypes: true }); } catch { return; }
+    for (const e of entrees) {
+      const complet = path.join(dossier, e.name);
+      if (e.isDirectory()) { visiter(complet, profondeur + 1); continue; }
+      if (!/\.txt$/i.test(e.name)) continue;
+      try {
+        if (fs.statSync(complet).mtimeMs >= depuis) sortie.push(complet);
+      } catch { /* fichier disparu entre-temps */ }
+    }
+  };
+  visiter(racine, 0);
+  return sortie;
+}
+
+ipcMain.handle("historiques:noms", async (_event, options = {}) => {
+  const jours = Number(options?.jours) > 0 ? Number(options.jours) : 120;
+  const depuis = Date.now() - jours * 86400_000;
+  const dossiers = options?.dossier ? [String(options.dossier)] : dossiersDHistorique();
+
+  const morceaux = [];
+  let fichiers = 0;
+  let dossierTrouve = null;
+
+  for (const racine of dossiers) {
+    const trouves = fichiersRecents(racine, depuis);
+    if (!trouves.length) continue;
+    dossierTrouve = dossierTrouve ?? racine;
+    for (const f of trouves) {
+      let texte = "";
+      try { texte = fs.readFileSync(f, "utf8"); } catch { continue; }
+      fichiers++;
+      for (const ligne of texte.split(/\r?\n/)) {
+        if (LIGNE_UTILE.test(ligne)) morceaux.push(ligne);
+      }
+    }
+  }
+
+  return { texte: morceaux.join("\n"), fichiers, dossier: dossierTrouve, lignes: morceaux.length };
+});
+
 ipcMain.handle("tables:lister", async () => listTables());
 ipcMain.handle("tables:capturer", async (_event, sourceId) => captureTable(String(sourceId)));
 // Chemin rapide de la surveillance : toutes les tables en un seul appel

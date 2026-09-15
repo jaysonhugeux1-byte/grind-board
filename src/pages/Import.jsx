@@ -6,6 +6,7 @@ import { parseCoinPokerText } from "../lib/parse";
 import { importHands } from "../lib/supabaseData";
 import { minimum, maximum } from "../lib/grandsTableaux";
 import { relierParPlaces, appliquerIdentites } from "../lib/identitesCash";
+import { tableDesNoms, relierParNumero } from "../lib/identitesParNumero";
 import { lireObservations, etatObservations } from "../lib/observationsTable";
 import { apprendreCashDepuisHistorique } from "../lib/apprentissageAuto";
 import { PageHeader, fmtMoney, fmtDate } from "../components/ui";
@@ -83,8 +84,50 @@ export default function Import() {
       // verserait les mains d'un joueur dans la fiche d'un autre, sans que rien
       // ne le signale ; un alias intact, lui, sera simplement ecarte faute de
       // volume.
+      // ------------------------------------------------------------------
+      // D'ABORD LE NUMERO DE MAIN, ET DE TRES LOIN
+      // ------------------------------------------------------------------
+      //
+      // Le client CoinPoker expose un CONNECTEUR auquel un tracker se branche
+      // pendant la partie. Ce tracker ecrit alors un historique au format
+      // standard, avec les VRAIS NOMS — et portant LE MEME NUMERO DE MAIN que
+      // l'export anonymise.
+      //
+      // Le rapprochement devient alors EXACT : meme numero, meme siege, meme
+      // joueur. Rien a tolerer, rien a departager, aucun cas ou l'on doive
+      // refuser faute de certitude. Mesure sur les fichiers reels : 714 mains
+      // sur 721, et pour seul motif de refus sept mains jouees quand le tracker
+      // ne tournait pas.
+      //
+      // L'alignement par l'ecran reste en second recours. Il etait PROBABLE —
+      // une observation au bon instant, des tapis concordant a deux pour cent
+      // pres, un sens de rotation a deviner — et refusait des qu'un doute
+      // subsistait. On ne s'en sert que si l'historique nomme est absent.
+      let lien = null;
+      let source = null;
+
+      try {
+        const nommes = await window.grandLivre?.historiquesNommes?.();
+        if (nommes?.texte) {
+          const table = tableDesNoms(nommes.texte);
+          if (table.size) {
+            const r = relierParNumero(parsed, table);
+            if (r.reliees) {
+              lien = { liens: r.liens, mainsReliees: r.reliees, mainsTotales: r.total, tauxLiaison: r.taux };
+              source = { par: "numero", fichiers: nommes.fichiers, dossier: nommes.dossier };
+            }
+          }
+        }
+      } catch {
+        // Pas d'historique nomme, ou dossier illisible : on retombe sur l'ecran.
+      }
+
       const vues = lireObservations();
-      const lien = vues.length ? relierParPlaces(parsed, vues) : null;
+      if (!lien && vues.length) {
+        const r = relierParPlaces(parsed, vues);
+        if (r.mainsReliees) { lien = r; source = { par: "ecran" }; }
+      }
+
       const mains = lien ? appliquerIdentites(parsed, lien.liens) : parsed;
 
       // L'APPRENTISSAGE AUTOMATIQUE DES SIGNES.
@@ -106,7 +149,7 @@ export default function Import() {
         newCount,
         existingCount,
         identites: lien
-          ? { reliees: lien.mainsReliees, total: lien.mainsTotales, taux: lien.tauxLiaison }
+          ? { reliees: lien.mainsReliees, total: lien.mainsTotales, taux: lien.tauxLiaison, source }
           : null,
         apprentissage,
         vues: etatObservations(),
@@ -244,11 +287,13 @@ export default function Import() {
             {preview.identites && (
               <p className="dashboard-hint" style={{ marginTop: 10 }}>
                 <strong>{preview.identites.reliees}</strong> main(s) sur{" "}
-                {preview.identites.total} ont pu être reliées aux noms vus à table
-                {preview.identites.taux != null && ` (${preview.identites.taux.toFixed(0)} %)`}.
-                {preview.identites.reliees === 0
-                  && " Aucune : les adversaires resteront anonymes. Vérifie que le lecteur"
-                     + " tournait pendant la session, et sur les mêmes tables."}
+                {preview.identites.total} ont pu être reliées à leurs vrais noms
+                {preview.identites.taux != null && ` (${preview.identites.taux.toFixed(0)} %)`}
+                {preview.identites.source?.par === "numero"
+                  ? ` — par numéro de main, depuis ${preview.identites.source.fichiers} fichier(s)`
+                    + " d'historique nommé. C'est un rapprochement exact : même numéro, même siège,"
+                    + " même joueur."
+                  : " — par rapprochement des tapis observés à l'écran."}
               </p>
             )}
             {/* UN ZERO DOIT SE DIRE, ET DIRE POURQUOI.
@@ -285,9 +330,11 @@ export default function Import() {
             )}
             {!preview.identites && (
               <p className="dashboard-hint" style={{ marginTop: 10 }}>
-                Aucun relevé du lecteur en mémoire : les adversaires resteront anonymes,
-                comme dans l'export. Lance le lecteur en direct pendant que tu joues pour
-                que leurs vrais noms soient rattachés à ces mains.
+                <strong>Aucun vrai nom trouvé.</strong> L&apos;export de CoinPoker est anonymisé :
+                chaque adversaire y reçoit un pseudonyme neuf à chaque main. Pour les nommer, il
+                faut un <strong>historique nommé</strong> — celui qu&apos;écrit un tracker branché
+                au connecteur de la salle pendant que tu joues. À défaut, le lecteur d&apos;écran
+                peut servir de second recours.
               </p>
             )}
 
