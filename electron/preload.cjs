@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld("grandLivre", {
   // lecture. Arme et desarme par l'ecran, jamais laisse actif en permanence.
   empecherVeille: (actif) => ipcRenderer.invoke("veille:empecher", Boolean(actif)),
 
+  // L'historique NOMME depose par un tracker branche au connecteur de la salle.
+  // C'est lui qui porte les vrais noms que l'export anonymise, sous le meme
+  // numero de main — de quoi relier les deux exactement.
+  historiquesNommes: (options) => ipcRenderer.invoke("historiques:noms", options ?? {}),
+
   listerTables: () => ipcRenderer.invoke("tables:lister"),
 
   // Capture une table et renvoie une image PNG en data URL. Pour le calibrage,
