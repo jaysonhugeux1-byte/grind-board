@@ -170,9 +170,17 @@ async function captureTables(sourceIds = null, { encoderPng = false } = {}) {
     thumbnailSize: { width: 1, height: 1 },
   });
 
+  // AUCUNE TABLE, AUCUNE PHOTO.
+  //
+  // Mesure sur la machine de l'utilisateur, tables fermees : « 0 table(s) lue(s)
+  // en 869 ms (photo 869 ms) ». On payait donc la vignette de CHAQUE fenetre du
+  // bureau, a pleine taille d'ecran, pour n'en retenir aucune — a chaque tour,
+  // tant que le lecteur tournait sans table ouverte.
+  const cibles = reperage.filter(garde);
+  if (!cibles.length) return [];
+
   let taille = maxThumbnailSize();
   try {
-    const cibles = reperage.filter(garde);
     const mesures = await cadresDesFenetres(cibles.map((s) => s.id));
     if (mesures.size) {
       const facteur = screen.getPrimaryDisplay().scaleFactor || 1;
